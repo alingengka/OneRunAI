@@ -189,7 +189,7 @@ function Studio() {
   };
 
   const runTranscribe = async () => {
-    if (!file) return toast.error("อัปโหลดคลิปก่อน");
+    if (!file) { toast.error("อัปโหลดคลิปก่อน"); return; }
     setTranscribing(true);
     try {
       let buffer = audioBufferRef.current;
@@ -212,7 +212,7 @@ function Studio() {
   };
 
   const applyTranscriptEdit = () => {
-    if (!transcript.trim()) return toast.error("ยังไม่มีข้อความ");
+    if (!transcript.trim()) { toast.error("ยังไม่มีข้อความ"); return; }
     setWords(alignWordsToSegments(transcript, segments, duration));
     toast.success("อัปเดตข้อความซับแล้ว");
   };
@@ -235,17 +235,17 @@ function Studio() {
   );
 
   const exportSrt = () => {
-    if (!groups.length) return toast.error("ยังไม่มีซับไตเติล");
+    if (!groups.length) { toast.error("ยังไม่มีซับไตเติล"); return; }
     download(`${file?.name ?? "clip"}.srt`, buildSrt(groups, remap), "application/x-subrip");
     toast.success("ดาวน์โหลด .srt แล้ว — ลากเข้า CapCut ได้เลย");
   };
   const exportEdl = () => {
-    if (!segments.length) return toast.error("ยังไม่ได้วิเคราะห์เสียง");
+    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     download(`${file?.name ?? "clip"}.edl`, buildEdl(segments, file?.name ?? "clip"));
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
   const exportJson = () => {
-    if (!segments.length) return toast.error("ยังไม่ได้วิเคราะห์เสียง");
+    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     download(
       `${file?.name ?? "clip"}.capcut.json`,
       buildCutListJson({
