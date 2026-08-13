@@ -38,7 +38,7 @@ export function detectSpeechSegments(buffer: AudioBuffer, opts: SilenceOptions):
   for (let i = 0; i < data.length; i += win) {
     let sum = 0;
     const end = Math.min(i + win, data.length);
-    for (let j = i; j < end; j++) sum += data[j] * data[j];
+    for (let j = i; j < end; j++) { const v = data[j] ?? 0; sum += v * v; }
     const rms = Math.sqrt(sum / Math.max(1, end - i));
     frames.push(rms);
     if (rms > peak) peak = rms;
@@ -122,7 +122,7 @@ export function encodeWav16k(buffer: AudioBuffer): Blob {
   view.setUint16(34, 16, true);
   writeStr(36, "data");
   view.setUint32(40, out.length * 2, true);
-  for (let i = 0; i < out.length; i++) view.setInt16(44 + i * 2, out[i], true);
+  for (let i = 0; i < out.length; i++) view.setInt16(44 + i * 2, out[i] ?? 0, true);
   return new Blob([bytes], { type: "audio/wav" });
 }
 
