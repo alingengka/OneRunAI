@@ -196,7 +196,8 @@ function Studio() {
     setTranscript("");
     setSegments([]);
     setTime(0);
-    await analyze(f, threshold, minSilence).catch(() => undefined);
+    const r = await analyze(f, threshold, minSilence).catch(() => undefined);
+    if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
 
   const runTranscribe = async () => {
@@ -204,23 +205,32 @@ function Studio() {
     setTranscribing(true);
     try {
       let buffer = audioBufferRef.current;
-      if (!buffer) buffer = await analyze(file, threshold, minSilence);
+      let segs = segments;
+      if (!buffer || !segs.length) {
+        const r = await analyze(file, threshold, minSilence);
+        buffer = r.buffer;
+        segs = r.segs;
+      }
       const wav = encodeWav16k(buffer!);
       if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
       const b64 = await blobToBase64(wav);
-      const res = await transcribe({ data: { audioBase64: b64 } });
+      const res = await transcribe({
+        data: { audioBase64: b64, language: languages[0] ?? "th" },
+      });
       const text = (res.text ?? "").trim();
       if (!text) throw new Error("ไม่พบคำพูดในคลิป");
       setTranscript(text);
-      setWords(alignWordsToSegments(text, segments, buffer!.duration));
+      setWords(alignWordsToSegments(text, segs, buffer!.duration));
       setCaptionsOn(true);
-      toast.success("สร้างซับไตเติลเรียบร้อย");
+      setRemoveSilence(true);
+      toast.success("สร้างซับไตเติล + ตัดช่วงเงียบเรียบร้อย");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ถอดเสียงไม่สำเร็จ");
     } finally {
       setTranscribing(false);
     }
   };
+
 
   const applyTranscriptEdit = () => {
     if (!transcript.trim()) { toast.error("ยังไม่มีข้อความ"); return; }
