@@ -81,15 +81,35 @@ export function StyleControls({ style, onChange }: Props) {
         </Row>
       </div>
 
-      <Row label={`Words per group — ${style.wordsPerGroup}`}>
-        <Slider
-          value={[style.wordsPerGroup]}
-          min={1}
-          max={8}
-          step={1}
-          onValueChange={([v]) => onChange({ wordsPerGroup: v ?? 1 })}
-        />
+      <Row label={`Karaoke — ขึ้นทีละ ${style.wordsPerGroup} คำ`}>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            {[1, 2, 3, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => onChange({ wordsPerGroup: n })}
+                className={cn(
+                  "flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                  style.wordsPerGroup === n
+                    ? "border-primary bg-primary/15 text-foreground"
+                    : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {n} คำ
+              </button>
+            ))}
+          </div>
+          <Slider
+            value={[style.wordsPerGroup]}
+            min={1}
+            max={8}
+            step={1}
+            onValueChange={([v]) => onChange({ wordsPerGroup: v ?? 1 })}
+          />
+        </div>
       </Row>
+
 
       <div className="grid grid-cols-2 gap-4">
         <Row label={`Size — ${style.size.toFixed(1)}%`}>
