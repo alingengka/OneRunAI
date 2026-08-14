@@ -66,6 +66,15 @@ export const Route = createFileRoute("/")({
 
 type Tab = "tools" | "styles" | "customize" | "text";
 
+type LangCode = "th" | "lo" | "en";
+
+const LANGUAGES: { code: LangCode; label: string; font: string }[] = [
+  { code: "th", label: "ไทย", font: "'Kanit', 'Noto Sans Thai', sans-serif" },
+  { code: "lo", label: "ລາວ", font: "'Noto Sans Lao Looped', 'Noto Sans Lao', sans-serif" },
+  { code: "en", label: "English", font: "'Inter', system-ui, sans-serif" },
+];
+
+
 function fmt(t: number) {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
