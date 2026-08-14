@@ -211,15 +211,46 @@ export function StyleControls({ style, onChange }: Props) {
       </div>
 
       <Row label="Animation">
-        <Segmented
-          value={style.animation ? "yes" : "no"}
-          options={[
-            { label: "Yes", value: "yes" },
-            { label: "No", value: "no" },
-          ]}
-          onSelect={(v) => onChange({ animation: v === "yes" })}
-        />
+        <div className="grid grid-cols-3 gap-2">
+          {animationOptions.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onChange({ animation: o.value })}
+              className={cn(
+                "rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                style.animation === o.value
+                  ? "border-primary bg-primary/15 text-foreground"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
       </Row>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Row label="Background plate">
+          <Segmented
+            value={style.plate ? "yes" : "no"}
+            options={[
+              { label: "Yes", value: "yes" },
+              { label: "No", value: "no" },
+            ]}
+            onSelect={(v) => onChange({ plate: v === "yes" })}
+          />
+        </Row>
+        <Row label="Plate color">
+          <Input
+            type="color"
+            value={style.plateColor}
+            onChange={(e) => onChange({ plateColor: e.target.value })}
+            className="h-9 cursor-pointer p-1"
+          />
+        </Row>
+      </div>
+
     </div>
   );
 }
