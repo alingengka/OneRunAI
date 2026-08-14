@@ -5,6 +5,54 @@ export type CaptionGroup = { start: number; end: number; words: Word[] };
 
 export type StrokeSize = "none" | "small" | "medium" | "large";
 
+export type CaptionAnimation =
+  | "none"
+  | "pop"
+  | "fade"
+  | "slideUp"
+  | "typewriter"
+  | "bounce"
+  | "zoom"
+  | "karaoke"
+  | "shake"
+  | "flip";
+
+export const animationOptions: { label: string; value: CaptionAnimation }[] = [
+  { label: "None", value: "none" },
+  { label: "Pop", value: "pop" },
+  { label: "Fade", value: "fade" },
+  { label: "Slide up", value: "slideUp" },
+  { label: "Typewriter", value: "typewriter" },
+  { label: "Bounce", value: "bounce" },
+  { label: "Zoom", value: "zoom" },
+  { label: "Karaoke", value: "karaoke" },
+  { label: "Shake", value: "shake" },
+  { label: "Flip", value: "flip" },
+];
+
+export type FontOption = { label: string; value: string; scripts: ("latin" | "th" | "lo")[] };
+
+export const fontOptions: FontOption[] = [
+  { label: "Archivo Black", value: "'Archivo Black', system-ui, sans-serif", scripts: ["latin"] },
+  { label: "Inter", value: "'Inter', system-ui, sans-serif", scripts: ["latin"] },
+  { label: "Bebas Neue", value: "'Bebas Neue', Impact, sans-serif", scripts: ["latin"] },
+  { label: "Playfair Display", value: "'Playfair Display', Georgia, serif", scripts: ["latin"] },
+  { label: "Anton", value: "'Anton', Impact, sans-serif", scripts: ["latin"] },
+  { label: "Kanit (ไทย)", value: "'Kanit', 'Noto Sans Thai', sans-serif", scripts: ["th", "latin"] },
+  { label: "Mitr (ไทย)", value: "'Mitr', 'Noto Sans Thai', sans-serif", scripts: ["th", "latin"] },
+  { label: "Prompt (ไทย)", value: "'Prompt', 'Noto Sans Thai', sans-serif", scripts: ["th", "latin"] },
+  { label: "Bai Jamjuree (ไทย)", value: "'Bai Jamjuree', 'Noto Sans Thai', sans-serif", scripts: ["th", "latin"] },
+  { label: "Noto Serif Thai", value: "'Noto Serif Thai', serif", scripts: ["th"] },
+  { label: "Noto Sans Lao (ລາວ)", value: "'Noto Sans Lao', 'Noto Sans Thai', sans-serif", scripts: ["lo", "th"] },
+  { label: "Noto Sans Lao Looped", value: "'Noto Sans Lao Looped', 'Noto Sans Lao', sans-serif", scripts: ["lo"] },
+  { label: "Noto Serif Lao", value: "'Noto Serif Lao', serif", scripts: ["lo"] },
+  {
+    label: "Universal (ไทย/ລາວ/EN)",
+    value: "'Noto Sans Thai', 'Noto Sans Lao', 'Inter', sans-serif",
+    scripts: ["th", "lo", "latin"],
+  },
+];
+
 export type CaptionStyle = {
   id: string;
   name: string;
@@ -25,8 +73,10 @@ export type CaptionStyle = {
   posY: number;
   posX: number;
   wordsPerGroup: number;
-  animation: boolean;
-  uppercaseKeywords?: boolean;
+  animation: CaptionAnimation;
+  /** background plate behind the whole caption line */
+  plate: boolean;
+  plateColor: string;
 };
 
 export const baseStyle: CaptionStyle = {
@@ -47,7 +97,9 @@ export const baseStyle: CaptionStyle = {
   posY: 68,
   posX: 50,
   wordsPerGroup: 3,
-  animation: true,
+  animation: "pop",
+  plate: false,
+  plateColor: "#000000",
 };
 
 export const stylePresets: CaptionStyle[] = [
@@ -62,6 +114,7 @@ export const stylePresets: CaptionStyle[] = [
     highlight: "box",
     highlightColor: "#22c55e",
     highlightTextColor: "#0b0b0b",
+    animation: "bounce",
   },
   {
     ...baseStyle,
@@ -69,22 +122,22 @@ export const stylePresets: CaptionStyle[] = [
     name: "BEAST",
     uppercase: true,
     size: 7.6,
-    color: "#ffffff",
     stroke: "large",
     shadow: "large",
     highlight: "color",
     highlightColor: "#ff4d1c",
     wordsPerGroup: 1,
+    animation: "zoom",
   },
   {
     ...baseStyle,
     id: "karl",
     name: "Karl",
-    uppercase: false,
     size: 5.6,
     stroke: "small",
     highlight: "none",
     wordsPerGroup: 4,
+    animation: "fade",
   },
   {
     ...baseStyle,
@@ -96,17 +149,20 @@ export const stylePresets: CaptionStyle[] = [
     stroke: "none",
     shadow: "none",
     wordsPerGroup: 2,
+    animation: "slideUp",
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontWeight: 800,
   },
   {
     ...baseStyle,
     id: "kendrick",
     name: "Kendrick",
-    uppercase: false,
     highlight: "box",
     highlightColor: "#22ff88",
     highlightTextColor: "#06210f",
     stroke: "small",
     wordsPerGroup: 3,
+    animation: "karaoke",
   },
   {
     ...baseStyle,
@@ -118,19 +174,24 @@ export const stylePresets: CaptionStyle[] = [
     highlightTextColor: "#ffffff",
     size: 6.8,
     wordsPerGroup: 2,
+    animation: "flip",
+    fontFamily: "'Anton', Impact, sans-serif",
+    fontWeight: 400,
   },
   {
     ...baseStyle,
     id: "molly",
     name: "Molly",
     color: "#111111",
-    highlight: "box",
-    highlightColor: "#ffffff",
-    highlightTextColor: "#111111",
+    highlight: "none",
     stroke: "none",
-    shadow: "small",
+    shadow: "none",
     fontWeight: 800,
-    size: 5.8,
+    size: 5.6,
+    plate: true,
+    plateColor: "#ffffff",
+    animation: "fade",
+    fontFamily: "'Inter', system-ui, sans-serif",
   },
   {
     ...baseStyle,
@@ -142,12 +203,12 @@ export const stylePresets: CaptionStyle[] = [
     highlight: "color",
     highlightColor: "#ffffff",
     wordsPerGroup: 2,
+    animation: "shake",
   },
   {
     ...baseStyle,
     id: "iman",
     name: "Iman",
-    uppercase: false,
     color: "#e7e7e7",
     stroke: "none",
     shadow: "medium",
@@ -156,6 +217,7 @@ export const stylePresets: CaptionStyle[] = [
     wordsPerGroup: 5,
     fontFamily: "'Inter', system-ui, sans-serif",
     fontWeight: 700,
+    animation: "typewriter",
   },
   {
     ...baseStyle,
@@ -169,6 +231,7 @@ export const stylePresets: CaptionStyle[] = [
     highlightColor: "#ff2d55",
     stroke: "small",
     wordsPerGroup: 3,
+    animation: "slideUp",
   },
   {
     ...baseStyle,
@@ -177,12 +240,109 @@ export const stylePresets: CaptionStyle[] = [
     color: "#ffb703",
     fontFamily: "'Playfair Display', Georgia, serif",
     fontWeight: 900,
-    uppercase: false,
     highlight: "none",
     stroke: "none",
     shadow: "medium",
     size: 6,
     wordsPerGroup: 4,
+    animation: "fade",
+  },
+  {
+    ...baseStyle,
+    id: "siam",
+    name: "สยาม",
+    fontFamily: "'Kanit', 'Noto Sans Thai', sans-serif",
+    fontWeight: 700,
+    color: "#ffffff",
+    stroke: "medium",
+    strokeColor: "#101010",
+    highlight: "color",
+    highlightColor: "#00e5ff",
+    size: 6.2,
+    wordsPerGroup: 3,
+    animation: "karaoke",
+  },
+  {
+    ...baseStyle,
+    id: "bangkok",
+    name: "บางกอก",
+    fontFamily: "'Mitr', 'Noto Sans Thai', sans-serif",
+    fontWeight: 600,
+    color: "#111111",
+    stroke: "none",
+    shadow: "none",
+    highlight: "box",
+    highlightColor: "#ff4d8d",
+    highlightTextColor: "#ffffff",
+    plate: true,
+    plateColor: "#ffffff",
+    size: 5.6,
+    wordsPerGroup: 2,
+    animation: "pop",
+  },
+  {
+    ...baseStyle,
+    id: "lanxang",
+    name: "ລ້ານຊ້າງ",
+    fontFamily: "'Noto Sans Lao Looped', 'Noto Sans Lao', sans-serif",
+    fontWeight: 700,
+    color: "#ffd166",
+    stroke: "medium",
+    strokeColor: "#1b1b1b",
+    shadow: "medium",
+    highlight: "color",
+    highlightColor: "#ffffff",
+    size: 6.4,
+    wordsPerGroup: 3,
+    animation: "bounce",
+  },
+  {
+    ...baseStyle,
+    id: "mekong",
+    name: "ແມ່ຂອງ",
+    fontFamily: "'Noto Serif Lao', serif",
+    fontWeight: 700,
+    color: "#ffffff",
+    stroke: "none",
+    shadow: "large",
+    highlight: "box",
+    highlightColor: "#3b82f6",
+    highlightTextColor: "#ffffff",
+    size: 5.8,
+    wordsPerGroup: 4,
+    animation: "slideUp",
+  },
+  {
+    ...baseStyle,
+    id: "neon",
+    name: "NEON",
+    uppercase: true,
+    fontFamily: "'Anton', Impact, sans-serif",
+    fontWeight: 400,
+    color: "#f5f3ff",
+    stroke: "none",
+    shadow: "large",
+    shadowColor: "#a855f7",
+    highlight: "color",
+    highlightColor: "#a855f7",
+    size: 7.4,
+    wordsPerGroup: 1,
+    animation: "zoom",
+  },
+  {
+    ...baseStyle,
+    id: "minimal",
+    name: "Minimal",
+    fontFamily: "'Inter', system-ui, sans-serif",
+    fontWeight: 600,
+    color: "#ffffff",
+    stroke: "none",
+    shadow: "small",
+    highlight: "none",
+    size: 4.6,
+    wordsPerGroup: 6,
+    posY: 82,
+    animation: "fade",
   },
 ];
 
@@ -205,7 +365,7 @@ const STOPWORDS = new Set([
 ]);
 
 export function isKeyword(word: string): boolean {
-  const w = word.toLowerCase().replace(/[^a-z0-9\u0e00-\u0e7f]/gi, "");
+  const w = word.toLowerCase().replace(/[^a-z0-9\u0e00-\u0eff]/gi, "");
   return w.length > 3 && !STOPWORDS.has(w);
 }
 

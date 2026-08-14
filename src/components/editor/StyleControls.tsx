@@ -1,4 +1,4 @@
-import type { CaptionStyle, StrokeSize } from "@/lib/captions";
+import { animationOptions, fontOptions, type CaptionStyle, type StrokeSize } from "@/lib/captions";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
@@ -10,12 +10,8 @@ type Props = {
 };
 
 const sizes: StrokeSize[] = ["none", "small", "medium", "large"];
-const fonts = [
-  { label: "Archivo Black", value: "'Archivo Black', system-ui, sans-serif" },
-  { label: "Inter", value: "'Inter', system-ui, sans-serif" },
-  { label: "Bebas Neue", value: "'Bebas Neue', Impact, sans-serif" },
-  { label: "Playfair Display", value: "'Playfair Display', Georgia, serif" },
-];
+const fonts = fontOptions;
+
 
 function Segmented<T extends string>({
   value,
@@ -85,15 +81,35 @@ export function StyleControls({ style, onChange }: Props) {
         </Row>
       </div>
 
-      <Row label={`Words per group — ${style.wordsPerGroup}`}>
-        <Slider
-          value={[style.wordsPerGroup]}
-          min={1}
-          max={8}
-          step={1}
-          onValueChange={([v]) => onChange({ wordsPerGroup: v ?? 1 })}
-        />
+      <Row label={`Karaoke — ขึ้นทีละ ${style.wordsPerGroup} คำ`}>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            {[1, 2, 3, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => onChange({ wordsPerGroup: n })}
+                className={cn(
+                  "flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                  style.wordsPerGroup === n
+                    ? "border-primary bg-primary/15 text-foreground"
+                    : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {n} คำ
+              </button>
+            ))}
+          </div>
+          <Slider
+            value={[style.wordsPerGroup]}
+            min={1}
+            max={8}
+            step={1}
+            onValueChange={([v]) => onChange({ wordsPerGroup: v ?? 1 })}
+          />
+        </div>
       </Row>
+
 
       <div className="grid grid-cols-2 gap-4">
         <Row label={`Size — ${style.size.toFixed(1)}%`}>
@@ -195,15 +211,46 @@ export function StyleControls({ style, onChange }: Props) {
       </div>
 
       <Row label="Animation">
-        <Segmented
-          value={style.animation ? "yes" : "no"}
-          options={[
-            { label: "Yes", value: "yes" },
-            { label: "No", value: "no" },
-          ]}
-          onSelect={(v) => onChange({ animation: v === "yes" })}
-        />
+        <div className="grid grid-cols-3 gap-2">
+          {animationOptions.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onChange({ animation: o.value })}
+              className={cn(
+                "rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                style.animation === o.value
+                  ? "border-primary bg-primary/15 text-foreground"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
       </Row>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Row label="Background plate">
+          <Segmented
+            value={style.plate ? "yes" : "no"}
+            options={[
+              { label: "Yes", value: "yes" },
+              { label: "No", value: "no" },
+            ]}
+            onSelect={(v) => onChange({ plate: v === "yes" })}
+          />
+        </Row>
+        <Row label="Plate color">
+          <Input
+            type="color"
+            value={style.plateColor}
+            onChange={(e) => onChange({ plateColor: e.target.value })}
+            className="h-9 cursor-pointer p-1"
+          />
+        </Row>
+      </div>
+
     </div>
   );
 }
