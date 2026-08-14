@@ -92,6 +92,8 @@ function Studio() {
   const [words, setWords] = useState<Word[]>([]);
   const [style, setStyle] = useState<CaptionStyle>(baseStyle);
   const [tab, setTab] = useState<Tab>("tools");
+  const [languages, setLanguages] = useState<LangCode[]>(["th"]);
+
 
   const [captionsOn, setCaptionsOn] = useState(true);
   const [removeSilence, setRemoveSilence] = useState(false);
