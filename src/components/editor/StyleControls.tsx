@@ -1,4 +1,4 @@
-import type { CaptionStyle, StrokeSize } from "@/lib/captions";
+import { animationOptions, fontOptions, type CaptionStyle, type StrokeSize } from "@/lib/captions";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
@@ -10,12 +10,8 @@ type Props = {
 };
 
 const sizes: StrokeSize[] = ["none", "small", "medium", "large"];
-const fonts = [
-  { label: "Archivo Black", value: "'Archivo Black', system-ui, sans-serif" },
-  { label: "Inter", value: "'Inter', system-ui, sans-serif" },
-  { label: "Bebas Neue", value: "'Bebas Neue', Impact, sans-serif" },
-  { label: "Playfair Display", value: "'Playfair Display', Georgia, serif" },
-];
+const fonts = fontOptions;
+
 
 function Segmented<T extends string>({
   value,
