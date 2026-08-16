@@ -96,3 +96,65 @@ export function download(filename: string, content: string, type = "text/plain")
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+
+/** Final Cut Pro XML with the kept (non-silent) segments as a cut timeline.
+ *  CapCut desktop / Premiere / Resolve can import this to get the same cuts. */
+export function buildFcpxml(params: {
+  clipName: string;
+  duration: number;
+  keep: Segment[];
+  fps?: number;
+  width?: number;
+  height?: number;
+}): string {
+  const fps = params.fps ?? 30;
+  const w = params.width ?? 1080;
+  const h = params.height ?? 1920;
+  const frames = (t: number) => Math.max(0, Math.round(t * fps));
+  const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c]!);
+  const name = esc(params.clipName);
+
+  let rec = 0;
+  const items = params.keep
+    .map((s, i) => {
+      const dur = frames(s.end) - frames(s.start);
+      const start = rec;
+      rec += dur;
+      return `        <clipitem id="clip-${i + 1}">
+          <name>${name}</name>
+          <duration>${frames(params.duration)}</duration>
+          <rate><timebase>${fps}</timebase><ntsc>FALSE</ntsc></rate>
+          <start>${start}</start>
+          <end>${start + dur}</end>
+          <in>${frames(s.start)}</in>
+          <out>${frames(s.end)}</out>
+          <file id="file-1">
+            <name>${name}</name>
+            <pathurl>./${name}</pathurl>
+            <rate><timebase>${fps}</timebase><ntsc>FALSE</ntsc></rate>
+            <duration>${frames(params.duration)}</duration>
+            <media><video><samplecharacteristics><width>${w}</width><height>${h}</height></samplecharacteristics></video><audio><channelcount>2</channelcount></audio></media>
+          </file>
+        </clipitem>`;
+    })
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<xmeml version="5">
+  <sequence id="seq-1">
+    <name>${name} (silence removed)</name>
+    <duration>${rec}</duration>
+    <rate><timebase>${fps}</timebase><ntsc>FALSE</ntsc></rate>
+    <media>
+      <video>
+        <format><samplecharacteristics><width>${w}</width><height>${h}</height></samplecharacteristics></format>
+        <track>
+${items}
+        </track>
+      </video>
+    </media>
+  </sequence>
+</xmeml>
+`;
+}
