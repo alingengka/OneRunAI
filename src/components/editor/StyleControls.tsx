@@ -7,10 +7,11 @@ import { cn } from "@/lib/utils";
 type Props = {
   style: CaptionStyle;
   onChange: (patch: Partial<CaptionStyle>) => void;
+  scripts?: ("latin" | "th" | "lo")[];
 };
 
 const sizes: StrokeSize[] = ["none", "small", "medium", "large"];
-const fonts = fontOptions;
+
 
 
 function Segmented<T extends string>({
@@ -52,7 +53,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-export function StyleControls({ style, onChange }: Props) {
+export function StyleControls({ style, onChange, scripts }: Props) {
+  const fonts =
+    scripts && scripts.length
+      ? fontOptions.filter((f) => f.scripts.some((s) => scripts.includes(s)))
+      : fontOptions;
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4">

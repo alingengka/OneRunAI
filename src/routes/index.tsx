@@ -40,7 +40,15 @@ import {
   invertSegments,
   type Segment,
 } from "@/lib/media/audio";
-import { buildCutListJson, buildEdl, buildSrt, download, keptDuration, mapToTrimmed } from "@/lib/export";
+import {
+  buildCutListJson,
+  buildEdl,
+  buildFcpxml,
+  buildSrt,
+  download,
+  keptDuration,
+  mapToTrimmed,
+} from "@/lib/export";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 
 export const Route = createFileRoute("/")({
@@ -174,7 +182,7 @@ function Studio() {
         setSegments(segs);
         setDuration((d) => d || buffer!.duration);
         toast.success(`พบช่วงพูด ${segs.length} ช่วง`);
-        return buffer;
+        return { buffer, segs };
       } catch (e) {
         toast.error("อ่านเสียงจากไฟล์นี้ไม่ได้ ลองไฟล์ MP4/WebM ที่มีเสียง");
         throw e;
@@ -279,6 +287,22 @@ function Studio() {
       "application/json",
     );
     toast.success("ดาวน์โหลดไฟล์ cut list แล้ว");
+  };
+  const exportXml = () => {
+    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    const v = videoRef.current;
+    download(
+      `${file?.name ?? "clip"}.xml`,
+      buildFcpxml({
+        clipName: file?.name ?? "clip",
+        duration,
+        keep: segments,
+        width: v?.videoWidth || 1080,
+        height: v?.videoHeight || 1920,
+      }),
+      "application/xml",
+    );
+    toast.success("ดาวน์โหลด .xml (timeline ตัดช่วงเงียบ) แล้ว");
   };
 
   return (
@@ -438,6 +462,9 @@ function Studio() {
                   <Button size="sm" variant="secondary" onClick={exportSrt}>
                     <FileDown className="mr-2 h-4 w-4" /> .srt
                   </Button>
+                  <Button size="sm" variant="secondary" onClick={exportXml}>
+                    <FileDown className="mr-2 h-4 w-4" /> .xml (timeline)
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={exportEdl}>
                     <FileDown className="mr-2 h-4 w-4" /> .edl
                   </Button>
@@ -470,7 +497,50 @@ function Studio() {
             />
           )}
 
-          {tab === "customize" && <StyleControls style={style} onChange={(p) => setStyle((s) => ({ ...s, ...p }))} />}
+          {tab === "customize" && (
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  ภาษา (เลือกเพิ่ม/เอาออกได้)
+                </Label>
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGES.map((l) => {
+                    const on = languages.includes(l.code);
+                    return (
+                      <button
+                        key={l.code}
+                        type="button"
+                        onClick={() => {
+                          const next = on
+                            ? languages.filter((c) => c !== l.code)
+                            : [...languages, l.code];
+                          if (!next.length) { toast.error("ต้องเลือกอย่างน้อย 1 ภาษา"); return; }
+                          setLanguages(next);
+                          if (!on) setStyle((s) => ({ ...s, fontFamily: l.font }));
+                        }}
+                        className={cn(
+                          "rounded-full border px-3 py-1.5 text-sm transition",
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-secondary text-muted-foreground",
+                        )}
+                      >
+                        {l.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  ภาษาแรกที่เลือกจะใช้ถอดเสียง และรายชื่อฟอนต์จะกรองตามภาษาที่เลือก
+                </p>
+              </div>
+              <StyleControls
+                style={style}
+                onChange={(p) => setStyle((s) => ({ ...s, ...p }))}
+                scripts={languages.map((c) => (c === "en" ? "latin" : c))}
+              />
+            </div>
+          )}
 
           {tab === "text" && (
             <div className="space-y-3">
