@@ -369,9 +369,41 @@ export function isKeyword(word: string): boolean {
   return w.length > 3 && !STOPWORDS.has(w);
 }
 
+const THAI_LAO = /[\u0e00-\u0eff]/;
+
+/**
+ * Split text into words. Thai/Lao are written without spaces, so we use
+ * Intl.Segmenter word segmentation for those scripts (fallback: fixed chunks).
+ */
+export function tokenizeWords(text: string): string[] {
+  const out: string[] = [];
+  const SegmenterCtor = (Intl as unknown as { Segmenter?: any }).Segmenter;
+  for (const chunk of text.split(/\s+/).map((t) => t.trim()).filter(Boolean)) {
+    if (!THAI_LAO.test(chunk)) {
+      out.push(chunk);
+      continue;
+    }
+    const locale = /[\u0e80-\u0eff]/.test(chunk) ? "lo" : "th";
+    if (SegmenterCtor) {
+      try {
+        const seg = new SegmenterCtor(locale, { granularity: "word" });
+        for (const part of seg.segment(chunk) as Iterable<{ segment: string }>) {
+          const w = part.segment.trim();
+          if (w) out.push(w);
+        }
+        continue;
+      } catch {
+        /* fall through */
+      }
+    }
+    for (let i = 0; i < chunk.length; i += 4) out.push(chunk.slice(i, i + 4));
+  }
+  return out;
+}
+
 /** Spread transcript words across detected speech segments, weighted by word length. */
 export function alignWordsToSegments(text: string, segments: Segment[], duration: number): Word[] {
-  const tokens = text.split(/\s+/).map((t) => t.trim()).filter(Boolean);
+  const tokens = tokenizeWords(text);
   if (tokens.length === 0) return [];
   const segs = segments.length ? segments : [{ start: 0, end: duration }];
   const totalSpeech = segs.reduce((sum, s) => sum + (s.end - s.start), 0);
