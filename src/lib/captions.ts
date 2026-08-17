@@ -73,6 +73,9 @@ export type CaptionStyle = {
   posY: number;
   posX: number;
   wordsPerGroup: number;
+  /** words per rendered line (0 = all on one line) */
+  wordsPerLine: number;
+  textAlign: "left" | "center" | "right";
   animation: CaptionAnimation;
   /** background plate behind the whole caption line */
   plate: boolean;
@@ -97,6 +100,8 @@ export const baseStyle: CaptionStyle = {
   posY: 68,
   posX: 50,
   wordsPerGroup: 3,
+  wordsPerLine: 0,
+  textAlign: "center",
   animation: "pop",
   plate: false,
   plateColor: "#000000",
