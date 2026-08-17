@@ -61,7 +61,7 @@ export function CaptionOverlay({ group, time, style, height }: Props) {
         top: `${style.posY}%`,
         transform: containerTransform,
         width: "88%",
-        textAlign: "center",
+        textAlign: style.textAlign ?? "center",
         lineHeight: 1.15,
         fontFamily: style.fontFamily,
         fontWeight: style.fontWeight,
