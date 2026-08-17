@@ -28,6 +28,15 @@ export function CaptionOverlay({ group, time, style, height }: Props) {
     .join(", ");
 
   const anim = style.animation;
+
+  const perLine = Math.max(0, Math.round(style.wordsPerLine ?? 0));
+  const indexed = group.words.map((word, i) => ({ word, i }));
+  const lines: { word: (typeof group.words)[number]; i: number }[][] = [];
+  if (perLine > 0) {
+    for (let i = 0; i < indexed.length; i += perLine) lines.push(indexed.slice(i, i + perLine));
+  } else {
+    lines.push(indexed);
+  }
   // 0 -> 1 progress of the group entrance
   const p = clamp01((time - group.start) / 0.18);
 
