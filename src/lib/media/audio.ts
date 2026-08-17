@@ -134,3 +134,72 @@ export function blobToBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
+
+/** Group speech segments into chunks of at most `maxLen` seconds of speech. */
+export function chunkSegments(segments: Segment[], maxLen = 20): Segment[][] {
+  const chunks: Segment[][] = [];
+  let current: Segment[] = [];
+  let len = 0;
+  for (const s of segments) {
+    const d = s.end - s.start;
+    if (current.length && len + d > maxLen) {
+      chunks.push(current);
+      current = [];
+      len = 0;
+    }
+    current.push(s);
+    len += d;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+function encodePcmWav(samples: Float32Array, sampleRate: number): Blob {
+  const out = new Int16Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    out[i] = Math.max(-1, Math.min(1, samples[i] ?? 0)) * 0x7fff;
+  }
+  const bytes = new ArrayBuffer(44 + out.length * 2);
+  const view = new DataView(bytes);
+  const writeStr = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + out.length * 2, true);
+  writeStr(8, "WAVEfmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, out.length * 2, true);
+  for (let i = 0; i < out.length; i++) view.setInt16(44 + i * 2, out[i] ?? 0, true);
+  return new Blob([bytes], { type: "audio/wav" });
+}
+
+/**
+ * Encode only the given segments (speech) of the buffer to a 16 kHz mono WAV.
+ * Used so transcription hears exactly the audio a caption chunk covers.
+ */
+export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[]): Blob {
+  const targetRate = 16000;
+  const src = buffer.getChannelData(0);
+  const ratio = buffer.sampleRate / targetRate;
+  const total = segs.reduce(
+    (n, s) => n + Math.max(0, Math.floor(((s.end - s.start) * buffer.sampleRate) / ratio)),
+    0,
+  );
+  const outSamples = new Float32Array(total);
+  let w = 0;
+  for (const s of segs) {
+    const from = Math.floor(s.start * buffer.sampleRate);
+    const count = Math.floor(((s.end - s.start) * buffer.sampleRate) / ratio);
+    for (let i = 0; i < count && w < total; i++) {
+      outSamples[w++] = src[Math.min(src.length - 1, from + Math.floor(i * ratio))] ?? 0;
+    }
+  }
+  return encodePcmWav(outSamples.subarray(0, w), targetRate);
+}
