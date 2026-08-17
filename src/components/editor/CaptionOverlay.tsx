@@ -72,60 +72,65 @@ export function CaptionOverlay({ group, time, style, height }: Props) {
         opacity: containerOpacity,
       }}
     >
-      <span
-        style={{
-          display: "inline-block",
-          background: style.plate ? style.plateColor : undefined,
-          padding: style.plate ? `${fontSize * 0.12}px ${fontSize * 0.28}px` : undefined,
-          borderRadius: style.plate ? fontSize * 0.22 : undefined,
-        }}
-      >
-        {group.words.map((word, i) => {
-          const active = i === shownIndex;
-          const spoken = time >= word.start;
+      {lines.map((line, li) => (
+        <div key={li} style={{ display: "block" }}>
+          <span
+            style={{
+              display: "inline-block",
+              background: style.plate ? style.plateColor : undefined,
+              padding: style.plate ? `${fontSize * 0.12}px ${fontSize * 0.28}px` : undefined,
+              borderRadius: style.plate ? fontSize * 0.22 : undefined,
+              marginTop: li > 0 ? fontSize * 0.08 : undefined,
+            }}
+          >
+            {line.map(({ word, i }) => {
+              const active = i === shownIndex;
+              const spoken = time >= word.start;
 
-          // typewriter: hide words not yet reached
-          if (anim === "typewriter" && !spoken) return null;
+              // typewriter: hide words not yet reached
+              if (anim === "typewriter" && !spoken) return null;
 
-          const emphasize =
-            anim === "karaoke"
-              ? spoken && style.highlight !== "none"
-              : active && (style.highlight !== "none" || isKeyword(word.text));
-          const boxed = emphasize && style.highlight === "box";
+              const emphasize =
+                anim === "karaoke"
+                  ? spoken && style.highlight !== "none"
+                  : active && (style.highlight !== "none" || isKeyword(word.text));
+              const boxed = emphasize && style.highlight === "box";
 
-          const wordProgress = clamp01((time - word.start) / 0.14);
-          let wordTransform: string | undefined;
-          if (active && anim === "flip") {
-            wordTransform = `perspective(600px) rotateX(${(1 - wordProgress) * 80}deg)`;
-          } else if (active && anim === "karaoke") {
-            wordTransform = `scale(${1 + wordProgress * 0.08})`;
-          } else if (active && (anim === "pop" || anim === "bounce")) {
-            wordTransform = "translateY(-3%)";
-          }
+              const wordProgress = clamp01((time - word.start) / 0.14);
+              let wordTransform: string | undefined;
+              if (active && anim === "flip") {
+                wordTransform = `perspective(600px) rotateX(${(1 - wordProgress) * 80}deg)`;
+              } else if (active && anim === "karaoke") {
+                wordTransform = `scale(${1 + wordProgress * 0.08})`;
+              } else if (active && (anim === "pop" || anim === "bounce")) {
+                wordTransform = "translateY(-3%)";
+              }
 
-          return (
-            <span
-              key={`${word.start}-${i}`}
-              style={{
-                display: "inline-block",
-                margin: `0 ${fontSize * 0.09}px`,
-                padding: boxed ? `0 ${fontSize * 0.1}px` : undefined,
-                borderRadius: boxed ? fontSize * 0.12 : undefined,
-                background: boxed ? style.highlightColor : undefined,
-                color: boxed
-                  ? style.highlightTextColor
-                  : emphasize && style.highlight === "color"
-                    ? style.highlightColor
-                    : undefined,
-                transform: wordTransform,
-                transition: anim === "none" ? undefined : "color 80ms linear",
-              }}
-            >
-              {word.text}
-            </span>
-          );
-        })}
-      </span>
+              return (
+                <span
+                  key={`${word.start}-${i}`}
+                  style={{
+                    display: "inline-block",
+                    margin: `0 ${fontSize * 0.09}px`,
+                    padding: boxed ? `0 ${fontSize * 0.1}px` : undefined,
+                    borderRadius: boxed ? fontSize * 0.12 : undefined,
+                    background: boxed ? style.highlightColor : undefined,
+                    color: boxed
+                      ? style.highlightTextColor
+                      : emphasize && style.highlight === "color"
+                        ? style.highlightColor
+                        : undefined,
+                    transform: wordTransform,
+                    transition: anim === "none" ? undefined : "color 80ms linear",
+                  }}
+                >
+                  {word.text}
+                </span>
+              );
+            })}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
