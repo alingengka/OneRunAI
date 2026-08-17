@@ -115,6 +115,43 @@ export function StyleControls({ style, onChange, scripts }: Props) {
         </div>
       </Row>
 
+      <Row
+        label={
+          style.wordsPerLine
+            ? `จัดเรียงบรรทัด — ${style.wordsPerLine} คำ/บรรทัด`
+            : "จัดเรียงบรรทัด — บรรทัดเดียว"
+        }
+      >
+        <div className="flex gap-2">
+          {[0, 1, 2, 3, 4].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => onChange({ wordsPerLine: n })}
+              className={cn(
+                "flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                (style.wordsPerLine ?? 0) === n
+                  ? "border-primary bg-primary/15 text-foreground"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {n === 0 ? "อัตโนมัติ" : n}
+            </button>
+          ))}
+        </div>
+      </Row>
+
+      <Row label="จัดวางข้อความ">
+        <Segmented
+          value={style.textAlign ?? "center"}
+          options={[
+            { label: "ซ้าย", value: "left" as const },
+            { label: "กลาง", value: "center" as const },
+            { label: "ขวา", value: "right" as const },
+          ]}
+          onSelect={(v) => onChange({ textAlign: v })}
+        />
+      </Row>
 
       <div className="grid grid-cols-2 gap-4">
         <Row label={`Size — ${style.size.toFixed(1)}%`}>
