@@ -514,6 +514,18 @@ function Studio() {
                   <Button size="sm" variant="secondary" onClick={exportSrt}>
                     <FileDown className="mr-2 h-4 w-4" /> .srt
                   </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => void exportTrimmedVideo()}
+                    disabled={rendering || !segments.length}
+                  >
+                    {rendering ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    วิดีโอตัดช่วงเงียบ .webm
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={exportXml}>
                     <FileDown className="mr-2 h-4 w-4" /> .xml (timeline)
                   </Button>
