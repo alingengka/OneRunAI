@@ -37,8 +37,9 @@ export function CaptionOverlay({ group, time, style, height }: Props) {
   } else {
     lines.push(indexed);
   }
-  // 0 -> 1 progress of the group entrance
-  const p = clamp01((time - group.start) / 0.18);
+  // 0 -> 1 progress of the group entrance (speed multiplier: higher = faster)
+  const speed = Math.max(0.25, style.animationSpeed ?? 1);
+  const p = clamp01((time - group.start) / (0.18 / speed));
 
   let containerTransform = "translate(-50%, -50%)";
   let containerOpacity = 1;
@@ -47,7 +48,7 @@ export function CaptionOverlay({ group, time, style, height }: Props) {
     containerTransform += ` scale(${0.9 + p * 0.1})`;
     containerOpacity = 0.3 + p * 0.7;
   } else if (anim === "fade") {
-    containerOpacity = clamp01((time - group.start) / 0.3);
+    containerOpacity = clamp01((time - group.start) / (0.3 / speed));
   } else if (anim === "slideUp") {
     containerTransform += ` translateY(${(1 - p) * fontSize * 0.7}px)`;
     containerOpacity = p;
