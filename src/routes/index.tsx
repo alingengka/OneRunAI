@@ -33,13 +33,16 @@ import {
 } from "@/lib/captions";
 import {
   blobToBase64,
+  chunkSegments,
   decodeAudioFromFile,
   defaultSilenceOptions,
   detectSpeechSegments,
+  encodeSegmentsWav16k,
   encodeWav16k,
   invertSegments,
   type Segment,
 } from "@/lib/media/audio";
+import { exportTrimmedWebm } from "@/lib/media/export-video";
 import {
   buildCutListJson,
   buildEdl,
@@ -116,6 +119,7 @@ function Studio() {
   const [removeSilence, setRemoveSilence] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [rendering, setRendering] = useState(false);
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
 
@@ -219,16 +223,42 @@ function Studio() {
         buffer = r.buffer;
         segs = r.segs;
       }
-      const wav = encodeWav16k(buffer!);
-      if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
-      const b64 = await blobToBase64(wav);
-      const res = await transcribe({
-        data: { audioBase64: b64, language: languages[0] ?? "th" },
-      });
-      const text = (res.text ?? "").trim();
-      if (!text) throw new Error("ไม่พบคำพูดในคลิป");
-      setTranscript(text);
-      setWords(alignWordsToSegments(text, segs, buffer!.duration));
+      const lang = languages[0] ?? "th";
+      // ถอดเสียงทีละก้อน (เฉพาะช่วงที่มีเสียงพูด) เพื่อให้คำตรงกับเวลาที่พูดจริง
+      const chunks = segs.length ? chunkSegments(segs, 20) : [];
+      const allWords: Word[] = [];
+      const texts: string[] = [];
+
+      if (chunks.length) {
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkSegs = chunks[i]!;
+          const wav = encodeSegmentsWav16k(buffer!, chunkSegs);
+          if (wav.size < 4096) continue;
+          const b64 = await blobToBase64(wav);
+          const res = await transcribe({ data: { audioBase64: b64, language: lang } });
+          const text = (res.text ?? "").trim();
+          if (!text) continue;
+          texts.push(text);
+          const chunkDur = chunkSegs.reduce((n, s) => n + (s.end - s.start), 0);
+          allWords.push(...alignWordsToSegments(text, chunkSegs, chunkDur));
+          setTranscript(texts.join(" "));
+          setWords([...allWords]);
+        }
+      } else {
+        const wav = encodeWav16k(buffer!);
+        if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
+        const b64 = await blobToBase64(wav);
+        const res = await transcribe({ data: { audioBase64: b64, language: lang } });
+        const text = (res.text ?? "").trim();
+        if (text) {
+          texts.push(text);
+          allWords.push(...alignWordsToSegments(text, segs, buffer!.duration));
+        }
+      }
+
+      if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
+      setTranscript(texts.join(" "));
+      setWords(allWords);
       setCaptionsOn(true);
       setRemoveSilence(true);
       toast.success("สร้างซับไตเติล + ตัดช่วงเงียบเรียบร้อย");
@@ -236,6 +266,28 @@ function Studio() {
       toast.error(e instanceof Error ? e.message : "ถอดเสียงไม่สำเร็จ");
     } finally {
       setTranscribing(false);
+    }
+  };
+
+  const exportTrimmedVideo = async () => {
+    if (!videoUrl || !segments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    setRendering(true);
+    const id = toast.loading("กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… 0%");
+    try {
+      const blob = await exportTrimmedWebm(videoUrl, segments, (r) =>
+        toast.loading(`กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… ${Math.round(r * 100)}%`, { id }),
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-nosilence.webm`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success("ได้วิดีโอที่ตัดช่วงเงียบออกแล้ว", { id });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "เรนเดอร์วิดีโอไม่สำเร็จ", { id });
+    } finally {
+      setRendering(false);
     }
   };
 
@@ -461,6 +513,18 @@ function Studio() {
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" variant="secondary" onClick={exportSrt}>
                     <FileDown className="mr-2 h-4 w-4" /> .srt
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => void exportTrimmedVideo()}
+                    disabled={rendering || !segments.length}
+                  >
+                    {rendering ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    วิดีโอตัดช่วงเงียบ .webm
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportXml}>
                     <FileDown className="mr-2 h-4 w-4" /> .xml (timeline)
