@@ -272,6 +272,35 @@ export function StyleControls({ style, onChange, scripts }: Props) {
         </div>
       </Row>
 
+      <Row label={`ความเร็ว Animation — ${(style.animationSpeed ?? 1).toFixed(2)}x`}>
+        <div className="space-y-2">
+          <Slider
+            value={[style.animationSpeed ?? 1]}
+            min={0.25}
+            max={3}
+            step={0.05}
+            onValueChange={([v]) => onChange({ animationSpeed: v ?? 1 })}
+          />
+          <div className="flex gap-2">
+            {[0.5, 1, 1.5, 2, 3].map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onChange({ animationSpeed: s })}
+                className={cn(
+                  "flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                  (style.animationSpeed ?? 1) === s
+                    ? "border-primary bg-primary/15 text-foreground"
+                    : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+        </div>
+      </Row>
+
       <div className="grid grid-cols-2 gap-4">
         <Row label="Background plate">
           <Segmented

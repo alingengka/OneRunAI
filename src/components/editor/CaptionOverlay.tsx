@@ -106,7 +106,7 @@ export function CaptionOverlay({ group, time, style, height }: Props) {
                   : active && (style.highlight !== "none" || isKeyword(word.text));
               const boxed = emphasize && style.highlight === "box";
 
-              const wordProgress = clamp01((time - word.start) / 0.14);
+              const wordProgress = clamp01((time - word.start) / (0.14 / speed));
               let wordTransform: string | undefined;
               if (active && anim === "flip") {
                 wordTransform = `perspective(600px) rotateX(${(1 - wordProgress) * 80}deg)`;
@@ -131,7 +131,8 @@ export function CaptionOverlay({ group, time, style, height }: Props) {
                         ? style.highlightColor
                         : undefined,
                     transform: wordTransform,
-                    transition: anim === "none" ? undefined : "color 80ms linear",
+                    transition:
+                      anim === "none" ? undefined : `color ${Math.round(80 / speed)}ms linear`,
                   }}
                 >
                   {word.text}
