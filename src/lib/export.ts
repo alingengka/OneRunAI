@@ -93,9 +93,16 @@ export function download(filename: string, content: string, type = "text/plain")
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 2000);
 }
+
 
 /** Final Cut Pro XML with the kept (non-silent) segments as a cut timeline.
  *  CapCut desktop / Premiere / Resolve can import this to get the same cuts. */

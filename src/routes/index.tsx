@@ -53,6 +53,9 @@ import {
   mapToTrimmed,
 } from "@/lib/export";
 import { transcribeAudio } from "@/lib/transcribe.functions";
+import { translateLines } from "@/lib/translate.functions";
+import { clearProject, loadProject, saveProject } from "@/lib/project-store";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -95,8 +98,10 @@ function fmt(t: number) {
 
 function Studio() {
   const transcribe = useServerFn(transcribeAudio);
+  const translate = useServerFn(translateLines);
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
 
@@ -120,6 +125,9 @@ function Studio() {
   const [analyzing, setAnalyzing] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [rendering, setRendering] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
+
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
 
@@ -211,6 +219,91 @@ function Studio() {
     const r = await analyze(f, threshold, minSilence).catch(() => undefined);
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
+
+  // ── บันทึกงานอัตโนมัติ (ช่วงที่ตัด + ซับที่แก้แล้ว) ก่อนปิดหน้า ──────────
+  useEffect(() => {
+    setSavedInfo(loadProject());
+  }, []);
+
+  const snapshot = useCallback(
+    () => ({
+      fileName: file?.name ?? "clip",
+      duration,
+      segments,
+      words,
+      transcript,
+      style,
+      languages,
+      threshold,
+      minSilence,
+    }),
+    [file, duration, segments, words, transcript, style, languages, threshold, minSilence],
+  );
+
+  useEffect(() => {
+    if (!segments.length && !words.length) return;
+    const t = setTimeout(() => saveProject(snapshot()), 800);
+    return () => clearTimeout(t);
+  }, [snapshot, segments.length, words.length]);
+
+  useEffect(() => {
+    const onLeave = () => {
+      if (segments.length || words.length) saveProject(snapshot());
+    };
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [snapshot, segments.length, words.length]);
+
+  const restoreProject = () => {
+    const p = loadProject();
+    if (!p) { toast.error("ไม่มีงานที่บันทึกไว้"); return; }
+    setSegments(p.segments);
+    setWords(p.words);
+    setTranscript(p.transcript);
+    setStyle(p.style);
+    setLanguages((p.languages as LangCode[]).length ? (p.languages as LangCode[]) : ["th"]);
+    setThreshold(p.threshold);
+    setMinSilence(p.minSilence);
+    setDuration((d) => d || p.duration);
+    setRemoveSilence(true);
+    setCaptionsOn(true);
+    toast.success(`โหลดงานที่บันทึกไว้ (${p.fileName}) แล้ว — อัปโหลดคลิปเดิมเพื่อดูพรีวิว`);
+  };
+
+  // ── แปลซับเป็นภาษาอื่น (คงเวลาเดิม) ─────────────────────────────────────
+  const translateCaptions = async (target: LangCode) => {
+    if (!words.length) { toast.error("ยังไม่มีซับให้แปล"); return; }
+    setTranslating(true);
+    const id = toast.loading("กำลังแปลซับ…");
+    try {
+      const src = groupWords(words, style.wordsPerGroup);
+      const lines = src.map((g) => g.words.map((w) => w.text).join(" "));
+      const out: Word[] = [];
+      const size = 40;
+      const translated: string[] = [];
+      for (let i = 0; i < lines.length; i += size) {
+        const res = await translate({ data: { lines: lines.slice(i, i + size), target } });
+        translated.push(...res.lines);
+      }
+      src.forEach((g, i) => {
+        const segsForGroup = [{ start: g.start, end: g.end }];
+        out.push(...alignWordsToSegments(translated[i] ?? "", segsForGroup, g.end - g.start));
+      });
+      if (!out.length) throw new Error("แปลไม่สำเร็จ");
+      setWords(out);
+      setTranscript(translated.join(" "));
+      const lang = LANGUAGES.find((l) => l.code === target);
+      if (lang) setStyle((s) => ({ ...s, fontFamily: lang.font }));
+      setLanguages([target]);
+      toast.success(`แปลซับเป็น ${lang?.label ?? target} แล้ว`, { id });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "แปลไม่สำเร็จ", { id });
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+
 
   const runTranscribe = async () => {
     if (!file) { toast.error("อัปโหลดคลิปก่อน"); return; }
@@ -344,7 +437,7 @@ function Studio() {
     if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     const v = videoRef.current;
     download(
-      `${file?.name ?? "clip"}.xml`,
+      `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-timeline.xml`,
       buildFcpxml({
         clipName: file?.name ?? "clip",
         duration,
@@ -506,7 +599,51 @@ function Studio() {
               </div>
 
               <div className="rounded-xl border border-border p-4">
+
+                <p className="mb-1 text-sm font-medium">แปลซับด้วย AI</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  แปลข้อความซับเป็นภาษาอื่นโดยคงจังหวะเวลาเดิม
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGES.map((l) => (
+                    <Button
+                      key={l.code}
+                      size="sm"
+                      variant="secondary"
+                      disabled={translating || !words.length}
+                      onClick={() => void translateCaptions(l.code)}
+                    >
+                      {translating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      แปลเป็น {l.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border p-4">
+                <p className="mb-1 text-sm font-medium">งานที่บันทึกไว้</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  {savedInfo
+                    ? `บันทึกล่าสุด: ${savedInfo.fileName} · ${new Date(savedInfo.savedAt).toLocaleString()}`
+                    : "ระบบจะบันทึกช่วงที่ตัดและซับที่แก้ไว้อัตโนมัติก่อนปิดหน้า"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => { saveProject(snapshot()); setSavedInfo(loadProject()); toast.success("บันทึกงานแล้ว"); }}>
+                    บันทึกตอนนี้
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={restoreProject}>
+                    โหลดงานกลับ
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { clearProject(); setSavedInfo(null); toast.success("ลบงานที่บันทึกแล้ว"); }}>
+                    ล้างงานที่บันทึก
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border p-4">
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
+
+
                 <p className="mb-3 text-xs text-muted-foreground">
                   นำไฟล์ต้นฉบับเข้า CapCut แล้วลาก .srt เพื่อได้ซับ และใช้ cut list เพื่อตัดช่วงเงียบตามเวลา
                 </p>
