@@ -98,7 +98,8 @@ function fmt(t: number) {
 
 function Studio() {
   const transcribe = useServerFn(transcribeAudio);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const translate = useServerFn(translateLines);
+
   const frameRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
