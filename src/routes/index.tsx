@@ -53,6 +53,9 @@ import {
   mapToTrimmed,
 } from "@/lib/export";
 import { transcribeAudio } from "@/lib/transcribe.functions";
+import { translateLines } from "@/lib/translate.functions";
+import { clearProject, loadProject, saveProject } from "@/lib/project-store";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
