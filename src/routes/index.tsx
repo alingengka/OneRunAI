@@ -437,7 +437,7 @@ function Studio() {
     if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     const v = videoRef.current;
     download(
-      `${file?.name ?? "clip"}.xml`,
+      `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-timeline.xml`,
       buildFcpxml({
         clipName: file?.name ?? "clip",
         duration,
@@ -599,7 +599,49 @@ function Studio() {
               </div>
 
               <div className="rounded-xl border border-border p-4">
+              <div className="rounded-xl border border-border p-4">
+                <p className="mb-1 text-sm font-medium">แปลซับด้วย AI</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  แปลข้อความซับเป็นภาษาอื่นโดยคงจังหวะเวลาเดิม
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGES.map((l) => (
+                    <Button
+                      key={l.code}
+                      size="sm"
+                      variant="secondary"
+                      disabled={translating || !words.length}
+                      onClick={() => void translateCaptions(l.code)}
+                    >
+                      {translating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      แปลเป็น {l.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border p-4">
+                <p className="mb-1 text-sm font-medium">งานที่บันทึกไว้</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  {savedInfo
+                    ? `บันทึกล่าสุด: ${savedInfo.fileName} · ${new Date(savedInfo.savedAt).toLocaleString()}`
+                    : "ระบบจะบันทึกช่วงที่ตัดและซับที่แก้ไว้อัตโนมัติก่อนปิดหน้า"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => { saveProject(snapshot()); setSavedInfo(loadProject()); toast.success("บันทึกงานแล้ว"); }}>
+                    บันทึกตอนนี้
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={restoreProject}>
+                    โหลดงานกลับ
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { clearProject(); setSavedInfo(null); toast.success("ลบงานที่บันทึกแล้ว"); }}>
+                    ล้างงานที่บันทึก
+                  </Button>
+                </div>
+              </div>
+
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
+
                 <p className="mb-3 text-xs text-muted-foreground">
                   นำไฟล์ต้นฉบับเข้า CapCut แล้วลาก .srt เพื่อได้ซับ และใช้ cut list เพื่อตัดช่วงเงียบตามเวลา
                 </p>
