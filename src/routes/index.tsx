@@ -640,7 +640,9 @@ function Studio() {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-border p-4">
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
+
 
                 <p className="mb-3 text-xs text-muted-foreground">
                   นำไฟล์ต้นฉบับเข้า CapCut แล้วลาก .srt เพื่อได้ซับ และใช้ cut list เพื่อตัดช่วงเงียบตามเวลา
