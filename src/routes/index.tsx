@@ -99,8 +99,9 @@ function fmt(t: number) {
 function Studio() {
   const transcribe = useServerFn(transcribeAudio);
   const translate = useServerFn(translateLines);
-
+  const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
 
@@ -124,6 +125,9 @@ function Studio() {
   const [analyzing, setAnalyzing] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [rendering, setRendering] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
+
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
 
