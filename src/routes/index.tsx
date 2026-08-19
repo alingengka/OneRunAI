@@ -220,6 +220,91 @@ function Studio() {
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
 
+  // ── บันทึกงานอัตโนมัติ (ช่วงที่ตัด + ซับที่แก้แล้ว) ก่อนปิดหน้า ──────────
+  useEffect(() => {
+    setSavedInfo(loadProject());
+  }, []);
+
+  const snapshot = useCallback(
+    () => ({
+      fileName: file?.name ?? "clip",
+      duration,
+      segments,
+      words,
+      transcript,
+      style,
+      languages,
+      threshold,
+      minSilence,
+    }),
+    [file, duration, segments, words, transcript, style, languages, threshold, minSilence],
+  );
+
+  useEffect(() => {
+    if (!segments.length && !words.length) return;
+    const t = setTimeout(() => saveProject(snapshot()), 800);
+    return () => clearTimeout(t);
+  }, [snapshot, segments.length, words.length]);
+
+  useEffect(() => {
+    const onLeave = () => {
+      if (segments.length || words.length) saveProject(snapshot());
+    };
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, [snapshot, segments.length, words.length]);
+
+  const restoreProject = () => {
+    const p = loadProject();
+    if (!p) { toast.error("ไม่มีงานที่บันทึกไว้"); return; }
+    setSegments(p.segments);
+    setWords(p.words);
+    setTranscript(p.transcript);
+    setStyle(p.style);
+    setLanguages((p.languages as LangCode[]).length ? (p.languages as LangCode[]) : ["th"]);
+    setThreshold(p.threshold);
+    setMinSilence(p.minSilence);
+    setDuration((d) => d || p.duration);
+    setRemoveSilence(true);
+    setCaptionsOn(true);
+    toast.success(`โหลดงานที่บันทึกไว้ (${p.fileName}) แล้ว — อัปโหลดคลิปเดิมเพื่อดูพรีวิว`);
+  };
+
+  // ── แปลซับเป็นภาษาอื่น (คงเวลาเดิม) ─────────────────────────────────────
+  const translateCaptions = async (target: LangCode) => {
+    if (!words.length) { toast.error("ยังไม่มีซับให้แปล"); return; }
+    setTranslating(true);
+    const id = toast.loading("กำลังแปลซับ…");
+    try {
+      const src = groupWords(words, style.wordsPerGroup);
+      const lines = src.map((g) => g.words.map((w) => w.text).join(" "));
+      const out: Word[] = [];
+      const size = 40;
+      const translated: string[] = [];
+      for (let i = 0; i < lines.length; i += size) {
+        const res = await translate({ data: { lines: lines.slice(i, i + size), target } });
+        translated.push(...res.lines);
+      }
+      src.forEach((g, i) => {
+        const segsForGroup = [{ start: g.start, end: g.end }];
+        out.push(...alignWordsToSegments(translated[i] ?? "", segsForGroup, g.end - g.start));
+      });
+      if (!out.length) throw new Error("แปลไม่สำเร็จ");
+      setWords(out);
+      setTranscript(translated.join(" "));
+      const lang = LANGUAGES.find((l) => l.code === target);
+      if (lang) setStyle((s) => ({ ...s, fontFamily: lang.font }));
+      setLanguages([target]);
+      toast.success(`แปลซับเป็น ${lang?.label ?? target} แล้ว`, { id });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "แปลไม่สำเร็จ", { id });
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+
+
   const runTranscribe = async () => {
     if (!file) { toast.error("อัปโหลดคลิปก่อน"); return; }
     setTranscribing(true);
