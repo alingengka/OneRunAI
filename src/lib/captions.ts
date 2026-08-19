@@ -409,20 +409,33 @@ export function tokenizeWords(text: string): string[] {
   return out;
 }
 
-/** Spread transcript words across detected speech segments, weighted by word length. */
+/** Rough spoken-duration weight of a token (syllable-ish), so subs match speech better. */
+function speechWeight(token: string): number {
+  if (THAI_LAO.test(token)) {
+    // Thai/Lao: count consonants (vowel marks/tone marks are non-spacing)
+    const consonants = token.replace(/[\u0e30-\u0e3a\u0e47-\u0e4e\u0eb0-\u0ebc\u0ec8-\u0ecd]/g, "");
+    return Math.max(1, consonants.length * 0.75);
+  }
+  const vowels = token.toLowerCase().match(/[aeiouy]+/g)?.length ?? 0;
+  const syllables = Math.max(1, vowels);
+  return syllables + token.length * 0.15;
+}
+
+/** Spread transcript words across detected speech segments, weighted by spoken length. */
 export function alignWordsToSegments(text: string, segments: Segment[], duration: number): Word[] {
   const tokens = tokenizeWords(text);
   if (tokens.length === 0) return [];
   const segs = segments.length ? segments : [{ start: 0, end: duration }];
   const totalSpeech = segs.reduce((sum, s) => sum + (s.end - s.start), 0);
-  const totalChars = tokens.reduce((sum, t) => sum + t.length + 1, 0);
+  const weights = tokens.map(speechWeight);
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0) || 1;
 
   const words: Word[] = [];
   let segIndex = 0;
   let cursor = segs[0]?.start ?? 0;
 
-  for (const token of tokens) {
-    let need = ((token.length + 1) / totalChars) * totalSpeech;
+  tokens.forEach((token, i) => {
+    let need = (weights[i]! / totalWeight) * totalSpeech;
     const start = cursor;
     while (need > 0 && segIndex < segs.length) {
       const seg = segs[segIndex]!;
@@ -437,9 +450,10 @@ export function alignWordsToSegments(text: string, segments: Segment[], duration
       }
     }
     words.push({ text: token, start, end: Math.max(start + 0.08, cursor) });
-  }
+  });
   return words;
 }
+
 
 export function groupWords(words: Word[], perGroup: number): CaptionGroup[] {
   const size = Math.max(1, Math.min(8, Math.round(perGroup)));
