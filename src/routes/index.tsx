@@ -599,7 +599,7 @@ function Studio() {
               </div>
 
               <div className="rounded-xl border border-border p-4">
-              <div className="rounded-xl border border-border p-4">
+
                 <p className="mb-1 text-sm font-medium">แปลซับด้วย AI</p>
                 <p className="mb-3 text-xs text-muted-foreground">
                   แปลข้อความซับเป็นภาษาอื่นโดยคงจังหวะเวลาเดิม
