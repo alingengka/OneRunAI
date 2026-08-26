@@ -30,48 +30,78 @@ export async function decodeAudioFromFile(file: File | Blob): Promise<AudioBuffe
 /** Returns speech segments (non-silent parts) of the buffer. */
 export function detectSpeechSegments(buffer: AudioBuffer, opts: SilenceOptions): Segment[] {
   const sr = buffer.sampleRate;
-  const win = Math.max(256, Math.floor(sr * 0.02)); // 20ms
+  const win = Math.max(256, Math.floor(sr * 0.025)); // 25ms analysis window
+  const hop = Math.max(128, Math.floor(sr * 0.01)); // 10ms hop (overlapping)
   const frames: number[] = [];
 
-  for (let i = 0; i < buffer.length; i += win) {
+  for (let i = 0; i + 1 < buffer.length; i += hop) {
     let sum = 0;
+    let count = 0;
     const end = Math.min(i + win, buffer.length);
     for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
       const data = buffer.getChannelData(channel);
+      let previous = data[Math.max(0, i - 1)] ?? 0;
       for (let j = i; j < end; j++) {
         const v = data[j] ?? 0;
-        sum += v * v;
+        // simple pre-emphasis so low-frequency room rumble is not read as speech
+        const hp = v - previous * 0.95;
+        previous = v;
+        sum += hp * hp;
+        count++;
       }
     }
-    const rms = Math.sqrt(sum / Math.max(1, (end - i) * buffer.numberOfChannels));
-    frames.push(rms);
+    frames.push(Math.sqrt(sum / Math.max(1, count)));
   }
 
   if (!frames.length) return [];
-  const sorted = [...frames].sort((a, b) => a - b);
-  const noiseFloor = sorted[Math.floor(sorted.length * 0.2)] ?? 1e-8;
-  const speechLevel = sorted[Math.floor(sorted.length * 0.9)] ?? noiseFloor;
+
+  // smooth the energy envelope so single noisy frames do not toggle the gate
+  const smooth = frames.map((_, i) => {
+    let sum = 0;
+    let n = 0;
+    for (let k = Math.max(0, i - 2); k <= Math.min(frames.length - 1, i + 2); k++) {
+      sum += frames[k] ?? 0;
+      n++;
+    }
+    return sum / Math.max(1, n);
+  });
+
+  const sorted = [...smooth].sort((a, b) => a - b);
+  const noiseFloor = sorted[Math.floor(sorted.length * 0.15)] ?? 1e-8;
+  const speechLevel = sorted[Math.floor(sorted.length * 0.92)] ?? noiseFloor;
   const relative = speechLevel * Math.pow(10, opts.thresholdDb / 20);
-  const threshold = Math.max(noiseFloor * 2.2, relative, 0.00008);
-  const frameDur = win / sr;
+  // hysteresis: open the gate on a clear level, close it only well below
+  const openLevel = Math.max(noiseFloor * 2.4, relative, 0.00008);
+  const closeLevel = Math.max(noiseFloor * 1.5, openLevel * 0.55);
+
+  const frameDur = hop / sr;
+  const releaseFrames = Math.max(1, Math.round(opts.minSilence / frameDur));
+  const attackFrames = 2; // need ~20ms above the gate to start a segment
+
   const segments: Segment[] = [];
   let current: Segment | null = null;
-  let silenceStart: number | null = null;
+  let aboveRun = 0;
+  let belowRun = 0;
 
-  frames.forEach((rms, index) => {
+  smooth.forEach((rms, index) => {
     const t = index * frameDur;
-    if (rms >= threshold) {
-      if (!current) current = { start: t, end: Math.min(buffer.duration, t + frameDur) };
-      else current.end = Math.min(buffer.duration, t + frameDur);
-      silenceStart = null;
-    } else if (current) {
-      if (silenceStart === null) silenceStart = t;
-      const silenceLen = t + frameDur - silenceStart;
-      if (silenceLen >= opts.minSilence) {
-        current.end = silenceStart;
-        segments.push(current);
-        current = null;
-        silenceStart = null;
+    if (rms >= openLevel || (current && rms >= closeLevel)) {
+      aboveRun++;
+      belowRun = 0;
+      if (!current && aboveRun >= attackFrames) {
+        current = { start: Math.max(0, t - attackFrames * frameDur), end: t + frameDur };
+      } else if (current) {
+        current.end = Math.min(buffer.duration, t + frameDur);
+      }
+    } else {
+      aboveRun = 0;
+      if (current) {
+        belowRun++;
+        if (belowRun >= releaseFrames) {
+          segments.push(current);
+          current = null;
+          belowRun = 0;
+        }
       }
     }
   });
@@ -89,8 +119,9 @@ export function detectSpeechSegments(buffer: AudioBuffer, opts: SilenceOptions):
       else acc.push({ ...s });
       return acc;
     }, [])
-    .filter((s) => s.end - s.start > 0.08);
+    .filter((s) => s.end - s.start > 0.12);
 }
+
 
 /**
  * Prevent choppy edits by joining tiny pauses (breaths and gaps between words)
