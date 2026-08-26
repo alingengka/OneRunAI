@@ -521,84 +521,99 @@ function Studio() {
     }
   };
 
-  const exportTrimmedVideo = async () => {
-    if (!videoUrl || !segments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+  /** ตัวช่วยจัดการงานเรนเดอร์: มีสถานะ % และปุ่มยกเลิกจริง */
+  const runJob = async (label: string, work: (signal: AbortSignal, onProgress: (r: number) => void) => Promise<void>) => {
+    const controller = new AbortController();
+    jobAbort.current = controller;
     setRendering(true);
-    const id = toast.loading("กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… 0%");
+    setJob({ label, ratio: 0 });
     try {
-      const blob = await exportTrimmedWebm(
-        videoUrl,
-        segments,
-        (r) => toast.loading(`กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… ${Math.round(r * 100)}%`, { id }),
-        { noiseReduction, smoothCuts: true },
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-nosilence.webm`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast.success("ได้วิดีโอที่ตัดช่วงเงียบออกแล้ว", { id });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "เรนเดอร์วิดีโอไม่สำเร็จ", { id });
+      await work(controller.signal, (r) => setJob({ label, ratio: Math.max(0, Math.min(1, r)) }));
+      if (!controller.signal.aborted) play("success");
+    } catch (error) {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        toast.message("ยกเลิกงานแล้ว");
+      } else {
+        toast.error(error instanceof Error ? error.message : "ทำงานไม่สำเร็จ");
+        play("error");
+      }
     } finally {
+      jobAbort.current = null;
+      setJob(null);
       setRendering(false);
     }
+  };
+
+  const cancelJob = () => {
+    jobAbort.current?.abort();
+  };
+
+  const saveBlob = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+
+  const baseName = () => (file?.name ?? "clip").replace(/\.[^.]+$/, "");
+
+  const exportTrimmedVideo = () => {
+    if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    void runJob("ตัดช่วงเงียบและเรนเดอร์วิดีโอ", async (signal, onProgress) => {
+      const blob = await exportTrimmedWebm(videoUrl, [...keepSegments], onProgress, {
+        noiseReduction,
+        smoothCuts: true,
+        signal,
+      });
+      if (signal.aborted) return;
+      saveBlob(blob, `${baseName()}-nosilence.webm`);
+      toast.success("ได้วิดีโอที่ตัดช่วงเงียบออกแล้ว");
+    });
   };
 
   /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
-  const exportFinalVideo = async () => {
-    if (!videoUrl || !segments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
-    setRendering(true);
-    const id = toast.loading("กำลังเรนเดอร์วิดีโอพร้อมซับ… 0%");
-    try {
+  const exportFinalVideo = () => {
+    if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
       const { blob, ext } = await exportBurnedVideo(
         videoUrl,
-        [...segments],
+        [...keepSegments],
         [...groups],
         style,
-        (r) => toast.loading(`กำลังเรนเดอร์วิดีโอพร้อมซับ… ${Math.round(r * 100)}%`, { id }),
-        { noiseReduction, smoothCuts: true, captions: captionsOn },
+        onProgress,
+        { noiseReduction, smoothCuts: true, captions: captionsOn, signal },
       );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-final.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast.success("ได้วิดีโอพร้อมโพสต์แล้ว (ซับฝังในภาพ)", { id });
-      play("success");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "เรนเดอร์วิดีโอไม่สำเร็จ", { id });
-      play("error");
-    } finally {
-      setRendering(false);
-    }
+      if (signal.aborted) return;
+      saveBlob(blob, `${baseName()}-final.${ext}`);
+      toast.success("ได้วิดีโอพร้อมโพสต์แล้ว (ซับฝังในภาพ)");
+    });
   };
 
-
-  const exportCapCutPackage = async () => {
-    if (!videoUrl || !segments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
-    setRendering(true);
-    const id = toast.loading("กำลังสร้าง CapCut Package…");
-    try {
-      const video = await exportTrimmedWebm(videoUrl, [...segments], (ratio) => toast.loading(`กำลังสร้าง CapCut Package… ${Math.round(ratio * 100)}%`, { id }), { noiseReduction, smoothCuts: true });
-      const baseName = (file?.name ?? "clip").replace(/\.[^.]+$/, "");
-      const bundle = await buildCapCutPackage({ baseName, video, duration, keep: [...segments], removed: [...silences], groups: [...groups] });
-      const url = URL.createObjectURL(bundle);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${baseName}-capcut.zip`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast.success("ดาวน์โหลดวิดีโอ + SRT ที่เวลาแม็ปตรงกันแล้ว", { id });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "สร้าง CapCut Package ไม่สำเร็จ", { id });
-    } finally { setRendering(false); }
+  const exportCapCutPackage = () => {
+    if (!videoUrl || !keepSegments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
+    void runJob("สร้าง CapCut Package", async (signal, onProgress) => {
+      const video = await exportTrimmedWebm(videoUrl, [...keepSegments], (r) => onProgress(r * 0.9), {
+        noiseReduction,
+        smoothCuts: true,
+        signal,
+      });
+      if (signal.aborted) return;
+      const bundle = await buildCapCutPackage({
+        baseName: baseName(),
+        video,
+        duration,
+        keep: [...keepSegments],
+        removed: [...silences],
+        groups: [...groups],
+      });
+      onProgress(1);
+      saveBlob(bundle, `${baseName()}-capcut.zip`);
+      toast.success("ดาวน์โหลดวิดีโอ + SRT ที่เวลาแม็ปตรงกันแล้ว");
+    });
   };
 
 
