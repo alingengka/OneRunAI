@@ -111,6 +111,8 @@ export async function exportBurnedVideo(
     });
 
   let audioContext: AudioContext | null = null;
+  let outputStream: MediaStream | null = null;
+  let recorder: MediaRecorder | null = null;
 
   try {
     await waitFor("loadedmetadata");
@@ -126,6 +128,7 @@ export async function exportBurnedVideo(
     if (!ctx) throw new Error("เบราว์เซอร์นี้ไม่รองรับการเรนเดอร์วิดีโอ");
 
     const stream = canvas.captureStream(30);
+    outputStream = stream;
 
     // Audio: route the element through Web Audio so we can clean and fade it.
     audioContext = new AudioContext();
@@ -147,13 +150,13 @@ export async function exportBurnedVideo(
     const mimeType = pickMime();
     const chunks: BlobPart[] = [];
     const bitrate = Math.min(16_000_000, Math.max(4_000_000, Math.round(width * height * 0.14)));
-    const recorder = new MediaRecorder(stream, {
+    recorder = new MediaRecorder(stream, {
       mimeType,
       videoBitsPerSecond: bitrate,
       audioBitsPerSecond: 128_000,
     });
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-    const done = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
+    const done = new Promise<void>((resolve) => { if (recorder) recorder.onstop = () => resolve(); });
 
 
     const drawCaption = (time: number) => {
@@ -353,6 +356,8 @@ export async function exportBurnedVideo(
   } finally {
     video.pause();
     video.remove();
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    outputStream?.getTracks().forEach((track) => track.stop());
     if (audioContext) void audioContext.close();
   }
 }

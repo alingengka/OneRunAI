@@ -518,14 +518,14 @@ function Studio() {
 
   const retrySyncIssues = async (issues: SyncIssue[]) => {
     if (!file || !audioBufferRef.current) { toast.error("อัปโหลดคลิปก่อนตรวจซิงก์"); return; }
-    if (!issues.length) { toast.success("เวลาซับเรียงต่อเนื่องดี ไม่พบจุดผิดปกติ"); return; }
+    const lowConfidence = words.flatMap((word, index) => word.confidenceLabel === "low"
+      ? [{ index, start: word.start, end: word.end, reason: "ความมั่นใจต่ำ" }]
+      : []);
+    if (!issues.length && !lowConfidence.length) { toast.success("เวลาซับเรียงต่อเนื่องดี ไม่พบจุดผิดปกติ"); return; }
     setRetryingSync(true);
-    const id = toast.loading(`กำลังลองใหม่ ${issues.length} ช่วง…`);
+    const id = toast.loading(`กำลังลองใหม่ ${new Set([...issues, ...lowConfidence].map((issue) => issue.index)).size} ช่วง…`);
     try {
       let next = [...words];
-      const lowConfidence = words.flatMap((word, index) => word.confidenceLabel === "low"
-        ? [{ index, start: word.start, end: word.end, reason: "ความมั่นใจต่ำ" }]
-        : []);
       const queue = [...issues, ...lowConfidence].filter((issue, index, all) => all.findIndex((candidate) => candidate.index === issue.index) === index);
       for (const issue of queue.slice(0, 12)) {
         const old = next[issue.index];
