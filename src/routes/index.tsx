@@ -977,12 +977,15 @@ function Studio() {
                   time={time}
                   style={style}
                   height={frameHeight}
+                  safeArea={tiktokPreview}
                   onPositionChange={({ posX, posY }) => setStyle((current) => ({ ...current, posX, posY }))}
+                  onEditText={(text) => editActiveGroupText(text)}
                 />
               )}
               {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
-            {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความบนวิดีโอเพื่อย้ายตำแหน่งได้ทันที</p>}
+            {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)</p>}
+
 
             <div className="mt-4 space-y-3">
               <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
