@@ -82,6 +82,9 @@ import type { SoundPack } from "@/lib/audio-system";
 import { addSceneElement, buildScenes, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { StepBar, type Step } from "@/components/editor/StepBar";
+import { AccuracyPanel } from "@/components/editor/AccuracyPanel";
+import { GlossaryManager } from "@/components/editor/GlossaryManager";
+import { applyRulesToWords, parseGlossaryTerms, type LexRule } from "@/lib/lao-glossary";
 
 
 export const Route = createFileRoute("/")({
@@ -105,7 +108,7 @@ export const Route = createFileRoute("/")({
   component: Studio,
 });
 
-type Tab = "tools" | "styles" | "customize" | "text" | "scenes" | "audio" | "export";
+type Tab = "tools" | "styles" | "customize" | "text" | "accuracy" | "scenes" | "audio" | "export";
 
 type LangCode = "th" | "lo" | "en";
 
@@ -143,6 +146,7 @@ function Studio() {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [transcript, setTranscript] = useState("");
   const [glossary, setGlossary] = useState("");
+  const [lexRules, setLexRules] = useState<LexRule[]>([]);
   const [words, setWords] = useState<Word[]>([]);
   const [style, setStyle] = useState<CaptionStyle>(baseStyle);
   const [tab, setTab] = useState<Tab>("tools");
@@ -341,6 +345,7 @@ function Studio() {
       words,
       transcript,
       glossary,
+      lexRules,
       style,
       languages,
       threshold,
@@ -351,7 +356,7 @@ function Studio() {
       projectName,
       sfx,
     }),
-    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, dropped, sceneElements, projectName, sfx],
+    [file, duration, segments, words, transcript, glossary, lexRules, style, languages, threshold, minSilence, noiseReduction, dropped, sceneElements, projectName, sfx],
   );
 
   useEffect(() => {
@@ -375,6 +380,7 @@ function Studio() {
     setWords(p.words);
     setTranscript(p.transcript);
     setGlossary(p.glossary ?? "");
+    setLexRules(p.lexRules ?? []);
     setStyle(p.style);
     setLanguages((p.languages as LangCode[]).length ? (p.languages as LangCode[]) : ["th"]);
     setThreshold(p.threshold);
@@ -461,7 +467,7 @@ function Studio() {
           const wav = encodeSegmentsWav16k(buffer, chunkSegs, false);
           if (wav.size < 4096) continue;
           const b64 = await blobToBase64(wav);
-          const terms = glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40);
+          const terms = parseGlossaryTerms(glossary);
           const res = await transcribe({
             data: { audioBase64: b64, language: lang, context: texts.join(" ").slice(-600), glossary: terms },
           });
@@ -485,7 +491,7 @@ function Studio() {
         const wav = encodeWav16k(buffer);
         if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
         const b64 = await blobToBase64(wav);
-        const res = await transcribe({ data: { audioBase64: b64, language: lang, glossary: glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40) } });
+        const res = await transcribe({ data: { audioBase64: b64, language: lang, glossary: parseGlossaryTerms(glossary) } });
         const text = (res.text ?? "").trim();
         if (text) {
           texts.push(text);
@@ -494,8 +500,10 @@ function Studio() {
       }
 
       if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
-      setTranscript(texts.join(" "));
-      setWords(allWords);
+      const ruled = applyRulesToWords(allWords, lexRules);
+      if (ruled.changed) setLexRules(ruled.rules);
+      setTranscript(wordsToTranscript(ruled.words));
+      setWords(ruled.words);
       setCaptionsOn(true);
       setRemoveSilence(true);
       toast.success("สร้างซับไตเติล + ตัดช่วงเงียบเรียบร้อย");
@@ -540,7 +548,7 @@ function Studio() {
         const wav = encodeSegmentsWav16k(audioBufferRef.current, [region]);
         if (wav.size < 2048) continue;
         const localContext = next.slice(Math.max(0, issue.index - 5), issue.index).map((word) => word.text).join(" ");
-        const terms = glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40);
+        const terms = parseGlossaryTerms(glossary);
         const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th", context: localContext, glossary: terms } });
         const replacements = forcedAlignWords(audioBufferRef.current, [region], res.text ?? old.text, region.end - region.start);
         if (replacements.length) next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
@@ -885,6 +893,7 @@ function Studio() {
                 ["styles", "Caption Style"],
                 ["customize", "Customize"],
                 ["text", "Edit Text"],
+                ["accuracy", "Accuracy"],
                 ["audio", "Audio"],
                 ["export", "Export"],
               ] as [Tab, string][]
