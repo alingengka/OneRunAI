@@ -123,6 +123,8 @@ export const baseStyle: CaptionStyle = {
   animationSpeed: 1,
   plate: false,
   plateColor: "#000000",
+  lineGap: 0.08,
+  lineStyles: {},
 };
 
 export const stylePresets: CaptionStyle[] = [
