@@ -52,6 +52,7 @@ import {
   smoothSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
+import { forcedAlignWords } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo } from "@/lib/media/export-burned";
 
@@ -389,7 +390,7 @@ function Studio() {
           if (!text) continue;
           texts.push(text);
           const chunkDur = chunkSegs.reduce((n, s) => n + (s.end - s.start), 0);
-          allWords.push(...alignWordsToSegments(text, chunkSegs, chunkDur));
+          allWords.push(...forcedAlignWords(buffer, chunkSegs, text, chunkDur));
           setTranscript(texts.join(" "));
           setWords([...allWords]);
         }
@@ -402,7 +403,7 @@ function Studio() {
         const text = (res.text ?? "").trim();
         if (text) {
           texts.push(text);
-          allWords.push(...alignWordsToSegments(text, segs, buffer!.duration));
+          allWords.push(...forcedAlignWords(buffer!, segs, text, buffer!.duration));
         }
       }
 
@@ -449,7 +450,7 @@ function Studio() {
         const wav = encodeSegmentsWav16k(audioBufferRef.current, [region]);
         if (wav.size < 2048) continue;
         const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th" } });
-        const replacements = alignWordsToSegments(res.text ?? old.text, [region], region.end - region.start);
+        const replacements = forcedAlignWords(audioBufferRef.current, [region], res.text ?? old.text, region.end - region.start);
         if (replacements.length) next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
       }
       next.sort((a, b) => a.start - b.start);
@@ -546,7 +547,11 @@ function Studio() {
 
   const applyTranscriptEdit = () => {
     if (!transcript.trim()) { toast.error("ยังไม่มีข้อความ"); return; }
-    setWords(alignWordsToSegments(transcript, segments, duration));
+    setWords(
+      audioBufferRef.current
+        ? forcedAlignWords(audioBufferRef.current, segments, transcript, duration)
+        : alignWordsToSegments(transcript, segments, duration),
+    );
     toast.success("อัปเดตข้อความซับแล้ว");
   };
 
