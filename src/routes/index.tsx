@@ -325,9 +325,10 @@ function Studio() {
       threshold,
       minSilence,
       noiseReduction,
+      dropped,
       sfx,
     }),
-    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, sfx],
+    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, dropped, sfx],
   );
 
   useEffect(() => {
@@ -356,6 +357,7 @@ function Studio() {
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
     setNoiseReduction(p.noiseReduction ?? false);
+    setDropped(p.dropped ?? []);
     if (p.sfx) setSfx(p.sfx);
     setDuration((d) => d || p.duration);
     setRemoveSilence(true);
