@@ -319,7 +319,7 @@ export async function exportBurnedVideo(
         const tick = () => {
           const time = video.currentTime;
           paint(time, seg);
-          if (time >= seg.end || video.ended) {
+          if (options.signal?.aborted || time >= seg.end || video.ended) {
             video.pause();
             resolve();
             return;
