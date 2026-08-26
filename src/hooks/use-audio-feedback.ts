@@ -15,5 +15,6 @@ export function useAudioFeedback() {
     play,
     setVolume: (vol: number) => audioSystem.setVolume(vol),
     setEnabled: (enabled: boolean) => audioSystem.setEnabled(enabled),
+    setPack: (pack: Parameters<typeof audioSystem.setPack>[0]) => audioSystem.setPack(pack),
   };
 }
