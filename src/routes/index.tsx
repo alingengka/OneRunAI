@@ -82,6 +82,10 @@ import type { SoundPack } from "@/lib/audio-system";
 import { addSceneElement, buildScenes, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { StepBar, type Step } from "@/components/editor/StepBar";
+import { AccuracyPanel } from "@/components/editor/AccuracyPanel";
+import { GlossaryManager } from "@/components/editor/GlossaryManager";
+import { applyRulesToWords, parseGlossaryTerms, type LexRule } from "@/lib/lao-glossary";
+import { buildAccuracyReport } from "@/lib/accuracy-report";
 
 
 export const Route = createFileRoute("/")({
@@ -105,7 +109,7 @@ export const Route = createFileRoute("/")({
   component: Studio,
 });
 
-type Tab = "tools" | "styles" | "customize" | "text" | "scenes" | "audio" | "export";
+type Tab = "tools" | "styles" | "customize" | "text" | "accuracy" | "scenes" | "audio" | "export";
 
 type LangCode = "th" | "lo" | "en";
 
@@ -143,6 +147,7 @@ function Studio() {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [transcript, setTranscript] = useState("");
   const [glossary, setGlossary] = useState("");
+  const [lexRules, setLexRules] = useState<LexRule[]>([]);
   const [words, setWords] = useState<Word[]>([]);
   const [style, setStyle] = useState<CaptionStyle>(baseStyle);
   const [tab, setTab] = useState<Tab>("tools");
@@ -341,6 +346,7 @@ function Studio() {
       words,
       transcript,
       glossary,
+      lexRules,
       style,
       languages,
       threshold,
@@ -351,7 +357,7 @@ function Studio() {
       projectName,
       sfx,
     }),
-    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, dropped, sceneElements, projectName, sfx],
+    [file, duration, segments, words, transcript, glossary, lexRules, style, languages, threshold, minSilence, noiseReduction, dropped, sceneElements, projectName, sfx],
   );
 
   useEffect(() => {
@@ -375,6 +381,7 @@ function Studio() {
     setWords(p.words);
     setTranscript(p.transcript);
     setGlossary(p.glossary ?? "");
+    setLexRules(p.lexRules ?? []);
     setStyle(p.style);
     setLanguages((p.languages as LangCode[]).length ? (p.languages as LangCode[]) : ["th"]);
     setThreshold(p.threshold);
@@ -461,7 +468,7 @@ function Studio() {
           const wav = encodeSegmentsWav16k(buffer, chunkSegs, false);
           if (wav.size < 4096) continue;
           const b64 = await blobToBase64(wav);
-          const terms = glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40);
+          const terms = parseGlossaryTerms(glossary);
           const res = await transcribe({
             data: { audioBase64: b64, language: lang, context: texts.join(" ").slice(-600), glossary: terms },
           });
@@ -485,7 +492,7 @@ function Studio() {
         const wav = encodeWav16k(buffer);
         if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
         const b64 = await blobToBase64(wav);
-        const res = await transcribe({ data: { audioBase64: b64, language: lang, glossary: glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40) } });
+        const res = await transcribe({ data: { audioBase64: b64, language: lang, glossary: parseGlossaryTerms(glossary) } });
         const text = (res.text ?? "").trim();
         if (text) {
           texts.push(text);
@@ -494,8 +501,10 @@ function Studio() {
       }
 
       if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
-      setTranscript(texts.join(" "));
-      setWords(allWords);
+      const ruled = applyRulesToWords(allWords, lexRules);
+      if (ruled.changed) setLexRules(ruled.rules);
+      setTranscript(wordsToTranscript(ruled.words));
+      setWords(ruled.words);
       setCaptionsOn(true);
       setRemoveSilence(true);
       toast.success("สร้างซับไตเติล + ตัดช่วงเงียบเรียบร้อย");
@@ -540,7 +549,7 @@ function Studio() {
         const wav = encodeSegmentsWav16k(audioBufferRef.current, [region]);
         if (wav.size < 2048) continue;
         const localContext = next.slice(Math.max(0, issue.index - 5), issue.index).map((word) => word.text).join(" ");
-        const terms = glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40);
+        const terms = parseGlossaryTerms(glossary);
         const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th", context: localContext, glossary: terms } });
         const replacements = forcedAlignWords(audioBufferRef.current, [region], res.text ?? old.text, region.end - region.start);
         if (replacements.length) next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
@@ -554,6 +563,56 @@ function Studio() {
     } finally {
       setRetryingSync(false);
     }
+  };
+
+  /** ถอดเสียงใหม่เฉพาะช่วงเวลาที่เลือก แทนการถอดใหม่ทั้งไฟล์ */
+  const retranscribeRange = async (start: number, end: number) => {
+    const buffer = audioBufferRef.current;
+    if (!buffer) { toast.error("อัปโหลดคลิปก่อนถอดเสียงใหม่"); return; }
+    const region = { start: Math.max(0, start - 0.2), end: Math.min(duration || buffer.duration, end + 0.2) };
+    if (region.end - region.start < 0.25) { toast.error("ช่วงสั้นเกินไป"); return; }
+    setRetryingSync(true);
+    const id = toast.loading(`กำลังถอดเสียงใหม่ ${region.start.toFixed(1)}s – ${region.end.toFixed(1)}s…`);
+    try {
+      const wav = encodeSegmentsWav16k(buffer, [region], false);
+      if (wav.size < 2048) throw new Error("เสียงในช่วงนี้น้อยเกินไป");
+      const before = words.filter((word) => word.end <= region.start);
+      const after = words.filter((word) => word.start >= region.end);
+      const context = before.slice(-8).map((word) => word.text).join(" ");
+      const res = await transcribe({
+        data: {
+          audioBase64: await blobToBase64(wav),
+          language: languages[0] ?? "th",
+          context,
+          glossary: parseGlossaryTerms(glossary),
+        },
+      });
+      const text = (res.text ?? "").trim();
+      if (!text) throw new Error("ไม่พบคำพูดในช่วงนี้");
+      const aligned = forcedAlignWords(buffer, [region], text, region.end - region.start).map((word) => {
+        const acoustic = word.confidence ?? 0.5;
+        const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
+        return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
+      });
+      const ruled = applyRulesToWords([...before, ...aligned, ...after].sort((a, b) => a.start - b.start), lexRules);
+      if (ruled.changed) setLexRules(ruled.rules);
+      setWords(ruled.words);
+      setTranscript(wordsToTranscript(ruled.words));
+      toast.success(`ถอดเสียงใหม่ ${aligned.length} คำในช่วงนี้แล้ว`, { id });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "ถอดเสียงใหม่ไม่สำเร็จ", { id });
+    } finally {
+      setRetryingSync(false);
+    }
+  };
+
+  /** ถอดใหม่ทุกช่วงที่ความมั่นใจต่ำหรือ alignment เพี้ยน */
+  const retranscribeWeakSpots = async () => {
+    const report = buildAccuracyReport(words, segments, duration, languages[0] ?? "th");
+    const weak = report.spans.filter((span) => span.low > 0 || span.review > 1).slice(0, 8);
+    if (!weak.length) { toast.success("ไม่พบช่วงที่ต้องถอดใหม่"); return; }
+    for (const span of weak) await retranscribeRange(span.start, span.end);
+    toast.success(`ถอดใหม่ ${weak.length} ช่วงที่อ่อนแล้ว`);
   };
 
   /** ตัวช่วยจัดการงานเรนเดอร์: มีสถานะ % และปุ่มยกเลิกจริง */
@@ -885,6 +944,7 @@ function Studio() {
                 ["styles", "Caption Style"],
                 ["customize", "Customize"],
                 ["text", "Edit Text"],
+                ["accuracy", "Accuracy"],
                 ["audio", "Audio"],
                 ["export", "Export"],
               ] as [Tab, string][]
@@ -1248,6 +1308,36 @@ function Studio() {
                   {words.length} คำ · {groups.length} บล็อก
                 </span>
               </div>
+              </div>
+            </div>
+          )}
+
+          {tab === "accuracy" && (
+            <div className="space-y-8">
+              <AccuracyPanel
+                words={words}
+                segments={segments}
+                duration={duration}
+                language={languages[0] ?? "th"}
+                busy={retryingSync}
+                onPreview={previewRange}
+                onRetranscribe={(start, end) => void retranscribeRange(start, end)}
+                onRetranscribeAllWeak={() => void retranscribeWeakSpots()}
+              />
+              <div className="border-t border-border pt-6">
+                <GlossaryManager
+                  glossary={glossary}
+                  rules={lexRules}
+                  onGlossaryChange={setGlossary}
+                  onRulesChange={setLexRules}
+                  onApplyNow={() => {
+                    const ruled = applyRulesToWords(words, lexRules);
+                    setLexRules(ruled.rules);
+                    setWords(ruled.words);
+                    setTranscript(wordsToTranscript(ruled.words));
+                    toast.success(ruled.changed ? `แก้คำตามกฎ ${ruled.changed} จุด` : "ไม่พบคำที่ต้องแก้ตามกฎ");
+                  }}
+                />
               </div>
             </div>
           )}
