@@ -74,6 +74,9 @@ import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
+import { buildScenes } from "@/lib/scenes";
+import { ScenesPanel } from "@/components/editor/ScenesPanel";
+import { StepBar, type Step } from "@/components/editor/StepBar";
 
 
 export const Route = createFileRoute("/")({
