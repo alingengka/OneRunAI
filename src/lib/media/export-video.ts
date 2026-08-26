@@ -142,7 +142,7 @@ export async function exportTrimmedWebm(
         let stalled = 0;
         const tick = () => {
           const time = video.currentTime;
-          if (time >= seg.end || video.ended) {
+          if (options.signal?.aborted || time >= seg.end || video.ended) {
             video.pause();
             resolve();
             return;
