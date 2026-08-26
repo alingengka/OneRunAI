@@ -675,31 +675,30 @@ function Studio() {
   };
 
   const remap = useCallback(
-    (t: number) => (removeSilence && segments.length ? mapToTrimmed(t, segments) : t),
-    [removeSilence, segments],
+    (t: number) => (removeSilence && keepSegments.length ? mapToTrimmed(t, keepSegments) : t),
+    [removeSilence, keepSegments],
   );
 
   const exportSrt = () => {
     if (!groups.length) { toast.error("ยังไม่มีซับไตเติล"); return; }
-    const baseName = (file?.name ?? "clip").replace(/\.[^.]+$/, "");
-    download(`${baseName}-captions.srt`, buildSrt(groups, remap), "application/x-subrip");
+    download(`${baseName()}-captions.srt`, buildSrt(groups, remap), "application/x-subrip");
     play("pop");
     toast.success("ดาวน์โหลด .srt แล้ว — ลากเข้า CapCut ได้เลย");
   };
   const exportEdl = () => {
-    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
-    download(`${file?.name ?? "clip"}.edl`, buildEdl(segments, file?.name ?? "clip"));
+    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    download(`${file?.name ?? "clip"}.edl`, buildEdl(keepSegments, file?.name ?? "clip"));
     play("pop");
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
   const exportJson = () => {
-    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     download(
       `${file?.name ?? "clip"}.capcut.json`,
       buildCutListJson({
         clipName: file?.name ?? "clip",
         duration,
-        keep: segments,
+        keep: keepSegments,
         removed: silences,
         groups,
       }),
@@ -708,14 +707,14 @@ function Studio() {
     toast.success("ดาวน์โหลดไฟล์ cut list แล้ว");
   };
   const exportXml = () => {
-    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     const v = videoRef.current;
     download(
-      `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-timeline.xml`,
+      `${baseName()}-timeline.xml`,
       buildFcpxml({
         clipName: file?.name ?? "clip",
         duration,
-        keep: segments,
+        keep: keepSegments,
         width: v?.videoWidth || 1080,
         height: v?.videoHeight || 1920,
       }),
@@ -723,6 +722,50 @@ function Studio() {
     );
     toast.success("ดาวน์โหลด .xml (timeline ตัดช่วงเงียบ) แล้ว");
   };
+
+  const seekTo = (t: number) => {
+    const v = videoRef.current;
+    if (v) { v.currentTime = Math.max(0, t); setTime(v.currentTime); }
+  };
+
+  const steps: Step[] = [
+    {
+      key: "tools",
+      label: "1 · อัปโหลด",
+      hint: file ? file.name : "เลือกไฟล์วิดีโอ/เสียง",
+      state: analyzing ? "busy" : file ? "done" : tab === "tools" ? "active" : "todo",
+    },
+    {
+      key: "tools",
+      label: "2 · AI ซับ + ตัดเงียบ",
+      hint: words.length ? `${words.length} คำ · ตัดออก ${savedSeconds.toFixed(1)}s` : "สร้างซับด้วย AI",
+      state: transcribing ? "busy" : words.length ? "done" : file ? "active" : "todo",
+    },
+    {
+      key: "scenes",
+      label: "3 · ซีน",
+      hint: scenes.length ? `${scenes.length} ซีน · ตัดทิ้ง ${dropped.length}` : "แบ่งคลิปเป็นซีน",
+      state: tab === "scenes" ? "active" : scenes.length ? "done" : "todo",
+    },
+    {
+      key: "styles",
+      label: "4 · สไตล์",
+      hint: style.name,
+      state: tab === "styles" || tab === "customize" ? "active" : words.length ? "done" : "todo",
+    },
+    {
+      key: "text",
+      label: "5 · แก้คำ",
+      hint: accuracy.label,
+      state: retryingSync ? "busy" : tab === "text" ? "active" : words.length ? "done" : "todo",
+    },
+    {
+      key: "export",
+      label: "6 · ส่งออก",
+      hint: rendering ? (job?.label ?? "กำลังเรนเดอร์") : "เรนเดอร์วิดีโอ / CapCut",
+      state: rendering ? "busy" : tab === "export" ? "active" : "todo",
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-background text-foreground">
