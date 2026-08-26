@@ -13,7 +13,7 @@ export function AudioPreview() {
 
   const handleVolumeChange = (val: number[]) => {
     setVol(val);
-    setVolume(val[0] / 100);
+    setVolume((val[0] ?? 50) / 100);
   };
 
   const handleToggle = (checked: boolean) => {
@@ -48,7 +48,7 @@ export function AudioPreview() {
         <div className="space-y-3">
           <div className="flex justify-between text-sm">
             <Label>Master Volume</Label>
-            <span>{volume[0]}%</span>
+            <span>{volume[0] ?? 50}%</span>
           </div>
           <Slider 
             value={volume} 

@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useAudioFeedback } from "@/hooks/use-audio-feedback";
-import { AudioPreview } from "@/components/audio-preview";
 import { toast } from "sonner";
 import {
   Captions,
@@ -98,8 +97,8 @@ function fmt(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
-  const { play } = useAudioFeedback();
 function Studio() {
+  const { play } = useAudioFeedback();
   const transcribe = useServerFn(transcribeAudio);
   const translate = useServerFn(translateLines);
   const videoRef = useRef<HTMLVideoElement>(null);
