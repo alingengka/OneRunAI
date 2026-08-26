@@ -95,10 +95,12 @@ export function WordTimelineEditor({ words, duration, onChange, onPreview, onRet
 
       <div className="flex gap-2">
         <Button size="sm" variant="secondary" disabled={selected.length !== 1 || !active?.text.includes(" ")} onClick={() => {
-          const parts = active?.text.split(/\s+/).filter(Boolean) ?? [];
+          const selectedWord = words[first];
+          if (!selectedWord) return;
+          const parts = selectedWord.text.split(/\s+/).filter(Boolean);
           if (parts.length < 2) return;
-          const span = active.end - active.start;
-          const replacements = parts.map((text, i) => ({ text, start: active.start + span * i / parts.length, end: active.start + span * (i + 1) / parts.length }));
+          const span = selectedWord.end - selectedWord.start;
+          const replacements = parts.map((text, i) => ({ text, start: selectedWord.start + span * i / parts.length, end: selectedWord.start + span * (i + 1) / parts.length }));
           onChange([...words.slice(0, first), ...replacements, ...words.slice(first + 1)]);
           setSelected([]);
         }}><Scissors className="h-3.5 w-3.5" /> แยกคำ</Button>
