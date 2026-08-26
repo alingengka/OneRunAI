@@ -4,7 +4,7 @@ import { z } from "zod";
 export const transcribeAudio = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({
     audioBase64: z.string().min(100),
-    language: z.string().max(5).optional(),
+    language: z.enum(["th", "lo", "en"]).optional(),
   }).parse(data))
   .handler(async ({ data }) => {
     const apiKey = process.env["LOVABLE_API_KEY"];
@@ -14,7 +14,17 @@ export const transcribeAudio = createServerFn({ method: "POST" })
     const form = new FormData();
     form.append("model", "openai/gpt-4o-transcribe");
     form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
-    if (data.language) form.append("language", data.language);
+    // The transcription provider does not accept `lo` in its `language` field.
+    // Guide Lao recognition through the prompt instead, as recommended by the
+    // provider, while retaining its supported ISO codes for Thai and English.
+    if (data.language === "lo") {
+      form.append(
+        "prompt",
+        "The audio is spoken in Lao. Transcribe it accurately in the Lao script and preserve the speaker's original wording.",
+      );
+    } else if (data.language) {
+      form.append("language", data.language);
+    }
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
       method: "POST",
