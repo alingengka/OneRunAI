@@ -146,9 +146,15 @@ export async function exportBurnedVideo(
 
     const mimeType = pickMime();
     const chunks: BlobPart[] = [];
-    const recorder = new MediaRecorder(stream, { mimeType });
+    const bitrate = Math.min(16_000_000, Math.max(4_000_000, Math.round(width * height * 0.14)));
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: bitrate,
+      audioBitsPerSecond: 128_000,
+    });
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     const done = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
+
 
     const drawCaption = (time: number) => {
       if (options.captions === false || !groups.length) return;
