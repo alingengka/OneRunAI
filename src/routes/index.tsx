@@ -523,20 +523,26 @@ function Studio() {
     const id = toast.loading(`กำลังลองใหม่ ${issues.length} ช่วง…`);
     try {
       let next = [...words];
-      for (const issue of issues.slice(0, 12)) {
+      const lowConfidence = words.flatMap((word, index) => word.confidenceLabel === "low"
+        ? [{ index, start: word.start, end: word.end, reason: "ความมั่นใจต่ำ" }]
+        : []);
+      const queue = [...issues, ...lowConfidence].filter((issue, index, all) => all.findIndex((candidate) => candidate.index === issue.index) === index);
+      for (const issue of queue.slice(0, 12)) {
         const old = next[issue.index];
         if (!old) continue;
         const region = { start: Math.max(0, old.start - 0.45), end: Math.min(duration, old.end + 0.45) };
         const wav = encodeSegmentsWav16k(audioBufferRef.current, [region]);
         if (wav.size < 2048) continue;
-        const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th" } });
+        const localContext = next.slice(Math.max(0, issue.index - 5), issue.index).map((word) => word.text).join(" ");
+        const terms = glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40);
+        const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th", context: localContext, glossary: terms } });
         const replacements = forcedAlignWords(audioBufferRef.current, [region], res.text ?? old.text, region.end - region.start);
         if (replacements.length) next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
       }
       next.sort((a, b) => a.start - b.start);
       setWords(next);
       setTranscript(wordsToTranscript(next));
-      toast.success("ตรวจและซิงก์ช่วงที่ผิดปกติใหม่แล้ว", { id });
+      toast.success(`ตรวจและซิงก์ใหม่ ${Math.min(queue.length, 12)} ช่วงแล้ว`, { id });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "ตรวจซิงก์ไม่สำเร็จ", { id });
     } finally {
@@ -1369,9 +1375,21 @@ function Studio() {
               />
 
               <div className="flex items-center justify-between">
-                <Button size="icon" variant="secondary" onClick={togglePlay} disabled={!videoUrl}>
-                  {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button size="icon" variant="secondary" onClick={togglePlay} disabled={!videoUrl} aria-label={playing ? "หยุด" : "เล่น"}>
+                    {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => {
+                    const next = !muted;
+                    setMuted(next);
+                    if (videoRef.current) videoRef.current.muted = next;
+                  }} disabled={!videoUrl} aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}>
+                    {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => void frameRef.current?.requestFullscreen?.()} disabled={!videoUrl} aria-label="เต็มหน้าจอ">
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
+                </div>
                 <span className="font-mono text-xs text-muted-foreground">
                   {fmt(time)} / {fmt(duration)}
                 </span>
