@@ -14,16 +14,28 @@ export const transcribeAudio = createServerFn({ method: "POST" })
     const form = new FormData();
     form.append("model", "openai/gpt-4o-transcribe");
     form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
+    form.append("temperature", "0");
     // The transcription provider does not accept `lo` in its `language` field.
     // Guide Lao recognition through the prompt instead, as recommended by the
     // provider, while retaining its supported ISO codes for Thai and English.
     if (data.language === "lo") {
       form.append(
         "prompt",
-        "The audio is spoken in Lao. Transcribe it accurately in the Lao script and preserve the speaker's original wording.",
+        [
+          "ພາສາລາວ. The speaker talks in Lao (ພາສາລາວ), not Thai.",
+          "Transcribe verbatim in Lao script (ຕົວອັກສອນລາວ) exactly as spoken.",
+          "Never translate, never transliterate into Thai script, never summarise.",
+          "If a short part is unclear, write only what is clearly audible and nothing else.",
+        ].join(" "),
       );
     } else if (data.language) {
       form.append("language", data.language);
+      if (data.language === "th") {
+        form.append(
+          "prompt",
+          "ถอดเสียงภาษาไทยตามที่พูดจริงแบบคำต่อคำ ห้ามแปล ห้ามสรุป และห้ามเติมข้อความที่ไม่ได้พูด",
+        );
+      }
     }
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
@@ -38,5 +50,22 @@ export const transcribeAudio = createServerFn({ method: "POST" })
     }
 
     const json = (await res.json()) as { text?: string };
-    return { text: json.text ?? "" };
+    let text = (json.text ?? "").trim();
+
+    // Drop the provider's well-known hallucinations on near-silent audio.
+    const HALLUCINATIONS = [
+      "thank you", "thanks for watching", "you", "bye", "subtitles by",
+      "ขอบคุณค่ะ", "ขอบคุณครับ", "ขอบคุณที่รับชม", "ຂອບໃຈ",
+    ];
+    const normalized = text.toLowerCase().replace(/[.!?。！？\s]+$/g, "").trim();
+    if (HALLUCINATIONS.includes(normalized)) text = "";
+
+    // For Lao requests, reject output that came back in Thai script instead.
+    if (data.language === "lo" && text) {
+      const lao = (text.match(/[\u0e80-\u0eff]/g) ?? []).length;
+      const thai = (text.match(/[\u0e00-\u0e7f]/g) ?? []).length;
+      if (thai > lao * 1.5) text = "";
+    }
+
+    return { text };
   });
