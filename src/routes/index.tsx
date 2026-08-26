@@ -158,11 +158,27 @@ function Studio() {
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
 
-  const silences = useMemo(
-    () => (duration ? invertSegments(segments, duration) : []),
-    [segments, duration],
+  const scenes = useMemo(() => buildScenes(segments, words), [segments, words]);
+  const droppedRanges = useMemo(
+    () => scenes.filter((s) => dropped.includes(s.id)).map((s) => ({ start: s.start, end: s.end })),
+    [scenes, dropped],
   );
-  const groups = useMemo(() => groupWords(words, style.wordsPerGroup), [words, style.wordsPerGroup]);
+  const isDropped = useCallback(
+    (t: number) => droppedRanges.some((r) => t >= r.start - 0.001 && t <= r.end + 0.001),
+    [droppedRanges],
+  );
+  /** ช่วงที่จะเก็บไว้จริง = ช่วงพูด ลบซีนที่ผู้ใช้ปิดไว้ */
+  const keepSegments = useMemo(
+    () => segments.filter((s) => !isDropped((s.start + s.end) / 2)),
+    [segments, isDropped],
+  );
+  const visibleWords = useMemo(() => words.filter((w) => !isDropped(w.start)), [words, isDropped]);
+
+  const silences = useMemo(
+    () => (duration ? invertSegments(keepSegments, duration) : []),
+    [keepSegments, duration],
+  );
+  const groups = useMemo(() => groupWords(visibleWords, style.wordsPerGroup), [visibleWords, style.wordsPerGroup]);
   const activeGroup = useMemo(
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
     [groups, time],
