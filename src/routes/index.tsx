@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useAudioFeedback } from "@/hooks/use-audio-feedback";
+import { AudioPreview } from "@/components/audio-preview";
 import { toast } from "sonner";
 import {
   Captions,
@@ -79,7 +80,7 @@ export const Route = createFileRoute("/")({
   component: Studio,
 });
 
-type Tab = "tools" | "styles" | "customize" | "text";
+type Tab = "tools" | "styles" | "customize" | "text" | "audio";
 
 type LangCode = "th" | "lo" | "en";
 
@@ -499,11 +500,12 @@ function Studio() {
                 ["styles", "Caption Style"],
                 ["customize", "Customize"],
                 ["text", "Edit Text"],
+                ["audio", "Audio"],
               ] as [Tab, string][]
             ).map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => setTab(key)}
+                onClick={() => { setTab(key); play("hover"); }}
                 className={cn(
                   "flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   tab === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
