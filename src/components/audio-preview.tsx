@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useAudioFeedback } from '@/hooks/use-audio-feedback';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -77,7 +76,7 @@ export function AudioPreview({ animation, enabled, volume, pack, onChange }: Pro
             onClick={() => play(value)}
             disabled={!enabled}
           >
-            Preview {label}
+            ฟัง {label}
           </Button>
         ))}
       </div>

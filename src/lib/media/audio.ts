@@ -12,7 +12,7 @@ export type SilenceOptions = {
 export const defaultSilenceOptions: SilenceOptions = {
   thresholdDb: -34,
   minSilence: 0.35,
-  padding: 0.06,
+  padding: 0.12,
 };
 
 export async function decodeAudioFromFile(file: File | Blob): Promise<AudioBuffer> {
@@ -90,6 +90,31 @@ export function detectSpeechSegments(buffer: AudioBuffer, opts: SilenceOptions):
       return acc;
     }, [])
     .filter((s) => s.end - s.start > 0.08);
+}
+
+/**
+ * Prevent choppy edits by joining tiny pauses (breaths and gaps between words)
+ * and keeping a small amount of room around each spoken phrase.
+ */
+export function smoothSpeechSegments(
+  segments: Segment[],
+  duration: number,
+  joinGap = 0.18,
+  edgePadding = 0.08,
+): Segment[] {
+  return segments.reduce<Segment[]>((result, segment) => {
+    const next = {
+      start: Math.max(0, segment.start - edgePadding),
+      end: Math.min(duration, segment.end + edgePadding),
+    };
+    const previous = result[result.length - 1];
+    if (previous && next.start - previous.end <= joinGap) {
+      previous.end = Math.max(previous.end, next.end);
+    } else {
+      result.push(next);
+    }
+    return result;
+  }, []);
 }
 
 /** Split a longer speech region at low-energy valleys for tighter caption timing. */
@@ -223,7 +248,7 @@ function encodePcmWav(samples: Float32Array, sampleRate: number): Blob {
  * Encode only the given segments (speech) of the buffer to a 16 kHz mono WAV.
  * Used so transcription hears exactly the audio a caption chunk covers.
  */
-export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[]): Blob {
+export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[], reduceNoise = false): Blob {
   const targetRate = 16000;
   const src = buffer.getChannelData(0);
   const ratio = buffer.sampleRate / targetRate;
@@ -237,7 +262,16 @@ export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[]): Blob
     const from = Math.floor(s.start * buffer.sampleRate);
     const count = Math.floor(((s.end - s.start) * buffer.sampleRate) / ratio);
     for (let i = 0; i < count && w < total; i++) {
-      outSamples[w++] = src[Math.min(src.length - 1, from + Math.floor(i * ratio))] ?? 0;
+      const sourceIndex = Math.min(src.length - 1, from + Math.floor(i * ratio));
+      const sample = src[sourceIndex] ?? 0;
+      const previous = src[Math.max(0, sourceIndex - Math.max(1, Math.floor(ratio)))] ?? 0;
+      const highPassed = sample - previous * 0.96;
+      const cleaned = reduceNoise
+        ? (Math.abs(highPassed) < 0.006 ? highPassed * 0.12 : highPassed * 1.15)
+        : sample;
+      const fadeSamples = Math.min(count / 2, Math.floor(targetRate * 0.012));
+      const edgeGain = Math.min(1, i / Math.max(1, fadeSamples), (count - i) / Math.max(1, fadeSamples));
+      outSamples[w++] = cleaned * Math.max(0, edgeGain);
     }
   }
   return encodePcmWav(outSamples.subarray(0, w), targetRate);

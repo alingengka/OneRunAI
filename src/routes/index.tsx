@@ -12,8 +12,10 @@ import {
   Pause,
   Play,
   Scissors,
+  Smartphone,
   Sparkles,
   Upload,
+  Waves,
   Wand2,
 } from "lucide-react";
 
@@ -24,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { CaptionOverlay } from "@/components/editor/CaptionOverlay";
+import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay";
 import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
 import { StyleControls } from "@/components/editor/StyleControls";
 import { StylePicker } from "@/components/editor/StylePicker";
@@ -36,7 +39,6 @@ import {
 } from "@/lib/captions";
 import {
   blobToBase64,
-  chunkSegments,
   decodeAudioFromFile,
   defaultSilenceOptions,
   detectSpeechSegments,
@@ -44,6 +46,7 @@ import {
   encodeWav16k,
   invertSegments,
   refineSpeechSegments,
+  smoothSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
@@ -130,6 +133,8 @@ function Studio() {
 
   const [captionsOn, setCaptionsOn] = useState(true);
   const [removeSilence, setRemoveSilence] = useState(false);
+  const [noiseReduction, setNoiseReduction] = useState(false);
+  const [tiktokPreview, setTiktokPreview] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -215,7 +220,7 @@ function Studio() {
           thresholdDb,
           minSilence: minSil,
         });
-        const segs = refineSpeechSegments(buffer, detected, 4);
+        const segs = smoothSpeechSegments(detected, buffer.duration);
         if (!segs.length) throw new Error("ไม่พบช่วงเสียงพูด ลองลดค่าความไวเสียง");
         setSegments(segs);
         setDuration((d) => d || buffer!.duration);
@@ -263,9 +268,10 @@ function Studio() {
       languages,
       threshold,
       minSilence,
+      noiseReduction,
       sfx,
     }),
-    [file, duration, segments, words, transcript, style, languages, threshold, minSilence, sfx],
+    [file, duration, segments, words, transcript, style, languages, threshold, minSilence, noiseReduction, sfx],
   );
 
   useEffect(() => {
@@ -292,6 +298,7 @@ function Studio() {
     setLanguages((p.languages as LangCode[]).length ? (p.languages as LangCode[]) : ["th"]);
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
+    setNoiseReduction(p.noiseReduction ?? false);
     if (p.sfx) setSfx(p.sfx);
     setDuration((d) => d || p.duration);
     setRemoveSilence(true);
@@ -347,14 +354,18 @@ function Studio() {
       }
       const lang = languages[0] ?? "th";
       // ถอดเสียงทีละก้อน (เฉพาะช่วงที่มีเสียงพูด) เพื่อให้คำตรงกับเวลาที่พูดจริง
-      const chunks = segs.length ? chunkSegments(segs, 20) : [];
+      const transcriptionSegments = refineSpeechSegments(buffer, segs, 4);
+      // One short speech region per request keeps Lao/Thai words anchored to the
+      // phrase where they were actually spoken instead of spreading a long
+      // transcript over several disconnected regions.
+      const chunks = transcriptionSegments.map((segment) => [segment]);
       const allWords: Word[] = [];
       const texts: string[] = [];
 
       if (chunks.length) {
         for (let i = 0; i < chunks.length; i++) {
           const chunkSegs = chunks[i]!;
-          const wav = encodeSegmentsWav16k(buffer!, chunkSegs);
+          const wav = encodeSegmentsWav16k(buffer, chunkSegs, noiseReduction);
           if (wav.size < 4096) continue;
           const b64 = await blobToBase64(wav);
           const res = await transcribe({ data: { audioBase64: b64, language: lang } });
@@ -367,7 +378,7 @@ function Studio() {
           setWords([...allWords]);
         }
       } else {
-        const wav = encodeWav16k(buffer!);
+        const wav = encodeWav16k(buffer);
         if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
         const b64 = await blobToBase64(wav);
         const res = await transcribe({ data: { audioBase64: b64, language: lang } });
@@ -440,8 +451,11 @@ function Studio() {
     setRendering(true);
     const id = toast.loading("กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… 0%");
     try {
-      const blob = await exportTrimmedWebm(videoUrl, segments, (r) =>
-        toast.loading(`กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… ${Math.round(r * 100)}%`, { id }),
+      const blob = await exportTrimmedWebm(
+        videoUrl,
+        segments,
+        (r) => toast.loading(`กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… ${Math.round(r * 100)}%`, { id }),
+        { noiseReduction, smoothCuts: true },
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -462,7 +476,7 @@ function Studio() {
     setRendering(true);
     const id = toast.loading("กำลังสร้าง CapCut Package…");
     try {
-      const video = await exportTrimmedWebm(videoUrl, [...segments], (ratio) => toast.loading(`กำลังสร้าง CapCut Package… ${Math.round(ratio * 100)}%`, { id }));
+      const video = await exportTrimmedWebm(videoUrl, [...segments], (ratio) => toast.loading(`กำลังสร้าง CapCut Package… ${Math.round(ratio * 100)}%`, { id }), { noiseReduction, smoothCuts: true });
       const baseName = (file?.name ?? "clip").replace(/\.[^.]+$/, "");
       const bundle = await buildCapCutPackage({ baseName, video, duration, keep: [...segments], removed: [...silences], groups: [...groups] });
       const url = URL.createObjectURL(bundle);
@@ -641,6 +655,37 @@ function Studio() {
                   <Button size="sm" variant="secondary" onClick={() => setTab("text")}>
                     Edit
                   </Button>
+                </div>
+                <div className="mt-4">
+                  <Label className="text-[11px] uppercase text-muted-foreground">ภาษาต้นฉบับในวิดีโอ</Label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {LANGUAGES.map((language) => (
+                      <Button
+                        key={language.code}
+                        size="sm"
+                        variant={languages[0] === language.code ? "default" : "outline"}
+                        onClick={() => {
+                          setLanguages((current) => [language.code, ...current.filter((code) => code !== language.code)]);
+                          setStyle((current) => ({ ...current, fontFamily: language.font }));
+                        }}
+                      >
+                        {language.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex gap-3">
+                    <Waves className="mt-0.5 h-5 w-5 text-primary" />
+                    <div>
+                      <p className="text-sm font-medium">ลดเสียงรบกวน</p>
+                      <p className="text-xs text-muted-foreground">กรองเสียงต่ำ เสียงฮัม และปรับระดับเสียงพูดให้นิ่งขึ้นตอนถอดเสียงและส่งออก</p>
+                    </div>
+                  </div>
+                  <Switch checked={noiseReduction} onCheckedChange={setNoiseReduction} />
                 </div>
               </div>
 
@@ -899,6 +944,10 @@ function Studio() {
         {/* Right: preview */}
         <section className="order-1 lg:order-2">
           <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium"><Smartphone className="h-4 w-4" /> TikTok Preview</div>
+              <Switch checked={tiktokPreview} onCheckedChange={setTiktokPreview} aria-label="เปิดพรีวิว TikTok" />
+            </div>
             <div
               ref={frameRef}
               className="relative mx-auto aspect-[9/16] w-full max-w-[340px] overflow-hidden rounded-xl bg-black"
@@ -923,9 +972,17 @@ function Studio() {
                 </button>
               )}
               {captionsOn && (
-                <CaptionOverlay group={activeGroup} time={time} style={style} height={frameHeight} />
+                <CaptionOverlay
+                  group={activeGroup}
+                  time={time}
+                  style={style}
+                  height={frameHeight}
+                  onPositionChange={({ posX, posY }) => setStyle((current) => ({ ...current, posX, posY }))}
+                />
               )}
+              {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
+            {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความบนวิดีโอเพื่อย้ายตำแหน่งได้ทันที</p>}
 
             <div className="mt-4 space-y-3">
               <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
