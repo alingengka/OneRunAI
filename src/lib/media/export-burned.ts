@@ -82,7 +82,7 @@ export async function exportBurnedVideo(
   groups: CaptionGroup[],
   style: CaptionStyle,
   onProgress?: Progress,
-  options: { noiseReduction?: boolean; smoothCuts?: boolean; captions?: boolean } = {},
+  options: { noiseReduction?: boolean; smoothCuts?: boolean; captions?: boolean; signal?: AbortSignal } = {},
 ): Promise<{ blob: Blob; ext: "mp4" | "webm" }> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
