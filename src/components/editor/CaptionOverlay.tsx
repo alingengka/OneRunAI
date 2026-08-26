@@ -5,11 +5,12 @@ type Props = {
   time: number;
   style: CaptionStyle;
   height: number;
+  onPositionChange?: (position: { posX: number; posY: number }) => void;
 };
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
-export function CaptionOverlay({ group, time, style, height }: Props) {
+export function CaptionOverlay({ group, time, style, height, onPositionChange }: Props) {
   if (!group || height === 0) return null;
 
   const fontSize = (style.size / 100) * height;
@@ -65,7 +66,23 @@ export function CaptionOverlay({ group, time, style, height }: Props) {
 
   return (
     <div
-      className="pointer-events-none absolute select-none"
+      className={onPositionChange ? "absolute cursor-move select-none touch-none" : "pointer-events-none absolute select-none"}
+      role={onPositionChange ? "slider" : undefined}
+      aria-label={onPositionChange ? "ตำแหน่งข้อความบนวิดีโอ" : undefined}
+      onPointerDown={onPositionChange ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } : undefined}
+      onPointerMove={onPositionChange ? (event) => {
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        const frame = event.currentTarget.parentElement?.getBoundingClientRect();
+        if (!frame) return;
+        onPositionChange({
+          posX: Math.max(8, Math.min(92, ((event.clientX - frame.left) / frame.width) * 100)),
+          posY: Math.max(5, Math.min(95, ((event.clientY - frame.top) / frame.height) * 100)),
+        });
+      } : undefined}
       style={{
         left: `${style.posX}%`,
         top: `${style.posY}%`,
