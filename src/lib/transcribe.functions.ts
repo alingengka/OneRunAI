@@ -1,13 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-const Input = z.object({
-  audioBase64: z.string().min(100),
-  language: z.string().max(5).optional(),
-});
-
 export const transcribeAudio = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => Input.parse(data))
+  .inputValidator((data: unknown) => z.object({
+    audioBase64: z.string().min(100),
+    language: z.string().max(5).optional(),
+  }).parse(data))
   .handler(async ({ data }) => {
     const apiKey = process.env["LOVABLE_API_KEY"];
     if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
