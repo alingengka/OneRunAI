@@ -1,4 +1,5 @@
-import { animationOptions, fontOptions, type CaptionStyle, type StrokeSize } from "@/lib/captions";
+import { animationOptions, fontOptions, type CaptionStyle, type LineStyle, type StrokeSize } from "@/lib/captions";
+import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
@@ -8,6 +9,8 @@ type Props = {
   style: CaptionStyle;
   onChange: (patch: Partial<CaptionStyle>) => void;
   scripts?: ("latin" | "th" | "lo")[];
+  /** จำนวนบรรทัดที่กำลังแสดงบนพรีวิว */
+  lineCount?: number;
 };
 
 const sizes: StrokeSize[] = ["none", "small", "medium", "large"];
@@ -53,11 +56,15 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-export function StyleControls({ style, onChange, scripts }: Props) {
+export function StyleControls({ style, onChange, scripts, lineCount = 3 }: Props) {
+  const [activeLine, setActiveLine] = useState(0);
   const fonts =
     scripts && scripts.length
       ? fontOptions.filter((f) => f.scripts.some((s) => scripts.includes(s)))
       : fontOptions;
+  const line: LineStyle = style.lineStyles?.[activeLine] ?? {};
+  const patchLine = (patch: Partial<LineStyle>) =>
+    onChange({ lineStyles: { ...(style.lineStyles ?? {}), [activeLine]: { ...line, ...patch } } });
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4">
@@ -320,6 +327,115 @@ export function StyleControls({ style, onChange, scripts }: Props) {
             className="h-9 cursor-pointer p-1"
           />
         </Row>
+      </div>
+
+      <Row label={`ระยะห่างบรรทัด — ${((style.lineGap ?? 0.08) * 100).toFixed(0)}%`}>
+        <Slider
+          value={[style.lineGap ?? 0.08]}
+          min={-0.1}
+          max={0.8}
+          step={0.02}
+          onValueChange={([v]) => onChange({ lineGap: v ?? 0.08 })}
+        />
+      </Row>
+
+      <div className="space-y-3 rounded-xl border border-border p-3">
+        <Row label="สไตล์แยกรายบรรทัด">
+          <div className="flex gap-2">
+            {Array.from({ length: Math.max(2, lineCount) }, (_, i) => i).map((i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setActiveLine(i)}
+                className={cn(
+                  "flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors",
+                  activeLine === i
+                    ? "border-primary bg-primary/15 text-foreground"
+                    : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                บรรทัด {i + 1}
+                {style.lineStyles?.[i] ? " •" : ""}
+              </button>
+            ))}
+          </div>
+        </Row>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Row label="ฟอนต์บรรทัดนี้">
+            <select
+              value={line.fontFamily ?? ""}
+              onChange={(e) => patchLine({ fontFamily: e.target.value || undefined })}
+              className="h-9 w-full rounded-lg border border-border bg-secondary px-2 text-sm"
+            >
+              <option value="">ตามสไตล์หลัก</option>
+              {fonts.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </Row>
+          <Row label="สีตัวอักษร">
+            <Input
+              type="color"
+              value={line.color ?? style.color}
+              onChange={(e) => patchLine({ color: e.target.value })}
+              className="h-9 cursor-pointer p-1"
+            />
+          </Row>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Row label="ขอบตัวอักษร">
+            <Segmented
+              value={line.stroke ?? style.stroke}
+              options={sizes.map((s) => ({ label: s, value: s }))}
+              onSelect={(v) => patchLine({ stroke: v })}
+            />
+          </Row>
+          <Row label="สีขอบ">
+            <Input
+              type="color"
+              value={line.strokeColor ?? style.strokeColor}
+              onChange={(e) => patchLine({ strokeColor: e.target.value })}
+              className="h-9 cursor-pointer p-1"
+            />
+          </Row>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Row label={`ความหนา — ${line.fontWeight ?? style.fontWeight}`}>
+            <Slider
+              value={[line.fontWeight ?? style.fontWeight]}
+              min={300}
+              max={900}
+              step={100}
+              onValueChange={([v]) => patchLine({ fontWeight: v ?? 700 })}
+            />
+          </Row>
+          <Row label={`ระยะบรรทัดนี้ — ${(((line.gap ?? style.lineGap ?? 0.08)) * 100).toFixed(0)}%`}>
+            <Slider
+              value={[line.gap ?? style.lineGap ?? 0.08]}
+              min={-0.1}
+              max={0.8}
+              step={0.02}
+              onValueChange={([v]) => patchLine({ gap: v ?? 0.08 })}
+            />
+          </Row>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const next = { ...(style.lineStyles ?? {}) };
+            delete next[activeLine];
+            onChange({ lineStyles: next });
+          }}
+          className="w-full rounded-lg border border-border bg-secondary px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+        >
+          ล้างสไตล์ของบรรทัด {activeLine + 1}
+        </button>
       </div>
 
     </div>
