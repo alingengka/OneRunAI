@@ -41,6 +41,7 @@ import {
 } from "@/lib/captions";
 import {
   blobToBase64,
+  buildAsrChunks,
   decodeAudioFromFile,
   defaultSilenceOptions,
   detectSpeechSegments,
@@ -52,6 +53,8 @@ import {
   type Segment,
 } from "@/lib/media/audio";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
+import { exportBurnedVideo } from "@/lib/media/export-burned";
+
 import {
   buildCutListJson,
   buildEdl,
@@ -365,12 +368,13 @@ function Studio() {
         segs = r.segs;
       }
       const lang = languages[0] ?? "th";
-      // ถอดเสียงทีละก้อน (เฉพาะช่วงที่มีเสียงพูด) เพื่อให้คำตรงกับเวลาที่พูดจริง
-      const transcriptionSegments = refineSpeechSegments(buffer, segs, 4);
-      // One short speech region per request keeps Lao/Thai words anchored to the
-      // phrase where they were actually spoken instead of spreading a long
-      // transcript over several disconnected regions.
-      const chunks = transcriptionSegments.map((segment) => [segment]);
+      // ถอดเสียงทีละวลี (รวมช่วงพูดที่ต่อเนื่องกัน) เพื่อให้โมเดลมีบริบทพอ
+      // และคำยังยึดกับช่วงเวลาที่พูดจริง
+      const transcriptionSegments = refineSpeechSegments(buffer, segs, 8);
+      const chunks = buildAsrChunks(transcriptionSegments, buffer.duration, {
+        min: lang === "lo" ? 3 : 2.4,
+        max: 14,
+      });
       const allWords: Word[] = [];
       const texts: string[] = [];
 
@@ -390,6 +394,7 @@ function Studio() {
           setWords([...allWords]);
         }
       } else {
+
         const wav = encodeWav16k(buffer);
         if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
         const b64 = await blobToBase64(wav);
@@ -482,6 +487,39 @@ function Studio() {
       setRendering(false);
     }
   };
+
+  /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
+  const exportFinalVideo = async () => {
+    if (!videoUrl || !segments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    setRendering(true);
+    const id = toast.loading("กำลังเรนเดอร์วิดีโอพร้อมซับ… 0%");
+    try {
+      const { blob, ext } = await exportBurnedVideo(
+        videoUrl,
+        [...segments],
+        [...groups],
+        style,
+        (r) => toast.loading(`กำลังเรนเดอร์วิดีโอพร้อมซับ… ${Math.round(r * 100)}%`, { id }),
+        { noiseReduction, smoothCuts: true, captions: captionsOn },
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-final.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success("ได้วิดีโอพร้อมโพสต์แล้ว (ซับฝังในภาพ)", { id });
+      play("success");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "เรนเดอร์วิดีโอไม่สำเร็จ", { id });
+      play("error");
+    } finally {
+      setRendering(false);
+    }
+  };
+
 
   const exportCapCutPackage = async () => {
     if (!videoUrl || !segments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
@@ -831,7 +869,19 @@ function Studio() {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
+                <p className="mb-1 text-sm font-medium">ส่งออกวิดีโอสำเร็จรูป (ไม่ต้องใช้ CapCut)</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  ตัดช่วงเงียบ + ฝังซับไตเติลลงในภาพตามสไตล์ที่ตั้งไว้ ได้ไฟล์วิดีโอที่โพสต์ลง TikTok / Reels ได้ทันที
+                </p>
+                <Button size="sm" onClick={() => void exportFinalVideo()} disabled={rendering || !segments.length}>
+                  {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                  เรนเดอร์วิดีโอพร้อมซับ
+                </Button>
+              </div>
+
               <div className="rounded-xl border border-border p-4">
+
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
                 <p className="mb-3 text-xs text-muted-foreground">
                   ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว Import ทั้งสองไฟล์เข้า CapCut
