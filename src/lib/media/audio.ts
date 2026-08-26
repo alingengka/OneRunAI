@@ -307,3 +307,44 @@ export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[], reduc
   }
   return encodePcmWav(outSamples.subarray(0, w), targetRate);
 }
+
+/**
+ * Group detected speech regions into phrase-sized chunks for transcription.
+ * Very short one-word chunks make Lao/Thai recognition guess; a few seconds of
+ * continuous speech gives the model context while still keeping each chunk
+ * anchored to the moment it was spoken.
+ */
+export function buildAsrChunks(
+  segments: Segment[],
+  duration: number,
+  opts: { min?: number; max?: number; gap?: number; pad?: number } = {},
+): Segment[][] {
+  const min = opts.min ?? 2.4;
+  const max = opts.max ?? 12;
+  const gap = opts.gap ?? 0.55;
+  const pad = opts.pad ?? 0.12;
+
+  const padded = segments
+    .map((s) => ({ start: Math.max(0, s.start - pad), end: Math.min(duration, s.end + pad) }))
+    .filter((s) => s.end > s.start);
+
+  const chunks: Segment[][] = [];
+  let current: Segment[] = [];
+  let length = 0;
+  let previousEnd = -Infinity;
+
+  for (const seg of padded) {
+    const segLen = seg.end - seg.start;
+    const detached = seg.start - previousEnd > gap;
+    if (current.length && (length + segLen > max || (detached && length >= min))) {
+      chunks.push(current);
+      current = [];
+      length = 0;
+    }
+    current.push(seg);
+    length += segLen;
+    previousEnd = seg.end;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
