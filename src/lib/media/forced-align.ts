@@ -2,7 +2,7 @@ import { alignWordsToSegments, speechWeight, tokenizeWords } from "@/lib/caption
 import type { Word } from "@/lib/captions";
 import type { Segment } from "./audio";
 
-type Frame = { time: number; energy: number };
+type Frame = { time: number; energy: number; segment: number };
 
 const HOP = 0.01; // 10 ms
 const WIN = 0.025; // 25 ms
@@ -19,7 +19,9 @@ function envelope(buffer: AudioBuffer, segs: Segment[]): Frame[] {
   const hop = Math.max(64, Math.round(sr * HOP));
   const frames: Frame[] = [];
 
-  for (const seg of segs) {
+  for (let segment = 0; segment < segs.length; segment++) {
+    const seg = segs[segment];
+    if (!seg) continue;
     const from = Math.max(0, Math.floor(seg.start * sr));
     const to = Math.min(buffer.length, Math.ceil(seg.end * sr));
     for (let i = from; i < to; i += hop) {
@@ -38,7 +40,7 @@ function envelope(buffer: AudioBuffer, segs: Segment[]): Frame[] {
       }
       if (!n) continue;
       // sqrt(RMS) ≈ loudness; keeps quiet Lao syllables from collapsing to zero
-      frames.push({ time: i / sr, energy: Math.sqrt(Math.sqrt(sum / n)) });
+      frames.push({ time: i / sr, energy: Math.sqrt(Math.sqrt(sum / n)), segment });
     }
   }
   return frames;
@@ -140,8 +142,9 @@ export function forcedAlignWords(
     let end = (endFrame?.time ?? start) + HOP;
 
     // never let a word bleed across a silence gap between segments
-    const seg = useSegs.find((s) => start >= s.start - 0.02 && start <= s.end + 0.02);
+    const seg = useSegs[startFrame?.segment ?? 0];
     if (seg && end > seg.end) end = seg.end;
+    if (startFrame && endFrame && startFrame.segment !== endFrame.segment) end = seg?.end ?? end;
     if (end < start + 0.08) end = start + 0.08;
 
     const boundaryEnergy = energy[Math.min(frames.length - 1, index)] ?? floor;
@@ -174,12 +177,28 @@ export function mergeAlignedChunks(existing: Word[], incoming: Word[]): Word[] {
   const stable = existing.filter((word) => word.end <= overlapStart + 0.04);
   const overlap = existing.filter((word) => word.end > overlapStart + 0.04);
   const normalized = (value: string) => value.normalize("NFC").replace(/[\s.,!?]/g, "").toLowerCase();
+  const similar = (left: string, right: string) => {
+    const a = [...normalized(left)];
+    const b = [...normalized(right)];
+    if (!a.length || !b.length) return false;
+    const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= a.length; i++) {
+      let diagonal = row[0] ?? 0;
+      row[0] = i;
+      for (let j = 1; j <= b.length; j++) {
+        const above = row[j] ?? 0;
+        row[j] = Math.min((row[j] ?? 0) + 1, (row[j - 1] ?? 0) + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+        diagonal = above;
+      }
+    }
+    return 1 - (row[b.length] ?? Math.max(a.length, b.length)) / Math.max(a.length, b.length) >= 0.72;
+  };
   let skip = 0;
   const max = Math.min(6, overlap.length, incoming.length);
   for (let count = max; count >= 1; count--) {
     const left = overlap.slice(-count).map((word) => normalized(word.text)).join("");
     const right = incoming.slice(0, count).map((word) => normalized(word.text)).join("");
-    if (left && left === right) { skip = count; break; }
+    if (left && (left === right || similar(left, right))) { skip = count; break; }
   }
   const retainedOverlap = skip
     ? overlap

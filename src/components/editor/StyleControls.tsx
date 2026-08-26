@@ -99,6 +99,14 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3 }: Props
         </Row>
       </div>
 
+      <Row label="ตำแหน่งด่วน">
+        <div className="grid grid-cols-3 gap-2">
+          <button type="button" onClick={() => onChange({ posX: 50, posY: 78 })} className="rounded-lg border border-border bg-secondary px-2 py-2 text-xs">ล่าง</button>
+          <button type="button" onClick={() => onChange({ posX: 50, posY: 50 })} className="rounded-lg border border-border bg-secondary px-2 py-2 text-xs">กลาง</button>
+          <button type="button" className="rounded-lg border border-primary bg-primary/10 px-2 py-2 text-xs">กำหนดเอง</button>
+        </div>
+      </Row>
+
       <Row label={`Karaoke — ขึ้นทีละ ${style.wordsPerGroup} คำ`}>
         <div className="space-y-2">
           <div className="flex gap-2">

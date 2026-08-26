@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { sceneDuration, type Scene } from "@/lib/scenes";
-import { Play, Scissors } from "lucide-react";
+import { sceneDuration, type Scene, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import { Eye, EyeOff, Plus, Play, Scissors } from "lucide-react";
 
 type Props = {
   scenes: Scene[];
@@ -11,6 +11,9 @@ type Props = {
   onToggle: (id: string, keep: boolean) => void;
   onPreview: (start: number, end: number) => void;
   onSeek: (time: number) => void;
+  elements: SceneElement[];
+  onAddElement: (sceneId: string, kind: SceneElementKind) => void;
+  onToggleElement: (id: string) => void;
 };
 
 function clock(t: number) {
@@ -19,7 +22,7 @@ function clock(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek }: Props) {
+export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement }: Props) {
   if (!scenes.length) {
     return (
       <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -76,6 +79,27 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
             <p className="mt-2 line-clamp-2 text-sm">
               {scene.text || <span className="text-muted-foreground">— ยังไม่มีซับในซีนนี้ —</span>}
             </p>
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+              {elements.filter((element) => element.sceneId === scene.id).map((element) => (
+                <Button
+                  key={element.id}
+                  size="sm"
+                  variant={element.enabled ? "secondary" : "outline"}
+                  onClick={() => onToggleElement(element.id)}
+                  title={`${element.enabled ? "ปิด" : "เปิด"} ${element.label}`}
+                >
+                  {element.enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                  {element.label}
+                </Button>
+              ))}
+              {(["broll", "motion", "sound", "viralText"] as SceneElementKind[]).map((kind) => (
+                elements.some((element) => element.sceneId === scene.id && element.kind === kind) ? null : (
+                  <Button key={kind} size="sm" variant="ghost" onClick={() => onAddElement(scene.id, kind)}>
+                    <Plus className="h-3.5 w-3.5" /> {kind === "viralText" ? "Viral text" : kind === "broll" ? "B-roll" : kind === "motion" ? "Motion" : "Sound"}
+                  </Button>
+                )
+              ))}
+            </div>
             {off && (
               <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
                 <Scissors className="h-3 w-3" /> ซีนนี้จะถูกตัดออกจากไฟล์ส่งออก
