@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { CaptionOverlay } from "@/components/editor/CaptionOverlay";
+import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
 import { StyleControls } from "@/components/editor/StyleControls";
 import { StylePicker } from "@/components/editor/StylePicker";
 import {
@@ -42,6 +43,7 @@ import {
   encodeSegmentsWav16k,
   encodeWav16k,
   invertSegments,
+  refineSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
@@ -57,6 +59,9 @@ import {
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { translateLines } from "@/lib/translate.functions";
 import { clearProject, loadProject, saveProject } from "@/lib/project-store";
+import { wordsToTranscript, type SyncIssue } from "@/lib/caption-editing";
+import { buildCapCutPackage } from "@/lib/capcut-package";
+import type { SoundPack } from "@/lib/audio-system";
 
 
 export const Route = createFileRoute("/")({
@@ -98,8 +103,8 @@ function fmt(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
-  const { play } = useAudioFeedback();
 function Studio() {
+  const { play, setVolume: setAudioVolume, setEnabled: setAudioEnabled, setPack: setAudioPack } = useAudioFeedback();
   const transcribe = useServerFn(transcribeAudio);
   const translate = useServerFn(translateLines);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -129,7 +134,10 @@ function Studio() {
   const [transcribing, setTranscribing] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [translating, setTranslating] = useState(false);
+  const [retryingSync, setRetryingSync] = useState(false);
+  const [sfx, setSfx] = useState<{ enabled: boolean; volume: number; pack: SoundPack }>({ enabled: true, volume: 0.35, pack: "clean" });
   const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
+  const lastSoundGroupRef = useRef<number>(-1);
 
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
@@ -143,6 +151,7 @@ function Studio() {
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
     [groups, time],
   );
+  const activeGroupIndex = useMemo(() => groups.findIndex((g) => time >= g.start && time <= g.end), [groups, time]);
   const savedSeconds = useMemo(
     () => silences.reduce((sum, s) => sum + (s.end - s.start), 0),
     [silences],
@@ -180,6 +189,18 @@ function Studio() {
     return () => cancelAnimationFrame(raf);
   }, [removeSilence, segments, silences]);
 
+  useEffect(() => {
+    setAudioEnabled(sfx.enabled);
+    setAudioVolume(sfx.volume);
+    setAudioPack(sfx.pack);
+  }, [sfx, setAudioEnabled, setAudioPack, setAudioVolume]);
+
+  useEffect(() => {
+    if (!playing || !sfx.enabled || activeGroupIndex < 0 || activeGroupIndex === lastSoundGroupRef.current) return;
+    lastSoundGroupRef.current = activeGroupIndex;
+    void play(style.animation);
+  }, [activeGroupIndex, play, playing, sfx.enabled, style.animation]);
+
   const analyze = useCallback(
     async (target: File, thresholdDb: number, minSil: number) => {
       setAnalyzing(true);
@@ -189,11 +210,13 @@ function Studio() {
           buffer = await decodeAudioFromFile(target);
           audioBufferRef.current = buffer;
         }
-        const segs = detectSpeechSegments(buffer, {
+        const detected = detectSpeechSegments(buffer, {
           ...defaultSilenceOptions,
           thresholdDb,
           minSilence: minSil,
         });
+        const segs = refineSpeechSegments(buffer, detected, 4);
+        if (!segs.length) throw new Error("ไม่พบช่วงเสียงพูด ลองลดค่าความไวเสียง");
         setSegments(segs);
         setDuration((d) => d || buffer!.duration);
         toast.success(`พบช่วงพูด ${segs.length} ช่วง`);
@@ -240,8 +263,9 @@ function Studio() {
       languages,
       threshold,
       minSilence,
+      sfx,
     }),
-    [file, duration, segments, words, transcript, style, languages, threshold, minSilence],
+    [file, duration, segments, words, transcript, style, languages, threshold, minSilence, sfx],
   );
 
   useEffect(() => {
@@ -268,6 +292,7 @@ function Studio() {
     setLanguages((p.languages as LangCode[]).length ? (p.languages as LangCode[]) : ["th"]);
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
+    if (p.sfx) setSfx(p.sfx);
     setDuration((d) => d || p.duration);
     setRemoveSilence(true);
     setCaptionsOn(true);
@@ -368,6 +393,48 @@ function Studio() {
     }
   };
 
+  const previewRange = (start: number, end: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = Math.max(0, start - 0.18);
+    void video.play();
+    setPlaying(true);
+    window.setTimeout(() => {
+      if (video.currentTime <= end + 0.5) {
+        video.pause();
+        setPlaying(false);
+      }
+    }, Math.max(650, (end - start + 0.7) * 1000));
+  };
+
+  const retrySyncIssues = async (issues: SyncIssue[]) => {
+    if (!file || !audioBufferRef.current) { toast.error("อัปโหลดคลิปก่อนตรวจซิงก์"); return; }
+    if (!issues.length) { toast.success("เวลาซับเรียงต่อเนื่องดี ไม่พบจุดผิดปกติ"); return; }
+    setRetryingSync(true);
+    const id = toast.loading(`กำลังลองใหม่ ${issues.length} ช่วง…`);
+    try {
+      let next = [...words];
+      for (const issue of issues.slice(0, 12)) {
+        const old = next[issue.index];
+        if (!old) continue;
+        const region = { start: Math.max(0, old.start - 0.45), end: Math.min(duration, old.end + 0.45) };
+        const wav = encodeSegmentsWav16k(audioBufferRef.current, [region]);
+        if (wav.size < 2048) continue;
+        const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th" } });
+        const replacements = alignWordsToSegments(res.text ?? old.text, [region], region.end - region.start);
+        if (replacements.length) next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
+      }
+      next.sort((a, b) => a.start - b.start);
+      setWords(next);
+      setTranscript(wordsToTranscript(next));
+      toast.success("ตรวจและซิงก์ช่วงที่ผิดปกติใหม่แล้ว", { id });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "ตรวจซิงก์ไม่สำเร็จ", { id });
+    } finally {
+      setRetryingSync(false);
+    }
+  };
+
   const exportTrimmedVideo = async () => {
     if (!videoUrl || !segments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
     setRendering(true);
@@ -390,11 +457,38 @@ function Studio() {
     }
   };
 
+  const exportCapCutPackage = async () => {
+    if (!videoUrl || !segments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
+    setRendering(true);
+    const id = toast.loading("กำลังสร้าง CapCut Package…");
+    try {
+      const video = await exportTrimmedWebm(videoUrl, [...segments], (ratio) => toast.loading(`กำลังสร้าง CapCut Package… ${Math.round(ratio * 100)}%`, { id }));
+      const baseName = (file?.name ?? "clip").replace(/\.[^.]+$/, "");
+      const bundle = await buildCapCutPackage({ baseName, video, duration, keep: [...segments], removed: [...silences], groups: [...groups] });
+      const url = URL.createObjectURL(bundle);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${baseName}-capcut.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success("ดาวน์โหลดวิดีโอ + SRT ที่เวลาแม็ปตรงกันแล้ว", { id });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "สร้าง CapCut Package ไม่สำเร็จ", { id });
+    } finally { setRendering(false); }
+  };
+
 
   const applyTranscriptEdit = () => {
     if (!transcript.trim()) { toast.error("ยังไม่มีข้อความ"); return; }
     setWords(alignWordsToSegments(transcript, segments, duration));
     toast.success("อัปเดตข้อความซับแล้ว");
+  };
+
+  const updateWords = (next: Word[]) => {
+    setWords(next);
+    setTranscript(wordsToTranscript(next));
   };
 
   const togglePlay = () => {
@@ -416,7 +510,8 @@ function Studio() {
 
   const exportSrt = () => {
     if (!groups.length) { toast.error("ยังไม่มีซับไตเติล"); return; }
-    download(`${file?.name ?? "clip"}.srt`, buildSrt(groups, remap), "application/x-subrip");
+    const baseName = (file?.name ?? "clip").replace(/\.[^.]+$/, "");
+    download(`${baseName}-captions.srt`, buildSrt(groups, remap), "application/x-subrip");
     play("pop");
     toast.success("ดาวน์โหลด .srt แล้ว — ลากเข้า CapCut ได้เลย");
   };
@@ -651,12 +746,14 @@ function Studio() {
 
               <div className="rounded-xl border border-border p-4">
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
-
-
                 <p className="mb-3 text-xs text-muted-foreground">
-                  นำไฟล์ต้นฉบับเข้า CapCut แล้วลาก .srt เพื่อได้ซับ และใช้ cut list เพื่อตัดช่วงเงียบตามเวลา
+                  ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว Import ทั้งสองไฟล์เข้า CapCut
                 </p>
                 <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => void exportCapCutPackage()} disabled={rendering || !segments.length || !groups.length}>
+                    {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                    CapCut Package .zip
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={exportSrt}>
                     <FileDown className="mr-2 h-4 w-4" /> .srt
                   </Button>
@@ -673,7 +770,7 @@ function Studio() {
                     วิดีโอตัดช่วงเงียบ .webm
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportXml}>
-                    <FileDown className="mr-2 h-4 w-4" /> .xml (timeline)
+                    <FileDown className="mr-2 h-4 w-4" /> .xml (สำหรับ editor ที่รองรับ)
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportEdl}>
                     <FileDown className="mr-2 h-4 w-4" /> .edl
@@ -702,6 +799,7 @@ function Studio() {
               activeId={style.id}
               onSelect={(preset) => {
                 setStyle(preset);
+                  void play(preset.animation);
                 toast.success(`ใช้สไตล์ ${preset.name}`);
               }}
             />
@@ -746,16 +844,28 @@ function Studio() {
               </div>
               <StyleControls
                 style={style}
-                onChange={(p) => setStyle((s) => ({ ...s, ...p }))}
+                onChange={(p) => {
+                  setStyle((s) => ({ ...s, ...p }));
+                  if (p.animation) void play(p.animation);
+                }}
                 scripts={languages.map((c) => (c === "en" ? "latin" : c))}
               />
             </div>
           )}
 
           {tab === "text" && (
-            <div className="space-y-3">
+            <div className="space-y-6">
+              <WordTimelineEditor
+                words={words}
+                duration={duration}
+                onChange={updateWords}
+                onPreview={previewRange}
+                onRetryIssues={(issues) => void retrySyncIssues(issues)}
+                retrying={retryingSync}
+              />
+              <div className="border-t border-border pt-5">
               <Label className="text-xs text-muted-foreground">
-                แก้ข้อความได้อิสระ — เว้นวรรคคือการแบ่งคำ แล้วกด “อัปเดตซับ”
+                แก้ทั้งข้อความ — การอัปเดตส่วนนี้จะคำนวณเวลาใหม่ทั้งคลิป
               </Label>
               <Textarea
                 value={transcript}
@@ -771,7 +881,18 @@ function Studio() {
                   {words.length} คำ · {groups.length} บล็อก
                 </span>
               </div>
+              </div>
             </div>
+          )}
+
+          {tab === "audio" && (
+            <AudioPreview
+              animation={style.animation}
+              enabled={sfx.enabled}
+              volume={sfx.volume}
+              pack={sfx.pack}
+              onChange={(patch) => setSfx((current) => ({ ...current, ...patch }))}
+            />
           )}
         </section>
 

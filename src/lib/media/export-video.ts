@@ -14,6 +14,23 @@ function pickMime(): string {
   return "video/webm";
 }
 
+async function seek(video: HTMLVideoElement, time: number): Promise<void> {
+  if (Math.abs(video.currentTime - time) < 0.015) return;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => { cleanup(); reject(new Error("เลื่อนไปยังช่วงวิดีโอไม่สำเร็จ")); }, 6000);
+    const cleanup = () => {
+      window.clearTimeout(timeout);
+      video.removeEventListener("seeked", done);
+      video.removeEventListener("error", failed);
+    };
+    const done = () => { cleanup(); resolve(); };
+    const failed = () => { cleanup(); reject(new Error("อ่านช่วงวิดีโอไม่สำเร็จ")); };
+    video.addEventListener("seeked", done, { once: true });
+    video.addEventListener("error", failed, { once: true });
+    video.currentTime = time;
+  });
+}
+
 /**
  * Render a real, silence-free video by playing only the speech segments of the
  * source clip and recording the element's captured stream.
@@ -29,7 +46,8 @@ export async function exportTrimmedWebm(
 
   const video = document.createElement("video");
   video.src = url;
-  video.muted = true;
+  video.muted = false;
+  video.volume = 0;
   video.playsInline = true;
   video.preload = "auto";
   video.style.position = "fixed";
@@ -67,11 +85,10 @@ export async function exportTrimmedWebm(
     const total = segments.reduce((n, s) => n + (s.end - s.start), 0);
     let elapsed = 0;
 
-    recorder.start(250);
+    recorder.start();
 
     for (const seg of segments) {
-      video.currentTime = seg.start;
-      await waitFor("seeked");
+      await seek(video, seg.start);
       await video.play();
       await new Promise<void>((resolve) => {
         const tick = () => {
@@ -89,9 +106,12 @@ export async function exportTrimmedWebm(
       onProgress?.(Math.min(1, elapsed / total));
     }
 
+    recorder.requestData();
     recorder.stop();
     await done;
-    return new Blob(chunks, { type: "video/webm" });
+    const result = new Blob(chunks, { type: pickMime() });
+    if (result.size < 1024) throw new Error("ไฟล์วิดีโอที่ตัดไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
+    return result;
   } finally {
     video.pause();
     video.remove();

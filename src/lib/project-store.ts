@@ -1,5 +1,6 @@
 import type { Segment } from "./media/audio";
 import type { CaptionStyle, Word } from "./captions";
+import type { SoundPack } from "./audio-system";
 
 const KEY = "shortcut-studio-project-v1";
 
@@ -14,6 +15,7 @@ export type SavedProject = {
   languages: string[];
   threshold: number;
   minSilence: number;
+  sfx?: { enabled: boolean; volume: number; pack: SoundPack };
 };
 
 export function saveProject(p: Omit<SavedProject, "savedAt">): void {
