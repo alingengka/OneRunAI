@@ -1,6 +1,7 @@
 import type { Segment } from "./media/audio";
 import type { CaptionStyle, Word } from "./captions";
 import type { SoundPack } from "./audio-system";
+import type { SceneElement } from "./scenes";
 
 const KEY = "shortcut-studio-project-v1";
 
@@ -18,6 +19,8 @@ export type SavedProject = {
   minSilence: number;
   noiseReduction?: boolean;
   dropped?: string[];
+  sceneElements?: SceneElement[];
+  projectName?: string;
   sfx?: { enabled: boolean; volume: number; pack: SoundPack };
 };
 
