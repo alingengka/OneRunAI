@@ -14,12 +14,13 @@ function laoPrompt(context: string, glossary: string[], strict: boolean): string
     "ພາສາລາວ. ຖອດສຽງແບບຄຳຕໍ່ຄຳເປັນອັກສອນລາວ.",
     "The speaker is speaking Lao, not Thai. Transcribe verbatim in Lao script exactly as spoken.",
     "Never translate, never use Thai script, never summarise, and never invent missing speech.",
-    "Preserve Lao spelling, tone marks, repeated words, names, numbers and spoken particles.",
+    "Use standard Vientiane/Central Lao spelling. Preserve tone marks, repeated words, names, numbers and spoken particles.",
     "Return transcript text only without labels or commentary.",
   ];
   if (strict) base.push("Use only Lao characters (U+0E80–U+0EFF), digits, spaces and spoken punctuation.");
   if (glossary.length) base.push(`Preferred spellings when audible: ${glossary.slice(0, 40).join(", ")}`);
-  if (context) base.push(`Previous Lao context (do not repeat it): ${context.slice(-500)}`);
+  if (context && !strict) base.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
+  if (strict) base.push("Listen independently from prior context and prefer only words clearly audible in this recording.");
   return base.join(" ");
 }
 
@@ -74,8 +75,9 @@ export async function transcribeAudioServer(input: {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
   const binary = Uint8Array.from(atob(input.audioBase64), (character) => character.charCodeAt(0));
-  const attempts = input.language === "lo" ? [0, 0.15] : [0];
+  const attempts = input.language === "lo" ? [0, 0] : [0];
   const alternatives: string[] = [];
+  let lastError: Error | null = null;
 
   for (let index = 0; index < attempts.length; index++) {
     const form = new FormData();
@@ -87,21 +89,33 @@ export async function transcribeAudioServer(input: {
       form.append("language", input.language);
       if (input.context) form.append("prompt", `Continue without repeating: ${input.context.slice(-500)}`);
     }
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: form,
-    });
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`Transcription failed [${response.status}]: ${body.slice(0, 300)}`);
+    try {
+      const response = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        const error = new Error(`Transcription failed [${response.status}]: ${body.slice(0, 300)}`);
+        if (response.status < 500 && response.status !== 429) throw error;
+        lastError = error;
+        continue;
+      }
+      const payload = (await response.json()) as { text?: string };
+      const text = cleanup(payload.text ?? "", input.language);
+      if (text && !alternatives.includes(text)) alternatives.push(text);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Transcription failed");
+      if (index === 0 || alternatives.length === 0) throw lastError;
+      break;
     }
-    const payload = (await response.json()) as { text?: string };
-    const text = cleanup(payload.text ?? "", input.language);
-    if (text && !alternatives.includes(text)) alternatives.push(text);
   }
 
-  if (!alternatives.length) return { text: "", alternatives: [], agreement: 0 };
+  if (!alternatives.length) {
+    if (lastError) throw lastError;
+    return { text: "", alternatives: [], agreement: 0 };
+  }
   const ranked = alternatives
     .map((text) => ({ text, score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language) }))
     .sort((a, b) => b.score - a.score);

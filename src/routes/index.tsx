@@ -19,6 +19,10 @@ import {
   Waves,
   Wand2,
   AlertTriangle,
+  Maximize2,
+  Save,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CaptionOverlay } from "@/components/editor/CaptionOverlay";
 import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay";
@@ -74,7 +79,7 @@ import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
-import { buildScenes } from "@/lib/scenes";
+import { addSceneElement, buildScenes, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { StepBar, type Step } from "@/components/editor/StepBar";
 
@@ -156,6 +161,10 @@ function Studio() {
   const [retryingSync, setRetryingSync] = useState(false);
   const [sfx, setSfx] = useState<{ enabled: boolean; volume: number; pack: SoundPack }>({ enabled: true, volume: 0.35, pack: "clean" });
   const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
+  const [projectName, setProjectName] = useState("Untitled short");
+  const [sceneElements, setSceneElements] = useState<SceneElement[]>([]);
+  const [muted, setMuted] = useState(false);
+  const restoredProjectRef = useRef(false);
   const lastSoundGroupRef = useRef<number>(-1);
 
   const [dropped, setDropped] = useState<string[]>([]);
@@ -178,6 +187,12 @@ function Studio() {
     () => segments.filter((s) => !isDropped((s.start + s.end) / 2)),
     [segments, isDropped],
   );
+  const outputSegments = useMemo(() => {
+    if (removeSilence) return keepSegments;
+    if (!duration) return [];
+    const ranges = [...droppedRanges].sort((a, b) => a.start - b.start);
+    return invertSegments(ranges, duration);
+  }, [removeSilence, keepSegments, droppedRanges, duration]);
   const visibleWords = useMemo(() => words.filter((w) => !isDropped(w.start)), [words, isDropped]);
 
   const silences = useMemo(
@@ -298,12 +313,18 @@ function Studio() {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(f);
     });
-    setWords([]);
-    setTranscript("");
-    setSegments([]);
-    setDropped([]);
+    const preserveRestored = restoredProjectRef.current;
+    restoredProjectRef.current = false;
+    if (!preserveRestored) {
+      setWords([]);
+      setTranscript("");
+      setSegments([]);
+      setDropped([]);
+      setSceneElements([]);
+      setProjectName(f.name.replace(/\.[^.]+$/, ""));
+    }
     setTime(0);
-    const r = await analyze(f, threshold, minSilence).catch(() => undefined);
+    const r = preserveRestored ? undefined : await analyze(f, threshold, minSilence).catch(() => undefined);
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
 
@@ -326,9 +347,11 @@ function Studio() {
       minSilence,
       noiseReduction,
       dropped,
+      sceneElements,
+      projectName,
       sfx,
     }),
-    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, dropped, sfx],
+    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, dropped, sceneElements, projectName, sfx],
   );
 
   useEffect(() => {
@@ -358,6 +381,9 @@ function Studio() {
     setMinSilence(p.minSilence);
     setNoiseReduction(p.noiseReduction ?? false);
     setDropped(p.dropped ?? []);
+    setSceneElements(p.sceneElements ?? []);
+    setProjectName(p.projectName ?? p.fileName.replace(/\.[^.]+$/, ""));
+    restoredProjectRef.current = true;
     if (p.sfx) setSfx(p.sfx);
     setDuration((d) => d || p.duration);
     setRemoveSilence(true);
@@ -498,25 +524,31 @@ function Studio() {
 
   const retrySyncIssues = async (issues: SyncIssue[]) => {
     if (!file || !audioBufferRef.current) { toast.error("อัปโหลดคลิปก่อนตรวจซิงก์"); return; }
-    if (!issues.length) { toast.success("เวลาซับเรียงต่อเนื่องดี ไม่พบจุดผิดปกติ"); return; }
+    const lowConfidence = words.flatMap((word, index) => word.confidenceLabel === "low"
+      ? [{ index, start: word.start, end: word.end, reason: "ความมั่นใจต่ำ" }]
+      : []);
+    if (!issues.length && !lowConfidence.length) { toast.success("เวลาซับเรียงต่อเนื่องดี ไม่พบจุดผิดปกติ"); return; }
     setRetryingSync(true);
-    const id = toast.loading(`กำลังลองใหม่ ${issues.length} ช่วง…`);
+    const id = toast.loading(`กำลังลองใหม่ ${new Set([...issues, ...lowConfidence].map((issue) => issue.index)).size} ช่วง…`);
     try {
       let next = [...words];
-      for (const issue of issues.slice(0, 12)) {
+      const queue = [...issues, ...lowConfidence].filter((issue, index, all) => all.findIndex((candidate) => candidate.index === issue.index) === index);
+      for (const issue of queue.slice(0, 12)) {
         const old = next[issue.index];
         if (!old) continue;
         const region = { start: Math.max(0, old.start - 0.45), end: Math.min(duration, old.end + 0.45) };
         const wav = encodeSegmentsWav16k(audioBufferRef.current, [region]);
         if (wav.size < 2048) continue;
-        const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th" } });
+        const localContext = next.slice(Math.max(0, issue.index - 5), issue.index).map((word) => word.text).join(" ");
+        const terms = glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40);
+        const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th", context: localContext, glossary: terms } });
         const replacements = forcedAlignWords(audioBufferRef.current, [region], res.text ?? old.text, region.end - region.start);
         if (replacements.length) next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
       }
       next.sort((a, b) => a.start - b.start);
       setWords(next);
       setTranscript(wordsToTranscript(next));
-      toast.success("ตรวจและซิงก์ช่วงที่ผิดปกติใหม่แล้ว", { id });
+      toast.success(`ตรวจและซิงก์ใหม่ ${Math.min(queue.length, 12)} ช่วงแล้ว`, { id });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "ตรวจซิงก์ไม่สำเร็จ", { id });
     } finally {
@@ -567,7 +599,7 @@ function Studio() {
   const exportTrimmedVideo = () => {
     if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
     void runJob("ตัดช่วงเงียบและเรนเดอร์วิดีโอ", async (signal, onProgress) => {
-      const blob = await exportTrimmedWebm(videoUrl, [...keepSegments], onProgress, {
+      const blob = await exportTrimmedWebm(videoUrl, [...outputSegments], onProgress, {
         noiseReduction,
         smoothCuts: true,
         signal,
@@ -584,7 +616,7 @@ function Studio() {
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
       const { blob, ext } = await exportBurnedVideo(
         videoUrl,
-        [...keepSegments],
+        [...outputSegments],
         [...groups],
         style,
         onProgress,
@@ -599,7 +631,7 @@ function Studio() {
   const exportCapCutPackage = () => {
     if (!videoUrl || !keepSegments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
     void runJob("สร้าง CapCut Package", async (signal, onProgress) => {
-      const video = await exportTrimmedWebm(videoUrl, [...keepSegments], (r) => onProgress(r * 0.9), {
+      const video = await exportTrimmedWebm(videoUrl, [...outputSegments], (r) => onProgress(r * 0.9), {
         noiseReduction,
         smoothCuts: true,
         signal,
@@ -609,7 +641,7 @@ function Studio() {
         baseName: baseName(),
         video,
         duration,
-        keep: [...keepSegments],
+        keep: [...outputSegments],
         removed: [...silences],
         groups: [...groups],
       });
@@ -678,8 +710,8 @@ function Studio() {
   };
 
   const remap = useCallback(
-    (t: number) => (removeSilence && keepSegments.length ? mapToTrimmed(t, keepSegments) : t),
-    [removeSilence, keepSegments],
+    (t: number) => (outputSegments.length ? mapToTrimmed(t, outputSegments) : t),
+    [outputSegments],
   );
 
   const exportSrt = () => {
@@ -690,7 +722,7 @@ function Studio() {
   };
   const exportEdl = () => {
     if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
-    download(`${file?.name ?? "clip"}.edl`, buildEdl(keepSegments, file?.name ?? "clip"));
+    download(`${file?.name ?? "clip"}.edl`, buildEdl(outputSegments, file?.name ?? "clip"));
     play("pop");
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
@@ -701,7 +733,7 @@ function Studio() {
       buildCutListJson({
         clipName: file?.name ?? "clip",
         duration,
-        keep: keepSegments,
+        keep: outputSegments,
         removed: silences,
         groups,
       }),
@@ -717,7 +749,7 @@ function Studio() {
       buildFcpxml({
         clipName: file?.name ?? "clip",
         duration,
-        keep: keepSegments,
+        keep: outputSegments,
         width: v?.videoWidth || 1080,
         height: v?.videoHeight || 1920,
       }),
@@ -729,6 +761,20 @@ function Studio() {
   const seekTo = (t: number) => {
     const v = videoRef.current;
     if (v) { v.currentTime = Math.max(0, t); setTime(v.currentTime); }
+  };
+
+  const saveNow = () => {
+    saveProject(snapshot());
+    setSavedInfo(loadProject());
+    toast.success("บันทึกงานแล้ว");
+  };
+
+  const toggleSceneElement = (id: string) => {
+    setSceneElements((current) => current.map((element) => element.id === id ? { ...element, enabled: !element.enabled } : element));
+  };
+
+  const addElement = (sceneId: string, kind: SceneElementKind) => {
+    setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
 
   const steps: Step[] = [
@@ -777,9 +823,10 @@ function Studio() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Scissors className="h-4 w-4" />
           </div>
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">ShortCut Studio</h1>
-            <p className="text-xs text-muted-foreground">ตัดคลิปยาวให้เป็น Short แบบไวรัล</p>
+          <div className="min-w-[180px]">
+            <h1 className="sr-only">ShortCut Studio</h1>
+            <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} aria-label="ชื่อโปรเจกต์" className="h-8 border-transparent px-1 text-base font-semibold shadow-none focus-visible:border-input" />
+            <p className="px-1 text-xs text-muted-foreground">ShortCut Studio · Short video editor</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -796,8 +843,11 @@ function Studio() {
           <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
             <Upload className="mr-2 h-4 w-4" /> อัปโหลดคลิป
           </Button>
-          <Button onClick={exportSrt}>
-            <Download className="mr-2 h-4 w-4" /> Export SRT
+          <Button variant="secondary" onClick={saveNow}>
+            <Save className="mr-2 h-4 w-4" /> บันทึก
+          </Button>
+          <Button onClick={() => setTab("export")}>
+            <Download className="mr-2 h-4 w-4" /> ส่งออก
           </Button>
         </div>
       </header>
@@ -1043,6 +1093,9 @@ function Studio() {
               onToggle={(id, keep) =>
                 setDropped((current) => (keep ? current.filter((x) => x !== id) : [...current, id]))
               }
+              elements={sceneElements}
+              onAddElement={addElement}
+              onToggleElement={toggleSceneElement}
             />
           )}
 
@@ -1109,6 +1162,7 @@ function Studio() {
           {tab === "styles" && (
             <StylePicker
               activeId={style.id}
+              activeStyle={style}
               onSelect={(preset) => {
                 setStyle(preset);
                   void play(preset.animation);
@@ -1328,9 +1382,21 @@ function Studio() {
               />
 
               <div className="flex items-center justify-between">
-                <Button size="icon" variant="secondary" onClick={togglePlay} disabled={!videoUrl}>
-                  {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button size="icon" variant="secondary" onClick={togglePlay} disabled={!videoUrl} aria-label={playing ? "หยุด" : "เล่น"}>
+                    {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => {
+                    const next = !muted;
+                    setMuted(next);
+                    if (videoRef.current) videoRef.current.muted = next;
+                  }} disabled={!videoUrl} aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}>
+                    {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => void frameRef.current?.requestFullscreen?.()} disabled={!videoUrl} aria-label="เต็มหน้าจอ">
+                    <Maximize2 className="h-4 w-4" />
+                  </Button>
+                </div>
                 <span className="font-mono text-xs text-muted-foreground">
                   {fmt(time)} / {fmt(duration)}
                 </span>

@@ -192,12 +192,22 @@ export function invertSegments(segments: Segment[], duration: number): Segment[]
 /** Encode an AudioBuffer to 16-bit mono 16kHz WAV (safe for transcription upload). */
 export function encodeWav16k(buffer: AudioBuffer): Blob {
   const targetRate = 16000;
-  const src = buffer.getChannelData(0);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
   const ratio = buffer.sampleRate / targetRate;
-  const length = Math.floor(src.length / ratio);
+  const length = Math.floor(buffer.length / ratio);
   const out = new Int16Array(length);
   for (let i = 0; i < length; i++) {
-    const s = src[Math.floor(i * ratio)] ?? 0;
+    const from = Math.floor(i * ratio);
+    const to = Math.max(from + 1, Math.min(buffer.length, Math.floor((i + 1) * ratio)));
+    let sum = 0;
+    let count = 0;
+    for (const channel of channels) {
+      for (let sample = from; sample < to; sample++) {
+        sum += channel[sample] ?? 0;
+        count++;
+      }
+    }
+    const s = count ? sum / count : 0;
     out[i] = Math.max(-1, Math.min(1, s)) * 0x7fff;
   }
   const bytes = new ArrayBuffer(44 + out.length * 2);
@@ -281,7 +291,7 @@ function encodePcmWav(samples: Float32Array, sampleRate: number): Blob {
  */
 export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[], reduceNoise = false): Blob {
   const targetRate = 16000;
-  const src = buffer.getChannelData(0);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
   const ratio = buffer.sampleRate / targetRate;
   const total = segs.reduce(
     (n, s) => n + Math.max(0, Math.floor(((s.end - s.start) * buffer.sampleRate) / ratio)),
@@ -293,9 +303,19 @@ export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[], reduc
     const from = Math.floor(s.start * buffer.sampleRate);
     const count = Math.floor(((s.end - s.start) * buffer.sampleRate) / ratio);
     for (let i = 0; i < count && w < total; i++) {
-      const sourceIndex = Math.min(src.length - 1, from + Math.floor(i * ratio));
-      const sample = src[sourceIndex] ?? 0;
-      const previous = src[Math.max(0, sourceIndex - Math.max(1, Math.floor(ratio)))] ?? 0;
+      const sourceIndex = Math.min(buffer.length - 1, from + Math.floor(i * ratio));
+      const sourceEnd = Math.max(sourceIndex + 1, Math.min(buffer.length, from + Math.floor((i + 1) * ratio)));
+      let mixed = 0;
+      let mixedCount = 0;
+      for (const channel of channels) {
+        for (let sampleIndex = sourceIndex; sampleIndex < sourceEnd; sampleIndex++) {
+          mixed += channel[sampleIndex] ?? 0;
+          mixedCount++;
+        }
+      }
+      const sample = mixedCount ? mixed / mixedCount : 0;
+      const previousIndex = Math.max(0, sourceIndex - Math.max(1, Math.floor(ratio)));
+      const previous = channels.reduce((sum, channel) => sum + (channel[previousIndex] ?? 0), 0) / Math.max(1, channels.length);
       const highPassed = sample - previous * 0.96;
       const cleaned = reduceNoise
         ? (Math.abs(highPassed) < 0.006 ? highPassed * 0.12 : highPassed * 1.15)

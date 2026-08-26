@@ -55,6 +55,9 @@ export async function exportTrimmedWebm(
   video.style.left = "-10000px";
   video.style.width = "320px";
   document.body.appendChild(video);
+  let outputStream: MediaStream | null = null;
+  let recorder: MediaRecorder | null = null;
+  let audioContext: AudioContext | null = null;
 
   const waitFor = (ev: string) =>
     new Promise<void>((resolve, reject) => {
@@ -77,8 +80,8 @@ export async function exportTrimmedWebm(
     });
     const stream = capture.captureStream?.(30) ?? capture.mozCaptureStream?.(30);
     if (!stream) throw new Error("เบราว์เซอร์นี้ไม่รองรับการบันทึกวิดีโอ");
+    outputStream = stream;
 
-    let audioContext: AudioContext | null = null;
     let boundaryGain: GainNode | null = null;
     if (options.noiseReduction || options.smoothCuts) {
       audioContext = new AudioContext();
@@ -101,13 +104,13 @@ export async function exportTrimmedWebm(
 
     const chunks: BlobPart[] = [];
     const mimeType = pickMime();
-    const recorder = new MediaRecorder(stream, {
+    recorder = new MediaRecorder(stream, {
       mimeType,
       videoBitsPerSecond: 8_000_000,
       audioBitsPerSecond: 128_000,
     });
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-    const done = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
+    const done = new Promise<void>((resolve) => { if (recorder) recorder.onstop = () => resolve(); });
 
     const total = segments.reduce((n, s) => n + (s.end - s.start), 0);
     let elapsed = 0;
@@ -168,12 +171,14 @@ export async function exportTrimmedWebm(
     recorder.stop();
     await done;
     const result = new Blob(chunks, { type: mimeType });
-    if (audioContext) void audioContext.close();
     if (result.size < 1024) throw new Error("ไฟล์วิดีโอที่ตัดไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
     return result;
 
   } finally {
     video.pause();
     video.remove();
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    outputStream?.getTracks().forEach((track) => track.stop());
+    if (audioContext) void audioContext.close();
   }
 }

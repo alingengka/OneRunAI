@@ -24,3 +24,9 @@ assert(
   ordered.every((word, index) => index === 0 || word.start >= (ordered[index - 1]?.start ?? 0)),
   "Merged timestamps are not ordered",
 );
+
+const fuzzyLao = mergeAlignedChunks(
+  [{ text: "ສະບາຍດີ", start: 0, end: 1, confidence: 0.7 }],
+  [{ text: "ສະບາຍດີ້", start: 0.78, end: 1.2, confidence: 0.9 }, { text: "ເດີ", start: 1.2, end: 1.6 }],
+);
+assert(fuzzyLao.length === 2, "Fuzzy Lao overlap was not merged");
