@@ -488,6 +488,39 @@ function Studio() {
     }
   };
 
+  /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
+  const exportFinalVideo = async () => {
+    if (!videoUrl || !segments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    setRendering(true);
+    const id = toast.loading("กำลังเรนเดอร์วิดีโอพร้อมซับ… 0%");
+    try {
+      const { blob, ext } = await exportBurnedVideo(
+        videoUrl,
+        [...segments],
+        [...groups],
+        style,
+        (r) => toast.loading(`กำลังเรนเดอร์วิดีโอพร้อมซับ… ${Math.round(r * 100)}%`, { id }),
+        { noiseReduction, smoothCuts: true, captions: captionsOn },
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-final.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast.success("ได้วิดีโอพร้อมโพสต์แล้ว (ซับฝังในภาพ)", { id });
+      play("success");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "เรนเดอร์วิดีโอไม่สำเร็จ", { id });
+      play("error");
+    } finally {
+      setRendering(false);
+    }
+  };
+
+
   const exportCapCutPackage = async () => {
     if (!videoUrl || !segments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
     setRendering(true);
