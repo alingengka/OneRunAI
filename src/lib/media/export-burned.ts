@@ -198,7 +198,7 @@ export async function exportBurnedVideo(
         ctx.font = `${m.weight} ${fontSize}px ${m.family}`;
         line.words.forEach((word, wi) => {
           const w = m.widths[wi]!;
-          const highlighted = word.active || (style.highlight !== "none" && false);
+          const highlighted = word.active;
           if (highlighted && style.highlight === "box") {
             ctx.fillStyle = style.highlightColor;
             ctx.globalAlpha = 1;
@@ -208,10 +208,10 @@ export async function exportBurnedVideo(
             const bw = w + fontSize * 0.24;
             const bh = lineHeight * 1.12;
             ctx.beginPath();
-            ctx.roundRect?.(bx, by, bw, bh, r);
-            if (ctx.roundRect) ctx.fill();
-            else ctx.fillRect(bx, by, bw, bh);
+            ctx.roundRect(bx, by, bw, bh, r);
+            ctx.fill();
           }
+
 
           const strokePx = strokeWidth[m.ls.stroke ?? style.stroke] * (fontSize / 64);
           if (strokePx > 0) {
