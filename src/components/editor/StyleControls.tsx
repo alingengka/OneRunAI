@@ -63,8 +63,14 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3 }: Props
       ? fontOptions.filter((f) => f.scripts.some((s) => scripts.includes(s)))
       : fontOptions;
   const line: LineStyle = style.lineStyles?.[activeLine] ?? {};
-  const patchLine = (patch: Partial<LineStyle>) =>
-    onChange({ lineStyles: { ...(style.lineStyles ?? {}), [activeLine]: { ...line, ...patch } } });
+  const patchLine = (patch: Record<string, unknown>) => {
+    const merged: Record<string, unknown> = { ...line };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) delete merged[k];
+      else merged[k] = v;
+    }
+    onChange({ lineStyles: { ...(style.lineStyles ?? {}), [activeLine]: merged as LineStyle } });
+  };
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-4">
