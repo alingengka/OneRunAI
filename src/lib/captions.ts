@@ -455,17 +455,35 @@ export function alignWordsToSegments(text: string, segments: Segment[], duration
 }
 
 
+/** Zero-length token that forces a manual line break inside a caption group. */
+export const LINE_BREAK = "\u2028";
+
 export function groupWords(words: Word[], perGroup: number): CaptionGroup[] {
   const size = Math.max(1, Math.min(8, Math.round(perGroup)));
   const groups: CaptionGroup[] = [];
-  for (let i = 0; i < words.length; i += size) {
-    const slice = words.slice(i, i + size);
-    if (!slice.length) continue;
-    groups.push({
-      start: slice[0]!.start,
-      end: slice[slice.length - 1]!.end,
-      words: slice,
-    });
+  let current: Word[] = [];
+  let counted = 0;
+
+  const flush = () => {
+    const visible = current.filter((w) => w.text !== LINE_BREAK);
+    if (visible.length) {
+      groups.push({
+        start: visible[0]!.start,
+        end: visible[visible.length - 1]!.end,
+        words: [...current],
+      });
+    }
+    current = [];
+    counted = 0;
+  };
+
+  for (const word of words) {
+    current.push(word);
+    if (word.text === LINE_BREAK) continue;
+    counted++;
+    if (counted >= size) flush();
   }
+  flush();
   return groups;
 }
+

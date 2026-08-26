@@ -1,23 +1,43 @@
-import { type CaptionGroup, type CaptionStyle, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
+import { useEffect, useState } from "react";
+import { type CaptionGroup, type CaptionStyle, LINE_BREAK, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
 
 type Props = {
   group: CaptionGroup | null;
   time: number;
   style: CaptionStyle;
   height: number;
+  /** keep text inside TikTok's safe area (UI overlay on the right/bottom) */
+  safeArea?: boolean;
   onPositionChange?: (position: { posX: number; posY: number }) => void;
+  /** edit the current caption text inline; "\n" separates rows */
+  onEditText?: (text: string) => void;
 };
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-export function CaptionOverlay({ group, time, style, height, onPositionChange }: Props) {
+export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText }: Props) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    if (!editing) setDraft("");
+  }, [editing]);
+
   if (!group || height === 0) return null;
 
   const fontSize = (style.size / 100) * height;
   const stroke = strokeWidth[style.stroke] * (fontSize / 60);
   const blur = shadowBlur[style.shadow] * (fontSize / 60);
-  const activeIndex = group.words.findIndex((w) => time >= w.start && time < w.end);
+  const visibleWords = group.words.filter((w) => w.text !== LINE_BREAK);
+  const activeIndex = group.words.findIndex((w) => w.text !== LINE_BREAK && time >= w.start && time < w.end);
   const shownIndex = activeIndex === -1 ? group.words.length - 1 : activeIndex;
+
+  const groupText = group.words
+    .map((w) => (w.text === LINE_BREAK ? "\n" : w.text))
+    .join(" ")
+    .replace(/ ?\n ?/g, "\n")
+    .trim();
 
   const textShadow = [
     stroke > 0
@@ -33,11 +53,22 @@ export function CaptionOverlay({ group, time, style, height, onPositionChange }:
   const perLine = Math.max(0, Math.round(style.wordsPerLine ?? 0));
   const indexed = group.words.map((word, i) => ({ word, i }));
   const lines: { word: (typeof group.words)[number]; i: number }[][] = [];
-  if (perLine > 0) {
+  const hasManualBreak = group.words.some((w) => w.text === LINE_BREAK);
+  if (hasManualBreak) {
+    let currentLine: typeof indexed = [];
+    for (const item of indexed) {
+      if (item.word.text === LINE_BREAK) {
+        lines.push(currentLine);
+        currentLine = [];
+      } else currentLine.push(item);
+    }
+    lines.push(currentLine);
+  } else if (perLine > 0) {
     for (let i = 0; i < indexed.length; i += perLine) lines.push(indexed.slice(i, i + perLine));
   } else {
     lines.push(indexed);
   }
+  const renderLines = lines.filter((l) => l.length > 0);
   // 0 -> 1 progress of the group entrance (speed multiplier: higher = faster)
   const speed = Math.max(0.25, style.animationSpeed ?? 1);
   const p = clamp01((time - group.start) / (0.18 / speed));
@@ -64,11 +95,56 @@ export function CaptionOverlay({ group, time, style, height, onPositionChange }:
     containerTransform += ` translateX(${s}px)`;
   }
 
+  // TikTok keeps its own UI on the right edge and bottom bar; stay clear of it.
+  const width = safeArea ? "72%" : "88%";
+  const minX = safeArea ? 20 : 8;
+  const maxX = safeArea ? 62 : 92;
+  const minY = safeArea ? 12 : 5;
+  const maxY = safeArea ? 74 : 95;
+  const posX = clamp(style.posX, minX, maxX);
+  const posY = clamp(style.posY, minY, maxY);
+
+  if (editing && onEditText) {
+    return (
+      <div
+        className="absolute z-30"
+        style={{ left: `${posX}%`, top: `${posY}%`, transform: "translate(-50%, -50%)", width }}
+      >
+        <textarea
+          autoFocus
+          aria-label="แก้ไขข้อความซับบนพรีวิว"
+          value={draft || groupText}
+          rows={Math.max(2, renderLines.length + 1)}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
+            const value = (draft || groupText).trim();
+            if (value && value !== groupText) onEditText(value);
+            setEditing(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") { setEditing(false); return; }
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) event.currentTarget.blur();
+          }}
+          className="w-full resize-none rounded-md border border-primary bg-background/95 p-2 text-center text-sm text-foreground outline-none"
+        />
+        <p className="mt-1 text-center text-[10px] text-primary-foreground/80">
+          ขึ้นบรรทัดใหม่ = แยกแถว · Ctrl/⌘+Enter เพื่อบันทึก
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={onPositionChange ? "absolute cursor-move select-none touch-none" : "pointer-events-none absolute select-none"}
+      className={onPositionChange || onEditText ? "absolute z-30 cursor-move select-none touch-none" : "pointer-events-none absolute select-none"}
       role={onPositionChange ? "slider" : undefined}
       aria-label={onPositionChange ? "ตำแหน่งข้อความบนวิดีโอ" : undefined}
+      onDoubleClick={onEditText ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setDraft(groupText);
+        setEditing(true);
+      } : undefined}
       onPointerDown={onPositionChange ? (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -79,15 +155,15 @@ export function CaptionOverlay({ group, time, style, height, onPositionChange }:
         const frame = event.currentTarget.parentElement?.getBoundingClientRect();
         if (!frame) return;
         onPositionChange({
-          posX: Math.max(8, Math.min(92, ((event.clientX - frame.left) / frame.width) * 100)),
-          posY: Math.max(5, Math.min(95, ((event.clientY - frame.top) / frame.height) * 100)),
+          posX: clamp(((event.clientX - frame.left) / frame.width) * 100, minX, maxX),
+          posY: clamp(((event.clientY - frame.top) / frame.height) * 100, minY, maxY),
         });
       } : undefined}
       style={{
-        left: `${style.posX}%`,
-        top: `${style.posY}%`,
+        left: `${posX}%`,
+        top: `${posY}%`,
         transform: containerTransform,
-        width: "88%",
+        width,
         textAlign: style.textAlign ?? "center",
         lineHeight: 1.15,
         fontFamily: style.fontFamily,
@@ -97,13 +173,16 @@ export function CaptionOverlay({ group, time, style, height, onPositionChange }:
         textShadow,
         textTransform: style.uppercase ? "uppercase" : "none",
         opacity: containerOpacity,
+        overflowWrap: "break-word",
+        wordBreak: "break-word",
       }}
     >
-      {lines.map((line, li) => (
+      {renderLines.map((line, li) => (
         <div key={li} style={{ display: "block" }}>
           <span
             style={{
               display: "inline-block",
+              maxWidth: "100%",
               background: style.plate ? style.plateColor : undefined,
               padding: style.plate ? `${fontSize * 0.12}px ${fontSize * 0.28}px` : undefined,
               borderRadius: style.plate ? fontSize * 0.22 : undefined,
@@ -159,6 +238,7 @@ export function CaptionOverlay({ group, time, style, height, onPositionChange }:
           </span>
         </div>
       ))}
+      {visibleWords.length === 0 && null}
     </div>
   );
 }
