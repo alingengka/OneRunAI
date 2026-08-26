@@ -427,7 +427,7 @@ export function tokenizeWords(text: string): string[] {
 }
 
 /** Rough spoken-duration weight of a token (syllable-ish), so subs match speech better. */
-function speechWeight(token: string): number {
+export function speechWeight(token: string): number {
   if (THAI_LAO.test(token)) {
     // Thai/Lao: count consonants (vowel marks/tone marks are non-spacing)
     const consonants = token.replace(/[\u0e30-\u0e3a\u0e47-\u0e4e\u0eb0-\u0ebc\u0ec8-\u0ecd]/g, "");
