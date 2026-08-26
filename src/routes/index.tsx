@@ -233,10 +233,10 @@ function Studio() {
       const v = videoRef.current;
       if (v) {
         const t = v.currentTime;
-        if (removeSilence && segments.length) {
+        if (removeSilence && keepSegments.length) {
           const gap = silences.find((g) => t >= g.start && t < g.end - 0.02);
           if (gap) {
-            const next = segments.find((s) => s.start >= gap.end - 0.001);
+            const next = keepSegments.find((s) => s.start >= gap.end - 0.001);
             v.currentTime = next ? next.start : v.duration;
           }
         }
@@ -246,7 +246,7 @@ function Studio() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [removeSilence, segments, silences]);
+  }, [removeSilence, keepSegments, silences]);
 
   useEffect(() => {
     setAudioEnabled(sfx.enabled);
