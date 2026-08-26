@@ -301,6 +301,7 @@ function Studio() {
     setWords([]);
     setTranscript("");
     setSegments([]);
+    setDropped([]);
     setTime(0);
     const r = await analyze(f, threshold, minSilence).catch(() => undefined);
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
