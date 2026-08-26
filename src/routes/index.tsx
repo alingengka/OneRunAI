@@ -800,6 +800,28 @@ function Studio() {
         </div>
       </header>
 
+      {/* ขั้นตอนการทำงาน: เห็นสถานะทุกขั้นและกดข้ามไปขั้นไหนก็ได้ */}
+      <div className="mx-auto max-w-[1500px] px-4 pt-4 sm:px-6">
+        <StepBar steps={steps} onSelect={(key) => setTab(key as Tab)} />
+        {job && (
+          <div className="mt-3 flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <div className="min-w-0 flex-1">
+              <div className="flex justify-between text-xs font-medium">
+                <span className="truncate">{job.label}</span>
+                <span>{Math.round((job.ratio ?? 0) * 100)}%</span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                <div className="h-full bg-primary transition-all" style={{ width: `${(job.ratio ?? 0) * 100}%` }} />
+              </div>
+            </div>
+            <Button size="sm" variant="ghost" onClick={cancelJob}>
+              ยกเลิก
+            </Button>
+          </div>
+        )}
+      </div>
+
       <div className="mx-auto grid max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
         {/* Left: controls */}
         <section className="order-2 rounded-lg border border-border bg-card p-4 sm:p-5 lg:order-1">
@@ -807,10 +829,12 @@ function Studio() {
             {(
               [
                 ["tools", "AI Tools"],
+                ["scenes", "Scenes"],
                 ["styles", "Caption Style"],
                 ["customize", "Customize"],
                 ["text", "Edit Text"],
                 ["audio", "Audio"],
+                ["export", "Export"],
               ] as [Tab, string][]
             ).map(([key, label]) => (
               <button
