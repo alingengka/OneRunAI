@@ -259,7 +259,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
             })}
           </span>
         </div>
-      ))}
+        );
+      })}
       {visibleWords.length === 0 && null}
     </div>
   );
