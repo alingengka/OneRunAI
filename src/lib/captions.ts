@@ -93,6 +93,10 @@ export type CaptionStyle = {
   /** background plate behind the whole caption line */
   plate: boolean;
   plateColor: string;
+  /** ระยะห่างระหว่างบรรทัด (เท่าของขนาดฟอนต์) */
+  lineGap?: number;
+  /** สไตล์เฉพาะบรรทัดที่ 1,2,3… (index เริ่มที่ 0) */
+  lineStyles?: Record<number, LineStyle>;
 };
 
 export const baseStyle: CaptionStyle = {
