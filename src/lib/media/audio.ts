@@ -348,3 +348,28 @@ export function buildAsrChunks(
   if (current.length) chunks.push(current);
   return chunks;
 }
+
+/**
+ * Add a small acoustic overlap to phrase chunks. The overlap protects Lao
+ * syllables at chunk boundaries; downstream merging removes duplicated words.
+ */
+export function addChunkOverlap(
+  chunks: Segment[][],
+  duration: number,
+  seconds = 0.32,
+): Segment[][] {
+  return chunks.map((chunk, index) => {
+    if (!chunk.length) return chunk;
+    const copy = chunk.map((segment) => ({ ...segment }));
+    const first = copy[0];
+    const last = copy[copy.length - 1];
+    if (first && index > 0) first.start = Math.max(0, first.start - seconds);
+    if (last && index < chunks.length - 1) last.end = Math.min(duration, last.end + seconds);
+    return copy.reduce<Segment[]>((merged, segment) => {
+      const previous = merged[merged.length - 1];
+      if (previous && segment.start <= previous.end) previous.end = Math.max(previous.end, segment.end);
+      else merged.push(segment);
+      return merged;
+    }, []);
+  });
+}

@@ -144,9 +144,57 @@ export function forcedAlignWords(
     if (seg && end > seg.end) end = seg.end;
     if (end < start + 0.08) end = start + 0.08;
 
-    words.push({ text: token, start, end });
+    const boundaryEnergy = energy[Math.min(frames.length - 1, index)] ?? floor;
+    const localStart = Math.max(0, index - 5);
+    const localEnd = Math.min(energy.length - 1, index + 5);
+    let localPeak = floor;
+    for (let k = localStart; k <= localEnd; k++) localPeak = Math.max(localPeak, energy[k] ?? floor);
+    const valleyFit = localPeak > floor ? 1 - Math.min(1, Math.max(0, boundaryEnergy - floor) / (localPeak - floor)) : 0.5;
+    const duration = end - start;
+    const durationFit = Math.max(0, 1 - Math.abs(duration - Math.min(0.72, 0.18 + (weights[i] ?? 1) * 0.12)) / 0.9);
+    const confidence = Math.max(0.2, Math.min(0.98, valleyFit * 0.55 + durationFit * 0.45));
+    words.push({
+      text: token,
+      start,
+      end,
+      confidence,
+      confidenceLabel: confidence >= 0.78 ? "high" : confidence >= 0.52 ? "review" : "low",
+    });
     previousIndex = Math.min(frames.length - 1, index);
   });
 
   return words;
+}
+
+/** Merge overlapping chunk alignments while preferring higher-confidence words. */
+export function mergeAlignedChunks(existing: Word[], incoming: Word[]): Word[] {
+  if (!existing.length) return incoming;
+  if (!incoming.length) return existing;
+  const overlapStart = incoming[0]?.start ?? Number.POSITIVE_INFINITY;
+  const stable = existing.filter((word) => word.end <= overlapStart + 0.04);
+  const overlap = existing.filter((word) => word.end > overlapStart + 0.04);
+  const normalized = (value: string) => value.normalize("NFC").replace(/[\s.,!?]/g, "").toLowerCase();
+  let skip = 0;
+  const max = Math.min(6, overlap.length, incoming.length);
+  for (let count = max; count >= 1; count--) {
+    const left = overlap.slice(-count).map((word) => normalized(word.text)).join("");
+    const right = incoming.slice(0, count).map((word) => normalized(word.text)).join("");
+    if (left && left === right) { skip = count; break; }
+  }
+  const retainedOverlap = skip
+    ? overlap
+    : overlap.filter((word) => {
+        const midpoint = (word.start + word.end) / 2;
+        const collision = incoming.find((candidate) => midpoint >= candidate.start && midpoint <= candidate.end);
+        return !collision || (word.confidence ?? 0.5) >= (collision.confidence ?? 0.5);
+      });
+  return [...stable, ...retainedOverlap, ...incoming.slice(skip)]
+    .sort((a, b) => a.start - b.start)
+    .reduce<Word[]>((result, word) => {
+      const previous = result[result.length - 1];
+      if (previous && normalized(previous.text) === normalized(word.text) && word.start < previous.end + 0.08) {
+        if ((word.confidence ?? 0) > (previous.confidence ?? 0)) result[result.length - 1] = word;
+      } else result.push(word);
+      return result;
+    }, []);
 }
