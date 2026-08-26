@@ -158,6 +158,9 @@ function Studio() {
   const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
   const lastSoundGroupRef = useRef<number>(-1);
 
+  const [dropped, setDropped] = useState<string[]>([]);
+  const [job, setJob] = useState<{ label: string; ratio: number | null } | null>(null);
+  const jobAbort = useRef<AbortController | null>(null);
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
 
