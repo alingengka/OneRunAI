@@ -40,7 +40,7 @@ export function buildSrt(groups: CaptionGroup[], remap?: (t: number) => number):
   const f = remap ?? ((t: number) => t);
   return groups
     .map((g, i) => {
-      const text = g.words.map((w) => w.text).join(" ");
+      const text = g.words.map((w) => (w.text === "\u2028" ? "\n" : w.text)).join(" ").replace(/ ?\n ?/g, "\n");
       return `${i + 1}\n${ts(f(g.start))} --> ${ts(Math.max(f(g.end), f(g.start) + 0.3))}\n${text}\n`;
     })
     .join("\n");
@@ -78,7 +78,7 @@ export function buildCutListJson(params: {
       captions: params.groups.map((g) => ({
         start: g.start,
         end: g.end,
-        text: g.words.map((w) => w.text).join(" "),
+        text: g.words.map((w) => (w.text === "\u2028" ? "\n" : w.text)).join(" ").replace(/ ?\n ?/g, "\n"),
         words: g.words,
       })),
     },
