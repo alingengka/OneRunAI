@@ -40,7 +40,7 @@ export async function exportTrimmedWebm(
   url: string,
   segments: Segment[],
   onProgress?: Progress,
-  options: { noiseReduction?: boolean; smoothCuts?: boolean } = {},
+  options: { noiseReduction?: boolean; smoothCuts?: boolean; signal?: AbortSignal } = {},
 ): Promise<Blob> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
@@ -120,6 +120,7 @@ export async function exportTrimmedWebm(
     await new Promise((r) => setTimeout(r, 120));
 
     for (const seg of segments) {
+      if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
       await seek(video, seg.start);
       if (audioContext && boundaryGain && options.smoothCuts) {
         const now = audioContext.currentTime;
@@ -141,7 +142,7 @@ export async function exportTrimmedWebm(
         let stalled = 0;
         const tick = () => {
           const time = video.currentTime;
-          if (time >= seg.end || video.ended) {
+          if (options.signal?.aborted || time >= seg.end || video.ended) {
             video.pause();
             resolve();
             return;

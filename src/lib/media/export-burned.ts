@@ -82,7 +82,7 @@ export async function exportBurnedVideo(
   groups: CaptionGroup[],
   style: CaptionStyle,
   onProgress?: Progress,
-  options: { noiseReduction?: boolean; smoothCuts?: boolean; captions?: boolean } = {},
+  options: { noiseReduction?: boolean; smoothCuts?: boolean; captions?: boolean; signal?: AbortSignal } = {},
 ): Promise<{ blob: Blob; ext: "mp4" | "webm" }> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
@@ -296,6 +296,7 @@ export async function exportBurnedVideo(
     await new Promise((r) => setTimeout(r, 120));
 
     for (const seg of segments) {
+      if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
       await seek(video, seg.start);
       if (options.smoothCuts !== false) {
         const now = audioContext.currentTime;
@@ -318,7 +319,7 @@ export async function exportBurnedVideo(
         const tick = () => {
           const time = video.currentTime;
           paint(time, seg);
-          if (time >= seg.end || video.ended) {
+          if (options.signal?.aborted || time >= seg.end || video.ended) {
             video.pause();
             resolve();
             return;

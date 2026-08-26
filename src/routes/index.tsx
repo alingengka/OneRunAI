@@ -74,6 +74,9 @@ import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
+import { buildScenes } from "@/lib/scenes";
+import { ScenesPanel } from "@/components/editor/ScenesPanel";
+import { StepBar, type Step } from "@/components/editor/StepBar";
 
 
 export const Route = createFileRoute("/")({
@@ -97,7 +100,7 @@ export const Route = createFileRoute("/")({
   component: Studio,
 });
 
-type Tab = "tools" | "styles" | "customize" | "text" | "audio";
+type Tab = "tools" | "styles" | "customize" | "text" | "scenes" | "audio" | "export";
 
 type LangCode = "th" | "lo" | "en";
 
@@ -155,14 +158,33 @@ function Studio() {
   const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
   const lastSoundGroupRef = useRef<number>(-1);
 
+  const [dropped, setDropped] = useState<string[]>([]);
+  const [job, setJob] = useState<{ label: string; ratio: number | null } | null>(null);
+  const jobAbort = useRef<AbortController | null>(null);
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
 
-  const silences = useMemo(
-    () => (duration ? invertSegments(segments, duration) : []),
-    [segments, duration],
+  const scenes = useMemo(() => buildScenes(segments, words), [segments, words]);
+  const droppedRanges = useMemo(
+    () => scenes.filter((s) => dropped.includes(s.id)).map((s) => ({ start: s.start, end: s.end })),
+    [scenes, dropped],
   );
-  const groups = useMemo(() => groupWords(words, style.wordsPerGroup), [words, style.wordsPerGroup]);
+  const isDropped = useCallback(
+    (t: number) => droppedRanges.some((r) => t >= r.start - 0.001 && t <= r.end + 0.001),
+    [droppedRanges],
+  );
+  /** ช่วงที่จะเก็บไว้จริง = ช่วงพูด ลบซีนที่ผู้ใช้ปิดไว้ */
+  const keepSegments = useMemo(
+    () => segments.filter((s) => !isDropped((s.start + s.end) / 2)),
+    [segments, isDropped],
+  );
+  const visibleWords = useMemo(() => words.filter((w) => !isDropped(w.start)), [words, isDropped]);
+
+  const silences = useMemo(
+    () => (duration ? invertSegments(keepSegments, duration) : []),
+    [keepSegments, duration],
+  );
+  const groups = useMemo(() => groupWords(visibleWords, style.wordsPerGroup), [visibleWords, style.wordsPerGroup]);
   const activeGroup = useMemo(
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
     [groups, time],
@@ -211,10 +233,10 @@ function Studio() {
       const v = videoRef.current;
       if (v) {
         const t = v.currentTime;
-        if (removeSilence && segments.length) {
+        if (removeSilence && keepSegments.length) {
           const gap = silences.find((g) => t >= g.start && t < g.end - 0.02);
           if (gap) {
-            const next = segments.find((s) => s.start >= gap.end - 0.001);
+            const next = keepSegments.find((s) => s.start >= gap.end - 0.001);
             v.currentTime = next ? next.start : v.duration;
           }
         }
@@ -224,7 +246,7 @@ function Studio() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [removeSilence, segments, silences]);
+  }, [removeSilence, keepSegments, silences]);
 
   useEffect(() => {
     setAudioEnabled(sfx.enabled);
@@ -279,6 +301,7 @@ function Studio() {
     setWords([]);
     setTranscript("");
     setSegments([]);
+    setDropped([]);
     setTime(0);
     const r = await analyze(f, threshold, minSilence).catch(() => undefined);
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
@@ -302,9 +325,10 @@ function Studio() {
       threshold,
       minSilence,
       noiseReduction,
+      dropped,
       sfx,
     }),
-    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, sfx],
+    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, dropped, sfx],
   );
 
   useEffect(() => {
@@ -333,6 +357,7 @@ function Studio() {
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
     setNoiseReduction(p.noiseReduction ?? false);
+    setDropped(p.dropped ?? []);
     if (p.sfx) setSfx(p.sfx);
     setDuration((d) => d || p.duration);
     setRemoveSilence(true);
@@ -499,84 +524,99 @@ function Studio() {
     }
   };
 
-  const exportTrimmedVideo = async () => {
-    if (!videoUrl || !segments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+  /** ตัวช่วยจัดการงานเรนเดอร์: มีสถานะ % และปุ่มยกเลิกจริง */
+  const runJob = async (label: string, work: (signal: AbortSignal, onProgress: (r: number) => void) => Promise<void>) => {
+    const controller = new AbortController();
+    jobAbort.current = controller;
     setRendering(true);
-    const id = toast.loading("กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… 0%");
+    setJob({ label, ratio: 0 });
     try {
-      const blob = await exportTrimmedWebm(
-        videoUrl,
-        segments,
-        (r) => toast.loading(`กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… ${Math.round(r * 100)}%`, { id }),
-        { noiseReduction, smoothCuts: true },
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-nosilence.webm`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast.success("ได้วิดีโอที่ตัดช่วงเงียบออกแล้ว", { id });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "เรนเดอร์วิดีโอไม่สำเร็จ", { id });
+      await work(controller.signal, (r) => setJob({ label, ratio: Math.max(0, Math.min(1, r)) }));
+      if (!controller.signal.aborted) play("success");
+    } catch (error) {
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        toast.message("ยกเลิกงานแล้ว");
+      } else {
+        toast.error(error instanceof Error ? error.message : "ทำงานไม่สำเร็จ");
+        play("error");
+      }
     } finally {
+      jobAbort.current = null;
+      setJob(null);
       setRendering(false);
     }
+  };
+
+  const cancelJob = () => {
+    jobAbort.current?.abort();
+  };
+
+  const saveBlob = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+
+  const baseName = () => (file?.name ?? "clip").replace(/\.[^.]+$/, "");
+
+  const exportTrimmedVideo = () => {
+    if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    void runJob("ตัดช่วงเงียบและเรนเดอร์วิดีโอ", async (signal, onProgress) => {
+      const blob = await exportTrimmedWebm(videoUrl, [...keepSegments], onProgress, {
+        noiseReduction,
+        smoothCuts: true,
+        signal,
+      });
+      if (signal.aborted) return;
+      saveBlob(blob, `${baseName()}-nosilence.webm`);
+      toast.success("ได้วิดีโอที่ตัดช่วงเงียบออกแล้ว");
+    });
   };
 
   /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
-  const exportFinalVideo = async () => {
-    if (!videoUrl || !segments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
-    setRendering(true);
-    const id = toast.loading("กำลังเรนเดอร์วิดีโอพร้อมซับ… 0%");
-    try {
+  const exportFinalVideo = () => {
+    if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
       const { blob, ext } = await exportBurnedVideo(
         videoUrl,
-        [...segments],
+        [...keepSegments],
         [...groups],
         style,
-        (r) => toast.loading(`กำลังเรนเดอร์วิดีโอพร้อมซับ… ${Math.round(r * 100)}%`, { id }),
-        { noiseReduction, smoothCuts: true, captions: captionsOn },
+        onProgress,
+        { noiseReduction, smoothCuts: true, captions: captionsOn, signal },
       );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-final.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast.success("ได้วิดีโอพร้อมโพสต์แล้ว (ซับฝังในภาพ)", { id });
-      play("success");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "เรนเดอร์วิดีโอไม่สำเร็จ", { id });
-      play("error");
-    } finally {
-      setRendering(false);
-    }
+      if (signal.aborted) return;
+      saveBlob(blob, `${baseName()}-final.${ext}`);
+      toast.success("ได้วิดีโอพร้อมโพสต์แล้ว (ซับฝังในภาพ)");
+    });
   };
 
-
-  const exportCapCutPackage = async () => {
-    if (!videoUrl || !segments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
-    setRendering(true);
-    const id = toast.loading("กำลังสร้าง CapCut Package…");
-    try {
-      const video = await exportTrimmedWebm(videoUrl, [...segments], (ratio) => toast.loading(`กำลังสร้าง CapCut Package… ${Math.round(ratio * 100)}%`, { id }), { noiseReduction, smoothCuts: true });
-      const baseName = (file?.name ?? "clip").replace(/\.[^.]+$/, "");
-      const bundle = await buildCapCutPackage({ baseName, video, duration, keep: [...segments], removed: [...silences], groups: [...groups] });
-      const url = URL.createObjectURL(bundle);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${baseName}-capcut.zip`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast.success("ดาวน์โหลดวิดีโอ + SRT ที่เวลาแม็ปตรงกันแล้ว", { id });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "สร้าง CapCut Package ไม่สำเร็จ", { id });
-    } finally { setRendering(false); }
+  const exportCapCutPackage = () => {
+    if (!videoUrl || !keepSegments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
+    void runJob("สร้าง CapCut Package", async (signal, onProgress) => {
+      const video = await exportTrimmedWebm(videoUrl, [...keepSegments], (r) => onProgress(r * 0.9), {
+        noiseReduction,
+        smoothCuts: true,
+        signal,
+      });
+      if (signal.aborted) return;
+      const bundle = await buildCapCutPackage({
+        baseName: baseName(),
+        video,
+        duration,
+        keep: [...keepSegments],
+        removed: [...silences],
+        groups: [...groups],
+      });
+      onProgress(1);
+      saveBlob(bundle, `${baseName()}-capcut.zip`);
+      toast.success("ดาวน์โหลดวิดีโอ + SRT ที่เวลาแม็ปตรงกันแล้ว");
+    });
   };
 
 
@@ -638,31 +678,30 @@ function Studio() {
   };
 
   const remap = useCallback(
-    (t: number) => (removeSilence && segments.length ? mapToTrimmed(t, segments) : t),
-    [removeSilence, segments],
+    (t: number) => (removeSilence && keepSegments.length ? mapToTrimmed(t, keepSegments) : t),
+    [removeSilence, keepSegments],
   );
 
   const exportSrt = () => {
     if (!groups.length) { toast.error("ยังไม่มีซับไตเติล"); return; }
-    const baseName = (file?.name ?? "clip").replace(/\.[^.]+$/, "");
-    download(`${baseName}-captions.srt`, buildSrt(groups, remap), "application/x-subrip");
+    download(`${baseName()}-captions.srt`, buildSrt(groups, remap), "application/x-subrip");
     play("pop");
     toast.success("ดาวน์โหลด .srt แล้ว — ลากเข้า CapCut ได้เลย");
   };
   const exportEdl = () => {
-    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
-    download(`${file?.name ?? "clip"}.edl`, buildEdl(segments, file?.name ?? "clip"));
+    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    download(`${file?.name ?? "clip"}.edl`, buildEdl(keepSegments, file?.name ?? "clip"));
     play("pop");
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
   const exportJson = () => {
-    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     download(
       `${file?.name ?? "clip"}.capcut.json`,
       buildCutListJson({
         clipName: file?.name ?? "clip",
         duration,
-        keep: segments,
+        keep: keepSegments,
         removed: silences,
         groups,
       }),
@@ -671,14 +710,14 @@ function Studio() {
     toast.success("ดาวน์โหลดไฟล์ cut list แล้ว");
   };
   const exportXml = () => {
-    if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     const v = videoRef.current;
     download(
-      `${(file?.name ?? "clip").replace(/\.[^.]+$/, "")}-timeline.xml`,
+      `${baseName()}-timeline.xml`,
       buildFcpxml({
         clipName: file?.name ?? "clip",
         duration,
-        keep: segments,
+        keep: keepSegments,
         width: v?.videoWidth || 1080,
         height: v?.videoHeight || 1920,
       }),
@@ -686,6 +725,50 @@ function Studio() {
     );
     toast.success("ดาวน์โหลด .xml (timeline ตัดช่วงเงียบ) แล้ว");
   };
+
+  const seekTo = (t: number) => {
+    const v = videoRef.current;
+    if (v) { v.currentTime = Math.max(0, t); setTime(v.currentTime); }
+  };
+
+  const steps: Step[] = [
+    {
+      key: "tools",
+      label: "1 · อัปโหลด",
+      hint: file ? file.name : "เลือกไฟล์วิดีโอ/เสียง",
+      state: analyzing ? "busy" : file ? "done" : tab === "tools" ? "active" : "todo",
+    },
+    {
+      key: "tools",
+      label: "2 · AI ซับ + ตัดเงียบ",
+      hint: words.length ? `${words.length} คำ · ตัดออก ${savedSeconds.toFixed(1)}s` : "สร้างซับด้วย AI",
+      state: transcribing ? "busy" : words.length ? "done" : file ? "active" : "todo",
+    },
+    {
+      key: "scenes",
+      label: "3 · ซีน",
+      hint: scenes.length ? `${scenes.length} ซีน · ตัดทิ้ง ${dropped.length}` : "แบ่งคลิปเป็นซีน",
+      state: tab === "scenes" ? "active" : scenes.length ? "done" : "todo",
+    },
+    {
+      key: "styles",
+      label: "4 · สไตล์",
+      hint: style.name,
+      state: tab === "styles" || tab === "customize" ? "active" : words.length ? "done" : "todo",
+    },
+    {
+      key: "text",
+      label: "5 · แก้คำ",
+      hint: accuracy.label,
+      state: retryingSync ? "busy" : tab === "text" ? "active" : words.length ? "done" : "todo",
+    },
+    {
+      key: "export",
+      label: "6 · ส่งออก",
+      hint: rendering ? (job?.label ?? "กำลังเรนเดอร์") : "เรนเดอร์วิดีโอ / CapCut",
+      state: rendering ? "busy" : tab === "export" ? "active" : "todo",
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -719,6 +802,28 @@ function Studio() {
         </div>
       </header>
 
+      {/* ขั้นตอนการทำงาน: เห็นสถานะทุกขั้นและกดข้ามไปขั้นไหนก็ได้ */}
+      <div className="mx-auto max-w-[1500px] px-4 pt-4 sm:px-6">
+        <StepBar steps={steps} onSelect={(key) => setTab(key as Tab)} />
+        {job && (
+          <div className="mt-3 flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            <div className="min-w-0 flex-1">
+              <div className="flex justify-between text-xs font-medium">
+                <span className="truncate">{job.label}</span>
+                <span>{Math.round((job.ratio ?? 0) * 100)}%</span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                <div className="h-full bg-primary transition-all" style={{ width: `${(job.ratio ?? 0) * 100}%` }} />
+              </div>
+            </div>
+            <Button size="sm" variant="ghost" onClick={cancelJob}>
+              ยกเลิก
+            </Button>
+          </div>
+        )}
+      </div>
+
       <div className="mx-auto grid max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
         {/* Left: controls */}
         <section className="order-2 rounded-lg border border-border bg-card p-4 sm:p-5 lg:order-1">
@@ -726,10 +831,12 @@ function Studio() {
             {(
               [
                 ["tools", "AI Tools"],
+                ["scenes", "Scenes"],
                 ["styles", "Caption Style"],
                 ["customize", "Customize"],
                 ["text", "Edit Text"],
                 ["audio", "Audio"],
+                ["export", "Export"],
               ] as [Tab, string][]
             ).map(([key, label]) => (
               <button
@@ -920,45 +1027,62 @@ function Studio() {
                 </div>
               </div>
 
+              <Button variant="secondary" className="w-full" onClick={() => setTab("export")}>
+                <Download className="mr-2 h-4 w-4" /> ไปที่หน้า Export
+              </Button>
+            </div>
+          )}
+
+          {tab === "scenes" && (
+            <ScenesPanel
+              scenes={scenes}
+              dropped={dropped}
+              activeTime={time}
+              onSeek={seekTo}
+              onPreview={previewRange}
+              onToggle={(id, keep) =>
+                setDropped((current) => (keep ? current.filter((x) => x !== id) : [...current, id]))
+              }
+            />
+          )}
+
+          {tab === "export" && (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-border bg-secondary/40 p-3 text-xs">
+                พร้อมส่งออก: {keepSegments.length} ช่วง · ความยาวสุดท้าย {keptDuration(keepSegments).toFixed(1)}s ·
+                ตัดออก {savedSeconds.toFixed(1)}s · ซับ {groups.length} บล็อก
+              </div>
+
               <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
                 <p className="mb-1 text-sm font-medium">ส่งออกวิดีโอสำเร็จรูป (ไม่ต้องใช้ CapCut)</p>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  ตัดช่วงเงียบ + ฝังซับไตเติลลงในภาพตามสไตล์ที่ตั้งไว้ ได้ไฟล์วิดีโอที่โพสต์ลง TikTok / Reels ได้ทันที
+                  ตัดช่วงเงียบ + ซีนที่ปิดไว้ แล้วฝังซับลงในภาพตามสไตล์ปัจจุบัน โพสต์ลง TikTok / Reels ได้ทันที
                 </p>
-                <Button size="sm" onClick={() => void exportFinalVideo()} disabled={rendering || !segments.length}>
+                <Button size="sm" onClick={exportFinalVideo} disabled={rendering || !keepSegments.length}>
                   {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                   เรนเดอร์วิดีโอพร้อมซับ
                 </Button>
               </div>
 
               <div className="rounded-xl border border-border p-4">
-
-                <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
+                <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut / โปรแกรมตัดต่อ</p>
                 <p className="mb-3 text-xs text-muted-foreground">
                   ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว Import ทั้งสองไฟล์เข้า CapCut
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => void exportCapCutPackage()} disabled={rendering || !segments.length || !groups.length}>
+                  <Button size="sm" onClick={exportCapCutPackage} disabled={rendering || !keepSegments.length || !groups.length}>
                     {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                     CapCut Package .zip
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportSrt}>
                     <FileDown className="mr-2 h-4 w-4" /> .srt
                   </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => void exportTrimmedVideo()}
-                    disabled={rendering || !segments.length}
-                  >
-                    {rendering ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="mr-2 h-4 w-4" />
-                    )}
+                  <Button size="sm" onClick={exportTrimmedVideo} disabled={rendering || !keepSegments.length}>
+                    {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                     วิดีโอตัดช่วงเงียบ .webm
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportXml}>
-                    <FileDown className="mr-2 h-4 w-4" /> .xml (สำหรับ editor ที่รองรับ)
+                    <FileDown className="mr-2 h-4 w-4" /> .xml
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportEdl}>
                     <FileDown className="mr-2 h-4 w-4" /> .edl

@@ -17,6 +17,7 @@ export type SavedProject = {
   threshold: number;
   minSilence: number;
   noiseReduction?: boolean;
+  dropped?: string[];
   sfx?: { enabled: boolean; volume: number; pack: SoundPack };
 };
 
