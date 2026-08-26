@@ -41,6 +41,7 @@ import {
 } from "@/lib/captions";
 import {
   blobToBase64,
+  buildAsrChunks,
   decodeAudioFromFile,
   defaultSilenceOptions,
   detectSpeechSegments,
@@ -52,6 +53,8 @@ import {
   type Segment,
 } from "@/lib/media/audio";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
+import { exportBurnedVideo } from "@/lib/media/export-burned";
+
 import {
   buildCutListJson,
   buildEdl,
