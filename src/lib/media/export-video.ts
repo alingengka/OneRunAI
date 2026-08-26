@@ -100,34 +100,60 @@ export async function exportTrimmedWebm(
     }
 
     const chunks: BlobPart[] = [];
-    const recorder = new MediaRecorder(stream, { mimeType: pickMime() });
+    const mimeType = pickMime();
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: 8_000_000,
+      audioBitsPerSecond: 128_000,
+    });
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     const done = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
 
     const total = segments.reduce((n, s) => n + (s.end - s.start), 0);
     let elapsed = 0;
 
-    recorder.start();
+    if (audioContext && audioContext.state === "suspended") await audioContext.resume();
+
+    // Prime the decoder, then record with a timeslice so chunks flush steadily.
+    await seek(video, segments[0]!.start);
+    recorder.start(500);
+    await new Promise((r) => setTimeout(r, 120));
 
     for (const seg of segments) {
       await seek(video, seg.start);
       if (audioContext && boundaryGain && options.smoothCuts) {
         const now = audioContext.currentTime;
+        const length = Math.max(0.06, seg.end - seg.start);
+        const fade = Math.min(0.05, length / 4);
         boundaryGain.gain.cancelScheduledValues(now);
-        boundaryGain.gain.setValueAtTime(0.02, now);
-        boundaryGain.gain.linearRampToValueAtTime(1, now + 0.025);
-        boundaryGain.gain.setValueAtTime(1, now + Math.max(0.03, seg.end - seg.start - 0.025));
-        boundaryGain.gain.linearRampToValueAtTime(0.02, now + Math.max(0.05, seg.end - seg.start));
+        boundaryGain.gain.setValueAtTime(0.0001, now);
+        boundaryGain.gain.exponentialRampToValueAtTime(1, now + fade);
+        boundaryGain.gain.setValueAtTime(1, now + Math.max(fade + 0.01, length - fade));
+        boundaryGain.gain.exponentialRampToValueAtTime(0.0001, now + length);
       }
-      await video.play();
+      try {
+        await video.play();
+      } catch {
+        throw new Error("เบราว์เซอร์บล็อกการเล่นวิดีโอ กรุณากดปุ่มอีกครั้ง");
+      }
       await new Promise<void>((resolve) => {
+        let last = -1;
+        let stalled = 0;
         const tick = () => {
-          if (video.currentTime >= seg.end || video.ended) {
+          const time = video.currentTime;
+          if (time >= seg.end || video.ended) {
             video.pause();
             resolve();
             return;
           }
-          onProgress?.(Math.min(1, (elapsed + (video.currentTime - seg.start)) / total));
+          if (Math.abs(time - last) < 0.0005) {
+            stalled += 1;
+            if (stalled > 240) { video.pause(); resolve(); return; }
+          } else {
+            stalled = 0;
+          }
+          last = time;
+          onProgress?.(Math.min(1, (elapsed + (time - seg.start)) / total));
           requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
@@ -136,13 +162,15 @@ export async function exportTrimmedWebm(
       onProgress?.(Math.min(1, elapsed / total));
     }
 
+    await new Promise((r) => setTimeout(r, 250));
     recorder.requestData();
     recorder.stop();
     await done;
-    const result = new Blob(chunks, { type: pickMime() });
+    const result = new Blob(chunks, { type: mimeType });
     if (audioContext) void audioContext.close();
     if (result.size < 1024) throw new Error("ไฟล์วิดีโอที่ตัดไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
     return result;
+
   } finally {
     video.pause();
     video.remove();
