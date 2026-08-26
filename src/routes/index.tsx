@@ -296,6 +296,7 @@ function Studio() {
       segments,
       words,
       transcript,
+      glossary,
       style,
       languages,
       threshold,
@@ -303,7 +304,7 @@ function Studio() {
       noiseReduction,
       sfx,
     }),
-    [file, duration, segments, words, transcript, style, languages, threshold, minSilence, noiseReduction, sfx],
+    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, sfx],
   );
 
   useEffect(() => {
@@ -326,6 +327,7 @@ function Studio() {
     setSegments(p.segments);
     setWords(p.words);
     setTranscript(p.transcript);
+    setGlossary(p.glossary ?? "");
     setStyle(p.style);
     setLanguages((p.languages as LangCode[]).length ? (p.languages as LangCode[]) : ["th"]);
     setThreshold(p.threshold);
@@ -717,10 +719,10 @@ function Studio() {
         </div>
       </header>
 
-      <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
+      <div className="mx-auto grid max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
         {/* Left: controls */}
-        <section className="order-2 rounded-2xl border border-border bg-card p-5 lg:order-1">
-          <div className="mb-5 flex gap-2 rounded-xl bg-secondary p-1">
+        <section className="order-2 rounded-lg border border-border bg-card p-4 sm:p-5 lg:order-1">
+          <div className="mb-5 flex gap-1 overflow-x-auto rounded-lg bg-secondary p-1">
             {(
               [
                 ["tools", "AI Tools"],
@@ -1084,8 +1086,8 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 lg:order-2">
-          <div className="rounded-2xl border border-border bg-card p-4">
+        <section className="order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start">
+          <div className="rounded-lg border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium"><Smartphone className="h-4 w-4" /> TikTok Preview</div>
               <Switch checked={tiktokPreview} onCheckedChange={setTiktokPreview} aria-label="เปิดพรีวิว TikTok" />
