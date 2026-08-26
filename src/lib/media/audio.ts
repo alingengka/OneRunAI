@@ -29,40 +29,49 @@ export async function decodeAudioFromFile(file: File | Blob): Promise<AudioBuffe
 
 /** Returns speech segments (non-silent parts) of the buffer. */
 export function detectSpeechSegments(buffer: AudioBuffer, opts: SilenceOptions): Segment[] {
-  const data = buffer.getChannelData(0);
   const sr = buffer.sampleRate;
   const win = Math.max(256, Math.floor(sr * 0.02)); // 20ms
   const frames: number[] = [];
-  let peak = 1e-8;
 
-  for (let i = 0; i < data.length; i += win) {
+  for (let i = 0; i < buffer.length; i += win) {
     let sum = 0;
-    const end = Math.min(i + win, data.length);
-    for (let j = i; j < end; j++) { const v = data[j] ?? 0; sum += v * v; }
-    const rms = Math.sqrt(sum / Math.max(1, end - i));
+    const end = Math.min(i + win, buffer.length);
+    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+      const data = buffer.getChannelData(channel);
+      for (let j = i; j < end; j++) {
+        const v = data[j] ?? 0;
+        sum += v * v;
+      }
+    }
+    const rms = Math.sqrt(sum / Math.max(1, (end - i) * buffer.numberOfChannels));
     frames.push(rms);
-    if (rms > peak) peak = rms;
   }
 
-  const threshold = peak * Math.pow(10, opts.thresholdDb / 20);
+  if (!frames.length) return [];
+  const sorted = [...frames].sort((a, b) => a - b);
+  const noiseFloor = sorted[Math.floor(sorted.length * 0.2)] ?? 1e-8;
+  const speechLevel = sorted[Math.floor(sorted.length * 0.9)] ?? noiseFloor;
+  const relative = speechLevel * Math.pow(10, opts.thresholdDb / 20);
+  const threshold = Math.max(noiseFloor * 2.2, relative, 0.00008);
   const frameDur = win / sr;
   const segments: Segment[] = [];
   let current: Segment | null = null;
+  let silenceStart: number | null = null;
 
   frames.forEach((rms, index) => {
     const t = index * frameDur;
     if (rms >= threshold) {
-      if (!current) current = { start: t, end: t + frameDur };
-      else current.end = t + frameDur;
+      if (!current) current = { start: t, end: Math.min(buffer.duration, t + frameDur) };
+      else current.end = Math.min(buffer.duration, t + frameDur);
+      silenceStart = null;
     } else if (current) {
-      const gapStart = current.end;
-      // close only when the silence run is long enough
-      const silenceLen = t + frameDur - gapStart;
+      if (silenceStart === null) silenceStart = t;
+      const silenceLen = t + frameDur - silenceStart;
       if (silenceLen >= opts.minSilence) {
+        current.end = silenceStart;
         segments.push(current);
         current = null;
-      } else {
-        current.end = t + frameDur;
+        silenceStart = null;
       }
     }
   });
@@ -81,6 +90,36 @@ export function detectSpeechSegments(buffer: AudioBuffer, opts: SilenceOptions):
       return acc;
     }, [])
     .filter((s) => s.end - s.start > 0.08);
+}
+
+/** Split a longer speech region at low-energy valleys for tighter caption timing. */
+export function refineSpeechSegments(buffer: AudioBuffer, segments: Segment[], maxLength = 4): Segment[] {
+  const sr = buffer.sampleRate;
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i));
+  const refined: Segment[] = [];
+  for (const segment of segments) {
+    let start = segment.start;
+    while (segment.end - start > maxLength) {
+      const target = start + maxLength;
+      const searchStart = Math.max(start + 1, target - 0.6);
+      const searchEnd = Math.min(segment.end - 0.25, target + 0.6);
+      let best = target;
+      let bestEnergy = Number.POSITIVE_INFINITY;
+      for (let t = searchStart; t <= searchEnd; t += 0.02) {
+        const from = Math.floor(t * sr);
+        const to = Math.min(buffer.length, from + Math.floor(sr * 0.04));
+        let energy = 0;
+        for (const data of channels) {
+          for (let i = from; i < to; i++) energy += Math.abs(data[i] ?? 0);
+        }
+        if (energy < bestEnergy) { bestEnergy = energy; best = t; }
+      }
+      refined.push({ start, end: best });
+      start = best;
+    }
+    if (segment.end - start > 0.08) refined.push({ start, end: segment.end });
+  }
+  return refined;
 }
 
 export function invertSegments(segments: Segment[], duration: number): Segment[] {
