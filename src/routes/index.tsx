@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
+import { useAudioFeedback } from "@/hooks/use-audio-feedback";
+import { AudioPreview } from "@/components/audio-preview";
 import { toast } from "sonner";
 import {
   Captions,
@@ -78,7 +80,7 @@ export const Route = createFileRoute("/")({
   component: Studio,
 });
 
-type Tab = "tools" | "styles" | "customize" | "text";
+type Tab = "tools" | "styles" | "customize" | "text" | "audio";
 
 type LangCode = "th" | "lo" | "en";
 
@@ -96,6 +98,7 @@ function fmt(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
+  const { play } = useAudioFeedback();
 function Studio() {
   const transcribe = useServerFn(transcribeAudio);
   const translate = useServerFn(translateLines);
@@ -194,6 +197,7 @@ function Studio() {
         setSegments(segs);
         setDuration((d) => d || buffer!.duration);
         toast.success(`พบช่วงพูด ${segs.length} ช่วง`);
+        play("success");
         return { buffer, segs };
       } catch (e) {
         toast.error("อ่านเสียงจากไฟล์นี้ไม่ได้ ลองไฟล์ MP4/WebM ที่มีเสียง");
@@ -355,8 +359,10 @@ function Studio() {
       setCaptionsOn(true);
       setRemoveSilence(true);
       toast.success("สร้างซับไตเติล + ตัดช่วงเงียบเรียบร้อย");
+      play("success");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ถอดเสียงไม่สำเร็จ");
+      play("error");
     } finally {
       setTranscribing(false);
     }
@@ -411,11 +417,13 @@ function Studio() {
   const exportSrt = () => {
     if (!groups.length) { toast.error("ยังไม่มีซับไตเติล"); return; }
     download(`${file?.name ?? "clip"}.srt`, buildSrt(groups, remap), "application/x-subrip");
+    play("pop");
     toast.success("ดาวน์โหลด .srt แล้ว — ลากเข้า CapCut ได้เลย");
   };
   const exportEdl = () => {
     if (!segments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
     download(`${file?.name ?? "clip"}.edl`, buildEdl(segments, file?.name ?? "clip"));
+    play("pop");
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
   const exportJson = () => {
@@ -492,11 +500,12 @@ function Studio() {
                 ["styles", "Caption Style"],
                 ["customize", "Customize"],
                 ["text", "Edit Text"],
+                ["audio", "Audio"],
               ] as [Tab, string][]
             ).map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => setTab(key)}
+                onClick={() => { setTab(key); play("hover"); }}
                 className={cn(
                   "flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   tab === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
