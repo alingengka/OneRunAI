@@ -371,10 +371,14 @@ function Studio() {
       const lang = languages[0] ?? "th";
       // ถอดเสียงทีละวลี (รวมช่วงพูดที่ต่อเนื่องกัน) เพื่อให้โมเดลมีบริบทพอ
       // และคำยังยึดกับช่วงเวลาที่พูดจริง
-      const transcriptionSegments = refineSpeechSegments(buffer, segs, 8);
+      const transcriptionSegments = refineSpeechSegments(buffer, segs, lang === "lo" ? 12 : 8);
       const chunks = buildAsrChunks(transcriptionSegments, buffer.duration, {
-        min: lang === "lo" ? 3 : 2.4,
-        max: 14,
+        // Lao needs longer phrases (and a little more head/tail room) for the
+        // model to resolve tone marks and word boundaries correctly.
+        min: lang === "lo" ? 4.5 : 2.4,
+        max: lang === "lo" ? 18 : 14,
+        gap: lang === "lo" ? 0.8 : 0.55,
+        pad: lang === "lo" ? 0.25 : 0.12,
       });
       const allWords: Word[] = [];
       const texts: string[] = [];
@@ -382,10 +386,14 @@ function Studio() {
       if (chunks.length) {
         for (let i = 0; i < chunks.length; i++) {
           const chunkSegs = chunks[i]!;
-          const wav = encodeSegmentsWav16k(buffer, chunkSegs, noiseReduction);
+          // Send clean, undistorted audio to the model: the noise-gate is for
+          // the exported mix, not for recognition.
+          const wav = encodeSegmentsWav16k(buffer, chunkSegs, false);
           if (wav.size < 4096) continue;
           const b64 = await blobToBase64(wav);
-          const res = await transcribe({ data: { audioBase64: b64, language: lang } });
+          const res = await transcribe({
+            data: { audioBase64: b64, language: lang, context: texts.join(" ").slice(-600) },
+          });
           const text = (res.text ?? "").trim();
           if (!text) continue;
           texts.push(text);
@@ -395,6 +403,7 @@ function Studio() {
           setWords([...allWords]);
         }
       } else {
+
 
         const wav = encodeWav16k(buffer);
         if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
