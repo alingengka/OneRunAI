@@ -2,6 +2,7 @@ import type { Segment } from "./media/audio";
 import type { CaptionStyle, Word } from "./captions";
 import type { SoundPack } from "./audio-system";
 import type { SceneElement } from "./scenes";
+import type { LexRule } from "./lao-glossary";
 
 const KEY = "shortcut-studio-project-v1";
 
@@ -13,6 +14,7 @@ export type SavedProject = {
   words: Word[];
   transcript: string;
   glossary?: string;
+  lexRules?: LexRule[];
   style: CaptionStyle;
   languages: string[];
   threshold: number;

@@ -85,6 +85,7 @@ import { StepBar, type Step } from "@/components/editor/StepBar";
 import { AccuracyPanel } from "@/components/editor/AccuracyPanel";
 import { GlossaryManager } from "@/components/editor/GlossaryManager";
 import { applyRulesToWords, parseGlossaryTerms, type LexRule } from "@/lib/lao-glossary";
+import { buildAccuracyReport } from "@/lib/accuracy-report";
 
 
 export const Route = createFileRoute("/")({
@@ -562,6 +563,56 @@ function Studio() {
     } finally {
       setRetryingSync(false);
     }
+  };
+
+  /** ถอดเสียงใหม่เฉพาะช่วงเวลาที่เลือก แทนการถอดใหม่ทั้งไฟล์ */
+  const retranscribeRange = async (start: number, end: number) => {
+    const buffer = audioBufferRef.current;
+    if (!buffer) { toast.error("อัปโหลดคลิปก่อนถอดเสียงใหม่"); return; }
+    const region = { start: Math.max(0, start - 0.2), end: Math.min(duration || buffer.duration, end + 0.2) };
+    if (region.end - region.start < 0.25) { toast.error("ช่วงสั้นเกินไป"); return; }
+    setRetryingSync(true);
+    const id = toast.loading(`กำลังถอดเสียงใหม่ ${region.start.toFixed(1)}s – ${region.end.toFixed(1)}s…`);
+    try {
+      const wav = encodeSegmentsWav16k(buffer, [region], false);
+      if (wav.size < 2048) throw new Error("เสียงในช่วงนี้น้อยเกินไป");
+      const before = words.filter((word) => word.end <= region.start);
+      const after = words.filter((word) => word.start >= region.end);
+      const context = before.slice(-8).map((word) => word.text).join(" ");
+      const res = await transcribe({
+        data: {
+          audioBase64: await blobToBase64(wav),
+          language: languages[0] ?? "th",
+          context,
+          glossary: parseGlossaryTerms(glossary),
+        },
+      });
+      const text = (res.text ?? "").trim();
+      if (!text) throw new Error("ไม่พบคำพูดในช่วงนี้");
+      const aligned = forcedAlignWords(buffer, [region], text, region.end - region.start).map((word) => {
+        const acoustic = word.confidence ?? 0.5;
+        const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
+        return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
+      });
+      const ruled = applyRulesToWords([...before, ...aligned, ...after].sort((a, b) => a.start - b.start), lexRules);
+      if (ruled.changed) setLexRules(ruled.rules);
+      setWords(ruled.words);
+      setTranscript(wordsToTranscript(ruled.words));
+      toast.success(`ถอดเสียงใหม่ ${aligned.length} คำในช่วงนี้แล้ว`, { id });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "ถอดเสียงใหม่ไม่สำเร็จ", { id });
+    } finally {
+      setRetryingSync(false);
+    }
+  };
+
+  /** ถอดใหม่ทุกช่วงที่ความมั่นใจต่ำหรือ alignment เพี้ยน */
+  const retranscribeWeakSpots = async () => {
+    const report = buildAccuracyReport(words, segments, duration, languages[0] ?? "th");
+    const weak = report.spans.filter((span) => span.low > 0 || span.review > 1).slice(0, 8);
+    if (!weak.length) { toast.success("ไม่พบช่วงที่ต้องถอดใหม่"); return; }
+    for (const span of weak) await retranscribeRange(span.start, span.end);
+    toast.success(`ถอดใหม่ ${weak.length} ช่วงที่อ่อนแล้ว`);
   };
 
   /** ตัวช่วยจัดการงานเรนเดอร์: มีสถานะ % และปุ่มยกเลิกจริง */
@@ -1257,6 +1308,36 @@ function Studio() {
                   {words.length} คำ · {groups.length} บล็อก
                 </span>
               </div>
+              </div>
+            </div>
+          )}
+
+          {tab === "accuracy" && (
+            <div className="space-y-8">
+              <AccuracyPanel
+                words={words}
+                segments={segments}
+                duration={duration}
+                language={languages[0] ?? "th"}
+                busy={retryingSync}
+                onPreview={previewRange}
+                onRetranscribe={(start, end) => void retranscribeRange(start, end)}
+                onRetranscribeAllWeak={() => void retranscribeWeakSpots()}
+              />
+              <div className="border-t border-border pt-6">
+                <GlossaryManager
+                  glossary={glossary}
+                  rules={lexRules}
+                  onGlossaryChange={setGlossary}
+                  onRulesChange={setLexRules}
+                  onApplyNow={() => {
+                    const ruled = applyRulesToWords(words, lexRules);
+                    setLexRules(ruled.rules);
+                    setWords(ruled.words);
+                    setTranscript(wordsToTranscript(ruled.words));
+                    toast.success(ruled.changed ? `แก้คำตามกฎ ${ruled.changed} จุด` : "ไม่พบคำที่ต้องแก้ตามกฎ");
+                  }}
+                />
               </div>
             </div>
           )}
