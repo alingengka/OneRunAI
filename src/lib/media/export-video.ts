@@ -40,7 +40,7 @@ export async function exportTrimmedWebm(
   url: string,
   segments: Segment[],
   onProgress?: Progress,
-  options: { noiseReduction?: boolean; smoothCuts?: boolean } = {},
+  options: { noiseReduction?: boolean; smoothCuts?: boolean; signal?: AbortSignal } = {},
 ): Promise<Blob> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
