@@ -39,7 +39,6 @@ import {
 } from "@/lib/captions";
 import {
   blobToBase64,
-  chunkSegments,
   decodeAudioFromFile,
   defaultSilenceOptions,
   detectSpeechSegments,
