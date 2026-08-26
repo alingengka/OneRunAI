@@ -254,49 +254,101 @@ export async function exportBurnedVideo(
     const total = segments.reduce((n, s) => n + (s.end - s.start), 0);
     let elapsed = 0;
 
+    // A frame source that follows the decoder when available (steadier than rAF,
+    // which fires on display vsync and drops frames while seeking).
+    type FrameVideo = HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number;
+    };
+    const frameVideo = video as FrameVideo;
+    const nextFrame = (cb: () => void) => {
+      if (typeof frameVideo.requestVideoFrameCallback === "function") frameVideo.requestVideoFrameCallback(cb);
+      else requestAnimationFrame(cb);
+    };
+
+    const FADE = 0.08; // seconds of visual cross-fade at each cut
+    const paint = (time: number, seg: Segment) => {
+      ctx.drawImage(video, 0, 0, width, height);
+      if (options.smoothCuts !== false) {
+        const into = time - seg.start;
+        const left = seg.end - time;
+        const edge = Math.min(into, left);
+        if (edge < FADE) {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, Math.min(1, 1 - edge / FADE)) * 0.85;
+          ctx.fillStyle = "#000";
+          ctx.fillRect(0, 0, width, height);
+          ctx.restore();
+        }
+      }
+      drawCaption(time);
+    };
+
+    if (audioContext.state === "suspended") await audioContext.resume();
+
     // Prime the first frame so the recording never starts on a blank canvas.
     await seek(video, segments[0]!.start);
     ctx.drawImage(video, 0, 0, width, height);
     drawCaption(segments[0]!.start);
 
-    recorder.start();
+    // Timeslice keeps chunks flowing, so a long render can't be lost in one
+    // oversized buffer and the file stays playable.
+    recorder.start(500);
+    await new Promise((r) => setTimeout(r, 120));
 
     for (const seg of segments) {
       await seek(video, seg.start);
       if (options.smoothCuts !== false) {
         const now = audioContext.currentTime;
         const length = Math.max(0.06, seg.end - seg.start);
+        const fade = Math.min(0.05, length / 4);
         boundaryGain.gain.cancelScheduledValues(now);
-        boundaryGain.gain.setValueAtTime(0.02, now);
-        boundaryGain.gain.linearRampToValueAtTime(1, now + 0.025);
-        boundaryGain.gain.setValueAtTime(1, now + Math.max(0.03, length - 0.025));
-        boundaryGain.gain.linearRampToValueAtTime(0.02, now + length);
+        boundaryGain.gain.setValueAtTime(0.0001, now);
+        boundaryGain.gain.exponentialRampToValueAtTime(1, now + fade);
+        boundaryGain.gain.setValueAtTime(1, now + Math.max(fade + 0.01, length - fade));
+        boundaryGain.gain.exponentialRampToValueAtTime(0.0001, now + length);
       }
-      await video.play();
+      try {
+        await video.play();
+      } catch {
+        throw new Error("เบราว์เซอร์บล็อกการเล่นวิดีโอ กรุณากดปุ่มอีกครั้ง");
+      }
       await new Promise<void>((resolve) => {
+        let last = -1;
+        let stalled = 0;
         const tick = () => {
-          ctx.drawImage(video, 0, 0, width, height);
-          drawCaption(video.currentTime);
-          if (video.currentTime >= seg.end || video.ended) {
+          const time = video.currentTime;
+          paint(time, seg);
+          if (time >= seg.end || video.ended) {
             video.pause();
             resolve();
             return;
           }
-          onProgress?.(Math.min(1, (elapsed + (video.currentTime - seg.start)) / total));
-          requestAnimationFrame(tick);
+          // Guard against a decoder stall so the export can never hang forever.
+          if (Math.abs(time - last) < 0.0005) {
+            stalled += 1;
+            if (stalled > 240) { video.pause(); resolve(); return; }
+          } else {
+            stalled = 0;
+          }
+          last = time;
+          onProgress?.(Math.min(1, (elapsed + (time - seg.start)) / total));
+          nextFrame(tick);
         };
-        requestAnimationFrame(tick);
+        nextFrame(tick);
       });
       elapsed += seg.end - seg.start;
       onProgress?.(Math.min(1, elapsed / total));
     }
 
+    // Let the encoder flush the tail before closing the file.
+    await new Promise((r) => setTimeout(r, 250));
     recorder.requestData();
     recorder.stop();
     await done;
     const blob = new Blob(chunks, { type: mimeType });
     if (blob.size < 1024) throw new Error("ไฟล์วิดีโอที่ส่งออกไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
     return { blob, ext: mimeExtension(mimeType) };
+
   } finally {
     video.pause();
     video.remove();
