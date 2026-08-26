@@ -296,6 +296,7 @@ export async function exportBurnedVideo(
     await new Promise((r) => setTimeout(r, 120));
 
     for (const seg of segments) {
+      if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
       await seek(video, seg.start);
       if (options.smoothCuts !== false) {
         const now = audioContext.currentTime;
