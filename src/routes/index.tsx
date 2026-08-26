@@ -187,6 +187,12 @@ function Studio() {
     () => segments.filter((s) => !isDropped((s.start + s.end) / 2)),
     [segments, isDropped],
   );
+  const outputSegments = useMemo(() => {
+    if (removeSilence) return keepSegments;
+    if (!duration) return [];
+    const ranges = [...droppedRanges].sort((a, b) => a.start - b.start);
+    return invertSegments(ranges, duration);
+  }, [removeSilence, keepSegments, droppedRanges, duration]);
   const visibleWords = useMemo(() => words.filter((w) => !isDropped(w.start)), [words, isDropped]);
 
   const silences = useMemo(
@@ -593,7 +599,7 @@ function Studio() {
   const exportTrimmedVideo = () => {
     if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
     void runJob("ตัดช่วงเงียบและเรนเดอร์วิดีโอ", async (signal, onProgress) => {
-      const blob = await exportTrimmedWebm(videoUrl, [...keepSegments], onProgress, {
+      const blob = await exportTrimmedWebm(videoUrl, [...outputSegments], onProgress, {
         noiseReduction,
         smoothCuts: true,
         signal,
@@ -610,7 +616,7 @@ function Studio() {
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
       const { blob, ext } = await exportBurnedVideo(
         videoUrl,
-        [...keepSegments],
+        [...outputSegments],
         [...groups],
         style,
         onProgress,
@@ -625,7 +631,7 @@ function Studio() {
   const exportCapCutPackage = () => {
     if (!videoUrl || !keepSegments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
     void runJob("สร้าง CapCut Package", async (signal, onProgress) => {
-      const video = await exportTrimmedWebm(videoUrl, [...keepSegments], (r) => onProgress(r * 0.9), {
+      const video = await exportTrimmedWebm(videoUrl, [...outputSegments], (r) => onProgress(r * 0.9), {
         noiseReduction,
         smoothCuts: true,
         signal,
@@ -635,7 +641,7 @@ function Studio() {
         baseName: baseName(),
         video,
         duration,
-        keep: [...keepSegments],
+        keep: [...outputSegments],
         removed: [...silences],
         groups: [...groups],
       });
@@ -704,8 +710,8 @@ function Studio() {
   };
 
   const remap = useCallback(
-    (t: number) => (removeSilence && keepSegments.length ? mapToTrimmed(t, keepSegments) : t),
-    [removeSilence, keepSegments],
+    (t: number) => (outputSegments.length ? mapToTrimmed(t, outputSegments) : t),
+    [outputSegments],
   );
 
   const exportSrt = () => {
@@ -716,7 +722,7 @@ function Studio() {
   };
   const exportEdl = () => {
     if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
-    download(`${file?.name ?? "clip"}.edl`, buildEdl(keepSegments, file?.name ?? "clip"));
+    download(`${file?.name ?? "clip"}.edl`, buildEdl(outputSegments, file?.name ?? "clip"));
     play("pop");
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
@@ -727,7 +733,7 @@ function Studio() {
       buildCutListJson({
         clipName: file?.name ?? "clip",
         duration,
-        keep: keepSegments,
+        keep: outputSegments,
         removed: silences,
         groups,
       }),
@@ -743,7 +749,7 @@ function Studio() {
       buildFcpxml({
         clipName: file?.name ?? "clip",
         duration,
-        keep: keepSegments,
+        keep: outputSegments,
         width: v?.videoWidth || 1080,
         height: v?.videoHeight || 1920,
       }),
@@ -1156,6 +1162,7 @@ function Studio() {
           {tab === "styles" && (
             <StylePicker
               activeId={style.id}
+              activeStyle={style}
               onSelect={(preset) => {
                 setStyle(preset);
                   void play(preset.animation);
