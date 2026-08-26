@@ -365,12 +365,13 @@ function Studio() {
         segs = r.segs;
       }
       const lang = languages[0] ?? "th";
-      // ถอดเสียงทีละก้อน (เฉพาะช่วงที่มีเสียงพูด) เพื่อให้คำตรงกับเวลาที่พูดจริง
-      const transcriptionSegments = refineSpeechSegments(buffer, segs, 4);
-      // One short speech region per request keeps Lao/Thai words anchored to the
-      // phrase where they were actually spoken instead of spreading a long
-      // transcript over several disconnected regions.
-      const chunks = transcriptionSegments.map((segment) => [segment]);
+      // ถอดเสียงทีละวลี (รวมช่วงพูดที่ต่อเนื่องกัน) เพื่อให้โมเดลมีบริบทพอ
+      // และคำยังยึดกับช่วงเวลาที่พูดจริง
+      const transcriptionSegments = refineSpeechSegments(buffer, segs, 8);
+      const chunks = buildAsrChunks(transcriptionSegments, buffer.duration, {
+        min: lang === "lo" ? 3 : 2.4,
+        max: 14,
+      });
       const allWords: Word[] = [];
       const texts: string[] = [];
 
@@ -390,6 +391,7 @@ function Studio() {
           setWords([...allWords]);
         }
       } else {
+
         const wav = encodeWav16k(buffer);
         if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
         const b64 = await blobToBase64(wav);
