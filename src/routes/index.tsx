@@ -34,6 +34,8 @@ import {
   alignWordsToSegments,
   baseStyle,
   groupWords,
+  LINE_BREAK,
+
   type CaptionStyle,
   type Word,
 } from "@/lib/captions";

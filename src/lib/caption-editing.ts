@@ -32,5 +32,8 @@ export function normalizeWordTimes(words: Word[], duration: number): Word[] {
 }
 
 export function wordsToTranscript(words: Word[]): string {
-  return words.map((word) => word.text).join(" ");
+  return words
+    .map((word) => (word.text === "\u2028" ? "\n" : word.text))
+    .join(" ")
+    .replace(/ ?\n ?/g, "\n");
 }
