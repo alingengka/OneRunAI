@@ -34,6 +34,8 @@ import {
   alignWordsToSegments,
   baseStyle,
   groupWords,
+  LINE_BREAK,
+
   type CaptionStyle,
   type Word,
 } from "@/lib/captions";
@@ -504,6 +506,29 @@ function Studio() {
     setWords(next);
     setTranscript(wordsToTranscript(next));
   };
+
+  /** แก้ข้อความของบล็อกซับที่กำลังแสดงบนพรีวิว ("\n" = แยกแถว) */
+  const editActiveGroupText = (text: string) => {
+    if (!activeGroup) return;
+    const first = words.findIndex((w) => w === activeGroup.words[0]);
+    if (first < 0) return;
+    const last = first + activeGroup.words.length;
+    const rows = text.split("\n").map((r) => r.trim()).filter(Boolean);
+    if (!rows.length) return;
+    const span = Math.max(0.12, activeGroup.end - activeGroup.start);
+    const totalChars = rows.reduce((n, r) => n + r.length, 0) || 1;
+    const replacement: Word[] = [];
+    let cursor = activeGroup.start;
+    rows.forEach((row, i) => {
+      const rowEnd = i === rows.length - 1 ? activeGroup.end : cursor + (row.length / totalChars) * span;
+      if (i > 0) replacement.push({ text: LINE_BREAK, start: cursor, end: cursor });
+      replacement.push(...alignWordsToSegments(row, [{ start: cursor, end: rowEnd }], rowEnd - cursor));
+      cursor = rowEnd;
+    });
+    updateWords([...words.slice(0, first), ...replacement, ...words.slice(last)]);
+    toast.success("อัปเดตข้อความบนพรีวิวแล้ว");
+  };
+
 
   const togglePlay = () => {
     const v = videoRef.current;
@@ -977,12 +1002,15 @@ function Studio() {
                   time={time}
                   style={style}
                   height={frameHeight}
+                  safeArea={tiktokPreview}
                   onPositionChange={({ posX, posY }) => setStyle((current) => ({ ...current, posX, posY }))}
+                  onEditText={(text) => editActiveGroupText(text)}
                 />
               )}
               {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
-            {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความบนวิดีโอเพื่อย้ายตำแหน่งได้ทันที</p>}
+            {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)</p>}
+
 
             <div className="mt-4 space-y-3">
               <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">

@@ -5,8 +5,9 @@ export function TikTokSafeAreaOverlay() {
     <img
       src={tiktokFrame.url}
       alt="กรอบพรีวิวหน้าจอ TikTok"
-      className="pointer-events-none absolute inset-0 z-20 h-full w-full object-cover"
+      className="pointer-events-none absolute inset-0 z-20 h-full w-full object-contain"
       aria-hidden="true"
     />
   );
+
 }
