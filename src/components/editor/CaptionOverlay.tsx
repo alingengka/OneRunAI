@@ -177,8 +177,30 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         wordBreak: "break-word",
       }}
     >
-      {renderLines.map((line, li) => (
-        <div key={li} style={{ display: "block" }}>
+      {renderLines.map((line, li) => {
+        const ls = style.lineStyles?.[li] ?? {};
+        const lineStroke = strokeWidth[ls.stroke ?? style.stroke] * (fontSize / 60);
+        const lineStrokeColor = ls.strokeColor ?? style.strokeColor;
+        const lineTextShadow = [
+          lineStroke > 0
+            ? `${-lineStroke}px ${-lineStroke}px 0 ${lineStrokeColor}, ${lineStroke}px ${-lineStroke}px 0 ${lineStrokeColor}, ${-lineStroke}px ${lineStroke}px 0 ${lineStrokeColor}, ${lineStroke}px ${lineStroke}px 0 ${lineStrokeColor}`
+            : "",
+          blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : "",
+        ]
+          .filter(Boolean)
+          .join(", ");
+        const gap = ls.gap ?? style.lineGap ?? 0.08;
+        return (
+        <div
+          key={li}
+          style={{
+            display: "block",
+            fontFamily: ls.fontFamily ?? style.fontFamily,
+            fontWeight: ls.fontWeight ?? style.fontWeight,
+            color: ls.color ?? style.color,
+            textShadow: lineTextShadow,
+          }}
+        >
           <span
             style={{
               display: "inline-block",
@@ -186,7 +208,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
               background: style.plate ? style.plateColor : undefined,
               padding: style.plate ? `${fontSize * 0.12}px ${fontSize * 0.28}px` : undefined,
               borderRadius: style.plate ? fontSize * 0.22 : undefined,
-              marginTop: li > 0 ? fontSize * 0.08 : undefined,
+              marginTop: li > 0 ? fontSize * gap : undefined,
             }}
           >
             {line.map(({ word, i }) => {
@@ -237,7 +259,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
             })}
           </span>
         </div>
-      ))}
+        );
+      })}
       {visibleWords.length === 0 && null}
     </div>
   );

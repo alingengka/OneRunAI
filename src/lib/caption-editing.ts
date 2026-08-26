@@ -37,3 +37,63 @@ export function wordsToTranscript(words: Word[]): string {
     .join(" ")
     .replace(/ ?\n ?/g, "\n");
 }
+
+// ── รีซิงก์ข้อความที่แก้บนพรีวิวให้ตรงกับช่วงเสียงพูดจริง ─────────────────
+import { LINE_BREAK, tokenizeWords, alignWordsToSegments } from "./captions";
+import type { Segment } from "./media/audio";
+
+/** สร้างคำจากหลายแถว โดยกระจายเวลาไปตามช่วงเสียงพูดจริงในช่วงเวลานั้น */
+export function buildRowWords(
+  rows: string[],
+  start: number,
+  end: number,
+  segments: Segment[],
+): Word[] {
+  const span = Math.max(0.12, end - start);
+  const local = segments
+    .map((s) => ({ start: Math.max(s.start, start), end: Math.min(s.end, end) }))
+    .filter((s) => s.end - s.start > 0.02);
+  const useSegs = local.length ? local : [{ start, end: start + span }];
+
+  const joined = rows.join(" ");
+  const aligned = alignWordsToSegments(joined, useSegs, span);
+  const counts = rows.map((r) => tokenizeWords(r).length);
+
+  const out: Word[] = [];
+  let cursor = 0;
+  counts.forEach((count, rowIndex) => {
+    if (rowIndex > 0) {
+      const t = aligned[cursor]?.start ?? end;
+      out.push({ text: LINE_BREAK, start: t, end: t });
+    }
+    for (let i = 0; i < count; i++) {
+      const w = aligned[cursor + i];
+      if (w) out.push(w);
+    }
+    cursor += count;
+  });
+  return out;
+}
+
+export type SyncStatus = { score: number; label: string; tone: "good" | "ok" | "bad" };
+
+/** ประเมินความแม่นยำของการซิงก์ซับกับเสียงพูด */
+export function syncAccuracy(words: Word[], segments: Segment[], duration: number): SyncStatus {
+  const visible = words.filter((w) => w.text !== LINE_BREAK);
+  if (!visible.length) return { score: 0, label: "ยังไม่มีซับ", tone: "bad" };
+  if (!segments.length) return { score: 0, label: "ยังไม่ได้วิเคราะห์เสียง", tone: "bad" };
+
+  const onSpeech = visible.filter((w) =>
+    segments.some(
+      (s) => Math.min(s.end, w.end) - Math.max(s.start, w.start) > (w.end - w.start) * 0.5,
+    ),
+  ).length;
+  const coverage = onSpeech / visible.length;
+  const issues = findSyncIssues(words, duration).length;
+  const penalty = Math.min(0.4, (issues / visible.length) * 0.6);
+  const score = Math.max(0, Math.min(1, coverage - penalty));
+  const pct = Math.round(score * 100);
+  if (score >= 0.85) return { score, label: `ตรงเสียงพูด ~${pct}%`, tone: "good" };
+  if (score >= 0.6) return { score, label: `พอใช้ ~${pct}% (${issues} จุดควรตรวจ)`, tone: "ok" };
+  return { score, label: `ยังไม่ตรง ~${pct}% (${issues} จุดควรตรวจ)`, tone: "bad" };
+}

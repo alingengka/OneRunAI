@@ -64,7 +64,7 @@ import {
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { translateLines } from "@/lib/translate.functions";
 import { clearProject, loadProject, saveProject } from "@/lib/project-store";
-import { wordsToTranscript, type SyncIssue } from "@/lib/caption-editing";
+import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 
@@ -137,6 +137,7 @@ function Studio() {
   const [removeSilence, setRemoveSilence] = useState(false);
   const [noiseReduction, setNoiseReduction] = useState(false);
   const [tiktokPreview, setTiktokPreview] = useState(false);
+  const [autoResync, setAutoResync] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [rendering, setRendering] = useState(false);
@@ -159,6 +160,15 @@ function Studio() {
     [groups, time],
   );
   const activeGroupIndex = useMemo(() => groups.findIndex((g) => time >= g.start && time <= g.end), [groups, time]);
+  const accuracy = useMemo(() => syncAccuracy(words, segments, duration), [words, segments, duration]);
+  const previewLineCount = useMemo(() => {
+    if (!activeGroup) return 3;
+    const manual = activeGroup.words.filter((w) => w.text === LINE_BREAK).length;
+    if (manual) return manual + 1;
+    const per = Math.max(0, Math.round(style.wordsPerLine ?? 0));
+    const visible = activeGroup.words.filter((w) => w.text !== LINE_BREAK).length;
+    return per > 0 ? Math.max(1, Math.ceil(visible / per)) : 1;
+  }, [activeGroup, style.wordsPerLine]);
   const savedSeconds = useMemo(
     () => silences.reduce((sum, s) => sum + (s.end - s.start), 0),
     [silences],
@@ -516,17 +526,24 @@ function Studio() {
     const rows = text.split("\n").map((r) => r.trim()).filter(Boolean);
     if (!rows.length) return;
     const span = Math.max(0.12, activeGroup.end - activeGroup.start);
-    const totalChars = rows.reduce((n, r) => n + r.length, 0) || 1;
-    const replacement: Word[] = [];
-    let cursor = activeGroup.start;
-    rows.forEach((row, i) => {
-      const rowEnd = i === rows.length - 1 ? activeGroup.end : cursor + (row.length / totalChars) * span;
-      if (i > 0) replacement.push({ text: LINE_BREAK, start: cursor, end: cursor });
-      replacement.push(...alignWordsToSegments(row, [{ start: cursor, end: rowEnd }], rowEnd - cursor));
-      cursor = rowEnd;
-    });
+    let replacement: Word[];
+    if (autoResync && segments.length) {
+      // รีซิงก์อัตโนมัติ: กระจายคำตามช่วงเสียงพูดจริงภายในบล็อกนี้
+      replacement = buildRowWords(rows, activeGroup.start, activeGroup.end, segments);
+    } else {
+      const totalChars = rows.reduce((n, r) => n + r.length, 0) || 1;
+      replacement = [];
+      let cursor = activeGroup.start;
+      rows.forEach((row, i) => {
+        const rowEnd = i === rows.length - 1 ? activeGroup.end : cursor + (row.length / totalChars) * span;
+        if (i > 0) replacement.push({ text: LINE_BREAK, start: cursor, end: cursor });
+        replacement.push(...alignWordsToSegments(row, [{ start: cursor, end: rowEnd }], rowEnd - cursor));
+        cursor = rowEnd;
+      });
+    }
+    if (!replacement.length) return;
     updateWords([...words.slice(0, first), ...replacement, ...words.slice(last)]);
-    toast.success("อัปเดตข้อความบนพรีวิวแล้ว");
+    toast.success(autoResync && segments.length ? "แก้ข้อความและรีซิงก์เวลาให้ตรงเสียงพูดแล้ว" : "อัปเดตข้อความบนพรีวิวแล้ว");
   };
 
 
@@ -919,6 +936,7 @@ function Studio() {
                   if (p.animation) void play(p.animation);
                 }}
                 scripts={languages.map((c) => (c === "en" ? "latin" : c))}
+                lineCount={Math.max(2, previewLineCount)}
               />
             </div>
           )}
@@ -975,7 +993,7 @@ function Studio() {
             </div>
             <div
               ref={frameRef}
-              className="relative mx-auto aspect-[9/16] w-full max-w-[340px] overflow-hidden rounded-xl bg-black"
+              className={`relative mx-auto w-full overflow-hidden rounded-xl bg-black ${tiktokPreview ? "aspect-[886/1920] max-w-[314px]" : "aspect-[9/16] max-w-[340px]"}`}
             >
               {videoUrl ? (
                 <video
@@ -1010,6 +1028,27 @@ function Studio() {
               {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
             {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)</p>}
+
+            <div className="mt-3 space-y-2 rounded-xl border border-border p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">รีซิงก์เวลาอัตโนมัติเมื่อแก้ข้อความ</div>
+                <Switch checked={autoResync} onCheckedChange={setAutoResync} aria-label="เปิดโหมดรีซิงก์อัตโนมัติ" />
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">สถานะความแม่นยำ</span>
+                <span
+                  className={
+                    accuracy.tone === "good"
+                      ? "rounded-full bg-primary/15 px-2 py-1 font-medium text-primary"
+                      : accuracy.tone === "ok"
+                        ? "rounded-full bg-secondary px-2 py-1 font-medium text-foreground"
+                        : "rounded-full bg-destructive/15 px-2 py-1 font-medium text-destructive"
+                  }
+                >
+                  {accuracy.label}
+                </span>
+              </div>
+            </div>
 
 
             <div className="mt-4 space-y-3">

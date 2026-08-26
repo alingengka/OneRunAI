@@ -53,6 +53,17 @@ export const fontOptions: FontOption[] = [
   },
 ];
 
+/** สไตล์เฉพาะรายบรรทัด (override สไตล์หลัก) */
+export type LineStyle = {
+  fontFamily?: string;
+  color?: string;
+  stroke?: StrokeSize;
+  strokeColor?: string;
+  fontWeight?: number;
+  /** ระยะห่างจากบรรทัดก่อนหน้า (เท่าของขนาดฟอนต์) */
+  gap?: number;
+};
+
 export type CaptionStyle = {
   id: string;
   name: string;
@@ -82,6 +93,10 @@ export type CaptionStyle = {
   /** background plate behind the whole caption line */
   plate: boolean;
   plateColor: string;
+  /** ระยะห่างระหว่างบรรทัด (เท่าของขนาดฟอนต์) */
+  lineGap?: number;
+  /** สไตล์เฉพาะบรรทัดที่ 1,2,3… (index เริ่มที่ 0) */
+  lineStyles?: Record<number, LineStyle>;
 };
 
 export const baseStyle: CaptionStyle = {
@@ -108,6 +123,8 @@ export const baseStyle: CaptionStyle = {
   animationSpeed: 1,
   plate: false,
   plateColor: "#000000",
+  lineGap: 0.08,
+  lineStyles: {},
 };
 
 export const stylePresets: CaptionStyle[] = [
