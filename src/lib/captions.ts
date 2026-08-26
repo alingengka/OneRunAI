@@ -53,6 +53,17 @@ export const fontOptions: FontOption[] = [
   },
 ];
 
+/** สไตล์เฉพาะรายบรรทัด (override สไตล์หลัก) */
+export type LineStyle = {
+  fontFamily?: string;
+  color?: string;
+  stroke?: StrokeSize;
+  strokeColor?: string;
+  fontWeight?: number;
+  /** ระยะห่างจากบรรทัดก่อนหน้า (เท่าของขนาดฟอนต์) */
+  gap?: number;
+};
+
 export type CaptionStyle = {
   id: string;
   name: string;
