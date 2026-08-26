@@ -1025,45 +1025,62 @@ function Studio() {
                 </div>
               </div>
 
+              <Button variant="secondary" className="w-full" onClick={() => setTab("export")}>
+                <Download className="mr-2 h-4 w-4" /> ไปที่หน้า Export
+              </Button>
+            </div>
+          )}
+
+          {tab === "scenes" && (
+            <ScenesPanel
+              scenes={scenes}
+              dropped={dropped}
+              activeTime={time}
+              onSeek={seekTo}
+              onPreview={previewRange}
+              onToggle={(id, keep) =>
+                setDropped((current) => (keep ? current.filter((x) => x !== id) : [...current, id]))
+              }
+            />
+          )}
+
+          {tab === "export" && (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-border bg-secondary/40 p-3 text-xs">
+                พร้อมส่งออก: {keepSegments.length} ช่วง · ความยาวสุดท้าย {keptDuration(keepSegments).toFixed(1)}s ·
+                ตัดออก {savedSeconds.toFixed(1)}s · ซับ {groups.length} บล็อก
+              </div>
+
               <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
                 <p className="mb-1 text-sm font-medium">ส่งออกวิดีโอสำเร็จรูป (ไม่ต้องใช้ CapCut)</p>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  ตัดช่วงเงียบ + ฝังซับไตเติลลงในภาพตามสไตล์ที่ตั้งไว้ ได้ไฟล์วิดีโอที่โพสต์ลง TikTok / Reels ได้ทันที
+                  ตัดช่วงเงียบ + ซีนที่ปิดไว้ แล้วฝังซับลงในภาพตามสไตล์ปัจจุบัน โพสต์ลง TikTok / Reels ได้ทันที
                 </p>
-                <Button size="sm" onClick={() => void exportFinalVideo()} disabled={rendering || !segments.length}>
+                <Button size="sm" onClick={exportFinalVideo} disabled={rendering || !keepSegments.length}>
                   {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                   เรนเดอร์วิดีโอพร้อมซับ
                 </Button>
               </div>
 
               <div className="rounded-xl border border-border p-4">
-
-                <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
+                <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut / โปรแกรมตัดต่อ</p>
                 <p className="mb-3 text-xs text-muted-foreground">
                   ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว Import ทั้งสองไฟล์เข้า CapCut
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => void exportCapCutPackage()} disabled={rendering || !segments.length || !groups.length}>
+                  <Button size="sm" onClick={exportCapCutPackage} disabled={rendering || !keepSegments.length || !groups.length}>
                     {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                     CapCut Package .zip
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportSrt}>
                     <FileDown className="mr-2 h-4 w-4" /> .srt
                   </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => void exportTrimmedVideo()}
-                    disabled={rendering || !segments.length}
-                  >
-                    {rendering ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="mr-2 h-4 w-4" />
-                    )}
+                  <Button size="sm" onClick={exportTrimmedVideo} disabled={rendering || !keepSegments.length}>
+                    {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                     วิดีโอตัดช่วงเงียบ .webm
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportXml}>
-                    <FileDown className="mr-2 h-4 w-4" /> .xml (สำหรับ editor ที่รองรับ)
+                    <FileDown className="mr-2 h-4 w-4" /> .xml
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportEdl}>
                     <FileDown className="mr-2 h-4 w-4" /> .edl
