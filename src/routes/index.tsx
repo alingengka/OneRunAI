@@ -6,6 +6,7 @@ import { AudioPreview } from "@/components/audio-preview";
 import { toast } from "sonner";
 import {
   Captions,
+  CheckCircle2,
   Download,
   FileDown,
   Loader2,
@@ -17,6 +18,7 @@ import {
   Upload,
   Waves,
   Wand2,
+  AlertTriangle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -41,6 +43,7 @@ import {
 } from "@/lib/captions";
 import {
   blobToBase64,
+  addChunkOverlap,
   buildAsrChunks,
   decodeAudioFromFile,
   defaultSilenceOptions,
@@ -52,7 +55,7 @@ import {
   smoothSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
-import { forcedAlignWords } from "@/lib/media/forced-align";
+import { forcedAlignWords, mergeAlignedChunks } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo } from "@/lib/media/export-burned";
 
@@ -131,6 +134,7 @@ function Studio() {
 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [transcript, setTranscript] = useState("");
+  const [glossary, setGlossary] = useState("");
   const [words, setWords] = useState<Word[]>([]);
   const [style, setStyle] = useState<CaptionStyle>(baseStyle);
   const [tab, setTab] = useState<Tab>("tools");
@@ -165,6 +169,18 @@ function Studio() {
   );
   const activeGroupIndex = useMemo(() => groups.findIndex((g) => time >= g.start && time <= g.end), [groups, time]);
   const accuracy = useMemo(() => syncAccuracy(words, segments, duration), [words, segments, duration]);
+  const confidenceSummary = useMemo(() => {
+    const timed = words.filter((word) => word.text !== LINE_BREAK);
+    const scored = timed.filter((word) => typeof word.confidence === "number");
+    if (!scored.length) return { score: null, high: 0, review: 0, low: 0 };
+    const score = scored.reduce((sum, word) => sum + (word.confidence ?? 0), 0) / scored.length;
+    return {
+      score,
+      high: scored.filter((word) => word.confidenceLabel === "high").length,
+      review: scored.filter((word) => word.confidenceLabel === "review").length,
+      low: scored.filter((word) => word.confidenceLabel === "low").length,
+    };
+  }, [words]);
   const previewLineCount = useMemo(() => {
     if (!activeGroup) return 3;
     const manual = activeGroup.words.filter((w) => w.text === LINE_BREAK).length;
@@ -372,7 +388,7 @@ function Studio() {
       // ถอดเสียงทีละวลี (รวมช่วงพูดที่ต่อเนื่องกัน) เพื่อให้โมเดลมีบริบทพอ
       // และคำยังยึดกับช่วงเวลาที่พูดจริง
       const transcriptionSegments = refineSpeechSegments(buffer, segs, lang === "lo" ? 12 : 8);
-      const chunks = buildAsrChunks(transcriptionSegments, buffer.duration, {
+      const baseChunks = buildAsrChunks(transcriptionSegments, buffer.duration, {
         // Lao needs longer phrases (and a little more head/tail room) for the
         // model to resolve tone marks and word boundaries correctly.
         min: lang === "lo" ? 4.5 : 2.4,
@@ -380,6 +396,7 @@ function Studio() {
         gap: lang === "lo" ? 0.8 : 0.55,
         pad: lang === "lo" ? 0.25 : 0.12,
       });
+      const chunks = lang === "lo" ? addChunkOverlap(baseChunks, buffer.duration, 0.38) : baseChunks;
       const allWords: Word[] = [];
       const texts: string[] = [];
 
@@ -391,14 +408,21 @@ function Studio() {
           const wav = encodeSegmentsWav16k(buffer, chunkSegs, false);
           if (wav.size < 4096) continue;
           const b64 = await blobToBase64(wav);
+          const terms = glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40);
           const res = await transcribe({
-            data: { audioBase64: b64, language: lang, context: texts.join(" ").slice(-600) },
+            data: { audioBase64: b64, language: lang, context: texts.join(" ").slice(-600), glossary: terms },
           });
           const text = (res.text ?? "").trim();
           if (!text) continue;
           texts.push(text);
           const chunkDur = chunkSegs.reduce((n, s) => n + (s.end - s.start), 0);
-          allWords.push(...forcedAlignWords(buffer, chunkSegs, text, chunkDur));
+          const aligned = forcedAlignWords(buffer, chunkSegs, text, chunkDur).map((word) => {
+            const acoustic = word.confidence ?? 0.5;
+            const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
+            return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
+          });
+          const merged = mergeAlignedChunks(allWords, aligned);
+          allWords.splice(0, allWords.length, ...merged);
           setTranscript(texts.join(" "));
           setWords([...allWords]);
         }
@@ -408,7 +432,7 @@ function Studio() {
         const wav = encodeWav16k(buffer);
         if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
         const b64 = await blobToBase64(wav);
-        const res = await transcribe({ data: { audioBase64: b64, language: lang } });
+        const res = await transcribe({ data: { audioBase64: b64, language: lang, glossary: glossary.split(/[\n,]/).map((term) => term.trim()).filter(Boolean).slice(0, 40) } });
         const text = (res.text ?? "").trim();
         if (text) {
           texts.push(text);
@@ -768,6 +792,17 @@ function Studio() {
                     ))}
                   </div>
                 </div>
+                {languages[0] === "lo" && (
+                  <div className="mt-4 space-y-1.5">
+                    <Label className="text-[11px] uppercase text-muted-foreground">ຄຳສັບ / ชื่อเฉพาะภาษาลาว</Label>
+                    <Textarea
+                      value={glossary}
+                      onChange={(event) => setGlossary(event.target.value)}
+                      rows={3}
+                      placeholder="ใส่ชื่อคน สถานที่ แบรนด์ หรือคำเฉพาะ คั่นด้วย comma หรือขึ้นบรรทัดใหม่"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="rounded-xl border border-border p-4">
@@ -1112,6 +1147,28 @@ function Studio() {
                   {accuracy.label}
                 </span>
               </div>
+              <div className="grid grid-cols-3 gap-2 pt-1 text-center text-xs">
+                <div className="rounded-md bg-primary/10 p-2">
+                  <CheckCircle2 className="mx-auto mb-1 h-4 w-4 text-primary" />
+                  <div className="font-semibold">{confidenceSummary.high}</div>
+                  <div className="text-muted-foreground">มั่นใจสูง</div>
+                </div>
+                <div className="rounded-md bg-secondary p-2">
+                  <AlertTriangle className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
+                  <div className="font-semibold">{confidenceSummary.review}</div>
+                  <div className="text-muted-foreground">ควรฟังตรวจ</div>
+                </div>
+                <div className="rounded-md bg-destructive/10 p-2">
+                  <AlertTriangle className="mx-auto mb-1 h-4 w-4 text-destructive" />
+                  <div className="font-semibold">{confidenceSummary.low}</div>
+                  <div className="text-muted-foreground">ต้องแก้</div>
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {confidenceSummary.score === null
+                  ? "สร้างซับใหม่เพื่อวัดความมั่นใจจาก transcript และเสียงจริง"
+                  : `หลักฐานความมั่นใจรวม ${Math.round(confidenceSummary.score * 100)}% — ใช้สำหรับชี้จุดตรวจ ไม่ใช่การรับประกันความถูกต้องของทุกคำ`}
+              </p>
             </div>
 
 

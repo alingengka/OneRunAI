@@ -9,5 +9,10 @@ export const transcribeAudio = createServerFn({ method: "POST" })
     context: z.string().max(2000).optional(),
     glossary: z.array(z.string().min(1).max(80)).max(40).optional(),
   }).parse(data))
-  .handler(async ({ data }) => transcribeAudioServer(data));
+  .handler(async ({ data }) => transcribeAudioServer({
+    audioBase64: data.audioBase64,
+    ...(data.language ? { language: data.language } : {}),
+    ...(data.context ? { context: data.context } : {}),
+    ...(data.glossary ? { glossary: data.glossary } : {}),
+  }));
 
