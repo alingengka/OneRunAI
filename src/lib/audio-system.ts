@@ -68,7 +68,7 @@ class AudioSystem {
         shake: { from: 95, to: 65, duration: 0.18, wave: "sawtooth", pulses: 5 },
         flip: { from: 980, to: 190, duration: 0.22, wave: "square" },
       };
-      const profile = profiles[animationSound] ?? profiles.fade;
+      const profile = profiles[animationSound] ?? profiles["fade"];
       if (!profile) return;
       const duration = profile.duration * (this.pack === "soft" ? 1.35 : this.pack === "punch" ? 0.8 : 1);
       osc.type = this.pack === "digital" ? "square" : profile.wave;
