@@ -356,7 +356,10 @@ function Studio() {
       const lang = languages[0] ?? "th";
       // ถอดเสียงทีละก้อน (เฉพาะช่วงที่มีเสียงพูด) เพื่อให้คำตรงกับเวลาที่พูดจริง
       const transcriptionSegments = refineSpeechSegments(buffer, segs, 4);
-      const chunks = transcriptionSegments.length ? chunkSegments(transcriptionSegments, 20) : [];
+      // One short speech region per request keeps Lao/Thai words anchored to the
+      // phrase where they were actually spoken instead of spreading a long
+      // transcript over several disconnected regions.
+      const chunks = transcriptionSegments.map((segment) => [segment]);
       const allWords: Word[] = [];
       const texts: string[] = [];
 
@@ -449,9 +452,12 @@ function Studio() {
     setRendering(true);
     const id = toast.loading("กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… 0%");
     try {
-      const blob = await exportTrimmedWebm(videoUrl, segments, (r) =>
-        toast.loading(`กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… ${Math.round(r * 100)}%`, { id }),
-      , { noiseReduction, smoothCuts: true });
+      const blob = await exportTrimmedWebm(
+        videoUrl,
+        segments,
+        (r) => toast.loading(`กำลังตัดช่วงเงียบและเรนเดอร์วิดีโอ… ${Math.round(r * 100)}%`, { id }),
+        { noiseReduction, smoothCuts: true },
+      );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -650,6 +656,24 @@ function Studio() {
                   <Button size="sm" variant="secondary" onClick={() => setTab("text")}>
                     Edit
                   </Button>
+                </div>
+                <div className="mt-4">
+                  <Label className="text-[11px] uppercase text-muted-foreground">ภาษาต้นฉบับในวิดีโอ</Label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {LANGUAGES.map((language) => (
+                      <Button
+                        key={language.code}
+                        size="sm"
+                        variant={languages[0] === language.code ? "default" : "outline"}
+                        onClick={() => {
+                          setLanguages((current) => [language.code, ...current.filter((code) => code !== language.code)]);
+                          setStyle((current) => ({ ...current, fontFamily: language.font }));
+                        }}
+                      >
+                        {language.label}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
