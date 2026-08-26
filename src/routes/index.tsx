@@ -746,12 +746,14 @@ function Studio() {
 
               <div className="rounded-xl border border-border p-4">
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
-
-
                 <p className="mb-3 text-xs text-muted-foreground">
-                  นำไฟล์ต้นฉบับเข้า CapCut แล้วลาก .srt เพื่อได้ซับ และใช้ cut list เพื่อตัดช่วงเงียบตามเวลา
+                  ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว Import ทั้งสองไฟล์เข้า CapCut
                 </p>
                 <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => void exportCapCutPackage()} disabled={rendering || !segments.length || !groups.length}>
+                    {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                    CapCut Package .zip
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={exportSrt}>
                     <FileDown className="mr-2 h-4 w-4" /> .srt
                   </Button>
@@ -768,7 +770,7 @@ function Studio() {
                     วิดีโอตัดช่วงเงียบ .webm
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportXml}>
-                    <FileDown className="mr-2 h-4 w-4" /> .xml (timeline)
+                    <FileDown className="mr-2 h-4 w-4" /> .xml (สำหรับ editor ที่รองรับ)
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportEdl}>
                     <FileDown className="mr-2 h-4 w-4" /> .edl
@@ -797,6 +799,7 @@ function Studio() {
               activeId={style.id}
               onSelect={(preset) => {
                 setStyle(preset);
+                  void play(preset.animation);
                 toast.success(`ใช้สไตล์ ${preset.name}`);
               }}
             />
@@ -841,16 +844,28 @@ function Studio() {
               </div>
               <StyleControls
                 style={style}
-                onChange={(p) => setStyle((s) => ({ ...s, ...p }))}
+                onChange={(p) => {
+                  setStyle((s) => ({ ...s, ...p }));
+                  if (p.animation) void play(p.animation);
+                }}
                 scripts={languages.map((c) => (c === "en" ? "latin" : c))}
               />
             </div>
           )}
 
           {tab === "text" && (
-            <div className="space-y-3">
+            <div className="space-y-6">
+              <WordTimelineEditor
+                words={words}
+                duration={duration}
+                onChange={updateWords}
+                onPreview={previewRange}
+                onRetryIssues={(issues) => void retrySyncIssues(issues)}
+                retrying={retryingSync}
+              />
+              <div className="border-t border-border pt-5">
               <Label className="text-xs text-muted-foreground">
-                แก้ข้อความได้อิสระ — เว้นวรรคคือการแบ่งคำ แล้วกด “อัปเดตซับ”
+                แก้ทั้งข้อความ — การอัปเดตส่วนนี้จะคำนวณเวลาใหม่ทั้งคลิป
               </Label>
               <Textarea
                 value={transcript}
@@ -866,7 +881,18 @@ function Studio() {
                   {words.length} คำ · {groups.length} บล็อก
                 </span>
               </div>
+              </div>
             </div>
+          )}
+
+          {tab === "audio" && (
+            <AudioPreview
+              animation={style.animation}
+              enabled={sfx.enabled}
+              volume={sfx.volume}
+              pack={sfx.pack}
+              onChange={(patch) => setSfx((current) => ({ ...current, ...patch }))}
+            />
           )}
         </section>
 
