@@ -14,7 +14,7 @@ export function StepBar({ steps, onSelect }: { steps: Step[]; onSelect: (key: st
   return (
     <ol className="flex gap-2 overflow-x-auto pb-1">
       {steps.map((step, i) => (
-        <li key={step.key} className="min-w-[150px] flex-1">
+        <li key={`${step.key}-${i}`} className="min-w-[150px] flex-1">
           <button
             type="button"
             onClick={() => onSelect(step.key)}
