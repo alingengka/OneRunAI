@@ -869,7 +869,19 @@ function Studio() {
                 </div>
               </div>
 
+              <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
+                <p className="mb-1 text-sm font-medium">ส่งออกวิดีโอสำเร็จรูป (ไม่ต้องใช้ CapCut)</p>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  ตัดช่วงเงียบ + ฝังซับไตเติลลงในภาพตามสไตล์ที่ตั้งไว้ ได้ไฟล์วิดีโอที่โพสต์ลง TikTok / Reels ได้ทันที
+                </p>
+                <Button size="sm" onClick={() => void exportFinalVideo()} disabled={rendering || !segments.length}>
+                  {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                  เรนเดอร์วิดีโอพร้อมซับ
+                </Button>
+              </div>
+
               <div className="rounded-xl border border-border p-4">
+
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut</p>
                 <p className="mb-3 text-xs text-muted-foreground">
                   ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว Import ทั้งสองไฟล์เข้า CapCut
