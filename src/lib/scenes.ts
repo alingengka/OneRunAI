@@ -54,7 +54,7 @@ export function buildScenes(segments: Segment[], words: Word[], gap = 0.9): Scen
       .filter((w) => w.text !== LINE_BREAK && w.start < end + 0.05 && w.end > start - 0.05)
       .map((w) => w.text)
       .join(" ");
-    return { id: `${index}-${start.toFixed(2)}`, index, start, end, segments: segs, text };
+    return { id: `scene-${index}`, index, start, end, segments: segs, text };
   });
 }
 

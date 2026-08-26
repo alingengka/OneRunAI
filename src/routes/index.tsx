@@ -19,6 +19,10 @@ import {
   Waves,
   Wand2,
   AlertTriangle,
+  Maximize2,
+  Save,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,6 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CaptionOverlay } from "@/components/editor/CaptionOverlay";
 import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay";
@@ -74,7 +79,7 @@ import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
-import { buildScenes } from "@/lib/scenes";
+import { addSceneElement, buildScenes, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { StepBar, type Step } from "@/components/editor/StepBar";
 
@@ -156,6 +161,10 @@ function Studio() {
   const [retryingSync, setRetryingSync] = useState(false);
   const [sfx, setSfx] = useState<{ enabled: boolean; volume: number; pack: SoundPack }>({ enabled: true, volume: 0.35, pack: "clean" });
   const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
+  const [projectName, setProjectName] = useState("Untitled short");
+  const [sceneElements, setSceneElements] = useState<SceneElement[]>([]);
+  const [muted, setMuted] = useState(false);
+  const restoredProjectRef = useRef(false);
   const lastSoundGroupRef = useRef<number>(-1);
 
   const [dropped, setDropped] = useState<string[]>([]);
@@ -298,12 +307,18 @@ function Studio() {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(f);
     });
-    setWords([]);
-    setTranscript("");
-    setSegments([]);
-    setDropped([]);
+    const preserveRestored = restoredProjectRef.current;
+    restoredProjectRef.current = false;
+    if (!preserveRestored) {
+      setWords([]);
+      setTranscript("");
+      setSegments([]);
+      setDropped([]);
+      setSceneElements([]);
+      setProjectName(f.name.replace(/\.[^.]+$/, ""));
+    }
     setTime(0);
-    const r = await analyze(f, threshold, minSilence).catch(() => undefined);
+    const r = preserveRestored ? undefined : await analyze(f, threshold, minSilence).catch(() => undefined);
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
 
@@ -326,9 +341,11 @@ function Studio() {
       minSilence,
       noiseReduction,
       dropped,
+      sceneElements,
+      projectName,
       sfx,
     }),
-    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, dropped, sfx],
+    [file, duration, segments, words, transcript, glossary, style, languages, threshold, minSilence, noiseReduction, dropped, sceneElements, projectName, sfx],
   );
 
   useEffect(() => {
@@ -358,6 +375,9 @@ function Studio() {
     setMinSilence(p.minSilence);
     setNoiseReduction(p.noiseReduction ?? false);
     setDropped(p.dropped ?? []);
+    setSceneElements(p.sceneElements ?? []);
+    setProjectName(p.projectName ?? p.fileName.replace(/\.[^.]+$/, ""));
+    restoredProjectRef.current = true;
     if (p.sfx) setSfx(p.sfx);
     setDuration((d) => d || p.duration);
     setRemoveSilence(true);
@@ -731,6 +751,20 @@ function Studio() {
     if (v) { v.currentTime = Math.max(0, t); setTime(v.currentTime); }
   };
 
+  const saveNow = () => {
+    saveProject(snapshot());
+    setSavedInfo(loadProject());
+    toast.success("บันทึกงานแล้ว");
+  };
+
+  const toggleSceneElement = (id: string) => {
+    setSceneElements((current) => current.map((element) => element.id === id ? { ...element, enabled: !element.enabled } : element));
+  };
+
+  const addElement = (sceneId: string, kind: SceneElementKind) => {
+    setSceneElements((current) => addSceneElement(current, sceneId, kind));
+  };
+
   const steps: Step[] = [
     {
       key: "tools",
@@ -777,9 +811,10 @@ function Studio() {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <Scissors className="h-4 w-4" />
           </div>
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">ShortCut Studio</h1>
-            <p className="text-xs text-muted-foreground">ตัดคลิปยาวให้เป็น Short แบบไวรัล</p>
+          <div className="min-w-[180px]">
+            <h1 className="sr-only">ShortCut Studio</h1>
+            <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} aria-label="ชื่อโปรเจกต์" className="h-8 border-transparent px-1 text-base font-semibold shadow-none focus-visible:border-input" />
+            <p className="px-1 text-xs text-muted-foreground">ShortCut Studio · Short video editor</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -796,8 +831,11 @@ function Studio() {
           <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
             <Upload className="mr-2 h-4 w-4" /> อัปโหลดคลิป
           </Button>
-          <Button onClick={exportSrt}>
-            <Download className="mr-2 h-4 w-4" /> Export SRT
+          <Button variant="secondary" onClick={saveNow}>
+            <Save className="mr-2 h-4 w-4" /> บันทึก
+          </Button>
+          <Button onClick={() => setTab("export")}>
+            <Download className="mr-2 h-4 w-4" /> ส่งออก
           </Button>
         </div>
       </header>
@@ -1043,6 +1081,9 @@ function Studio() {
               onToggle={(id, keep) =>
                 setDropped((current) => (keep ? current.filter((x) => x !== id) : [...current, id]))
               }
+              elements={sceneElements}
+              onAddElement={addElement}
+              onToggleElement={toggleSceneElement}
             />
           )}
 
