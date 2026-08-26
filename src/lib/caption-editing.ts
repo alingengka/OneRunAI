@@ -89,11 +89,14 @@ export function syncAccuracy(words: Word[], segments: Segment[], duration: numbe
     ),
   ).length;
   const coverage = onSpeech / visible.length;
+  const scored = visible.filter((word) => typeof word.confidence === "number");
+  const evidence = scored.length
+    ? scored.reduce((sum, word) => sum + (word.confidence ?? 0), 0) / scored.length
+    : null;
   const issues = findSyncIssues(words, duration).length;
   const penalty = Math.min(0.4, (issues / visible.length) * 0.6);
-  const score = Math.max(0, Math.min(1, coverage - penalty));
-  const pct = Math.round(score * 100);
-  if (score >= 0.85) return { score, label: `ตรงเสียงพูด ~${pct}%`, tone: "good" };
-  if (score >= 0.6) return { score, label: `พอใช้ ~${pct}% (${issues} จุดควรตรวจ)`, tone: "ok" };
-  return { score, label: `ยังไม่ตรง ~${pct}% (${issues} จุดควรตรวจ)`, tone: "bad" };
+  const score = Math.max(0, Math.min(1, coverage * 0.58 + (evidence ?? coverage) * 0.42 - penalty));
+  if (score >= 0.82 && issues === 0) return { score, label: "มั่นใจสูง · พร้อมตรวจรอบสุดท้าย", tone: "good" };
+  if (score >= 0.58) return { score, label: `ควรฟังตรวจ ${Math.max(issues, visible.filter((word) => word.confidenceLabel === "review").length)} จุด`, tone: "ok" };
+  return { score, label: `ต้องแก้ ${Math.max(issues, visible.filter((word) => word.confidenceLabel === "low").length)} จุด`, tone: "bad" };
 }

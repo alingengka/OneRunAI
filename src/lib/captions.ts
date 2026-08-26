@@ -1,6 +1,15 @@
 import type { Segment } from "./media/audio";
 
-export type Word = { text: string; start: number; end: number };
+export type WordConfidence = "high" | "review" | "low";
+
+export type Word = {
+  text: string;
+  start: number;
+  end: number;
+  /** 0–1 evidence score from transcript agreement and acoustic boundary fit. */
+  confidence?: number;
+  confidenceLabel?: WordConfidence;
+};
 export type CaptionGroup = { start: number; end: number; words: Word[] };
 
 export type StrokeSize = "none" | "small" | "medium" | "large";

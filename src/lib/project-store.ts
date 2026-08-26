@@ -11,6 +11,7 @@ export type SavedProject = {
   segments: Segment[];
   words: Word[];
   transcript: string;
+  glossary?: string;
   style: CaptionStyle;
   languages: string[];
   threshold: number;
