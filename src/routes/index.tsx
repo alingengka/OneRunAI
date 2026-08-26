@@ -100,7 +100,7 @@ export const Route = createFileRoute("/")({
   component: Studio,
 });
 
-type Tab = "tools" | "styles" | "customize" | "text" | "audio";
+type Tab = "tools" | "styles" | "customize" | "text" | "scenes" | "audio" | "export";
 
 type LangCode = "th" | "lo" | "en";
 
