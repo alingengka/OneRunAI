@@ -133,8 +133,9 @@ export async function transcribeAudioServer(input: {
   }
 
 
-  for (let index = 0; index < attempts.length; index++) {
+  for (let index = 0; index < attempts.length && apiKey; index++) {
     const form = new FormData();
+
     form.append("model", "openai/gpt-4o-transcribe");
     form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
     form.append("temperature", String(attempts[index]));
