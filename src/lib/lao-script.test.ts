@@ -1,21 +1,18 @@
-import { describe, expect, it } from "vitest";
 import { laoScriptPurity, thaiToLaoScript } from "./lao-script";
 
-describe("thaiToLaoScript", () => {
-  it("converts a verified Scribe response for Lao audio into Lao script", () => {
-    // Live ElevenLabs Scribe output for Lao speech saying
-    // "ປະເທດລາວ ພາສາ ວຽງຈັນ ສະບາຍດີ".
-    expect(thaiToLaoScript("ประเทศลาว ภาษาเวียงจันทน์ สบายดี"))
-      .toBe("ປະເທດລາວ ພາສາວຽງຈັນ ສບາຍດີ");
-  });
+function assert(condition: boolean, message: string) {
+  if (!condition) throw new Error(message);
+}
 
-  it("leaves text that is already Lao untouched in script purity", () => {
-    expect(laoScriptPurity("ສະບາຍດີ")).toBe(1);
-    expect(laoScriptPurity("สบายดี")).toBe(0);
-  });
+// Live ElevenLabs Scribe output for Lao speech saying
+// "ປະເທດລາວ ພາສາ ວຽງຈັນ ສະບາຍດີ" (Scribe renders Lao in Thai script).
+const scribeOutput = "ประเทศลาว ภาษาเวียงจันทน์ สบายดี";
+const converted = thaiToLaoScript(scribeOutput);
+assert(converted === "ປະເທດລາວ ພາສາວຽງຈັນ ສບາຍດີ", `unexpected transliteration: ${converted}`);
 
-  it("maps syllable-final consonants and drops silent karan letters", () => {
-    expect(thaiToLaoScript("จันทน์")).toBe("ຈັນ");
-    expect(thaiToLaoScript("ลาว")).toBe("ລາວ");
-  });
-});
+assert(thaiToLaoScript("จันทน์") === "ຈັນ", "karan letters must be dropped");
+assert(thaiToLaoScript("ลาว") === "ລາວ", "final ว must map to ວ");
+assert(laoScriptPurity("ສະບາຍດີ") === 1, "Lao text must be fully pure");
+assert(laoScriptPurity("สบายดี") === 0, "Thai text must have zero Lao purity");
+
+console.log("lao-script tests passed");
