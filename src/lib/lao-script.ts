@@ -1,0 +1,58 @@
+// ElevenLabs Scribe recognises Lao speech but renders it in Thai script
+// (verified against real Lao audio: language_code=lao still returns Thai text).
+// These helpers convert that output back into Lao script.
+
+const CONSONANTS: Record<string, string> = {
+  "ก": "ກ", "ข": "ຂ", "ฃ": "ຂ", "ค": "ຄ", "ฅ": "ຄ", "ฆ": "ຄ", "ง": "ງ",
+  "จ": "ຈ", "ฉ": "ສ", "ช": "ຊ", "ซ": "ຊ", "ฌ": "ຊ", "ญ": "ຍ", "ย": "ຍ",
+  "ฎ": "ດ", "ด": "ດ", "ฏ": "ຕ", "ต": "ຕ", "ฐ": "ຖ", "ถ": "ຖ",
+  "ฑ": "ທ", "ฒ": "ທ", "ท": "ທ", "ธ": "ທ", "ณ": "ນ", "น": "ນ",
+  "บ": "ບ", "ป": "ປ", "ผ": "ຜ", "ฝ": "ຝ", "พ": "ພ", "ภ": "ພ", "ฟ": "ຟ",
+  "ม": "ມ", "ร": "ຣ", "ล": "ລ", "ฬ": "ລ", "ว": "ວ",
+  "ศ": "ສ", "ษ": "ສ", "ส": "ສ", "ห": "ຫ", "ฮ": "ຮ", "อ": "ອ",
+};
+
+const MARKS: Record<string, string> = {
+  "ะ": "ະ", "ั": "ັ", "า": "າ", "ำ": "ຳ", "ิ": "ິ", "ี": "ີ", "ึ": "ຶ", "ื": "ື",
+  "ุ": "ຸ", "ู": "ູ", "เ": "ເ", "แ": "ແ", "โ": "ໂ", "ใ": "ໃ", "ไ": "ໄ",
+  "็": "ົ", "่": "່", "้": "້", "๊": "໊", "๋": "໋", "ๆ": "ໆ", "ฯ": "ຯ",
+  "๐": "໐", "๑": "໑", "๒": "໒", "๓": "໓", "๔": "໔",
+  "๕": "໕", "๖": "໖", "๗": "໗", "๘": "໘", "๙": "໙",
+};
+
+const THAI_CONSONANT = /[ก-ฮ]/;
+
+/** Convert a Thai-script rendering of Lao speech into Lao script. */
+export function thaiToLaoScript(input: string): string {
+  if (!input) return "";
+  let text = input.normalize("NFC");
+
+  // Silent letters: Thai karan (ธ์) silences the preceding consonant cluster.
+  text = text.replace(/[\u0e30-\u0e4e]*[ก-ฮ]\u0e4c/g, "");
+  // เ-ีย / เ-ือ diphthongs map onto single Lao vowels.
+  text = text.replace(/เ([ก-ฮ])ี?ย/g, "$1\u0ebd");
+  text = text.replace(/เ([ก-ฮ])ื?อ/g, "$1\u0ebc\u0ead");
+  // -ัว -> Lao ..ົວ
+  text = text.replace(/([ก-ฮ])ัว/g, "$1\u0ebb\u0ea7");
+  // เ-าะ / -อ -> Lao ໍ
+  text = text.replace(/เ([ก-ฮ])าะ/g, "$1\u0ecd");
+  text = text.replace(/([ก-ฮ])อ(?![ก-ฮ])/g, "$1\u0ecd");
+  // เ-า -> Lao ເ..ົາ
+  text = text.replace(/เ([ก-ฮ])า/g, "\u0ec0$1\u0ebb\u0eb2");
+
+  let out = "";
+  for (const char of text) {
+    if (CONSONANTS[char]) out += CONSONANTS[char];
+    else if (MARKS[char]) out += MARKS[char];
+    else if (THAI_CONSONANT.test(char) || /[\u0e30-\u0e4f]/.test(char)) continue;
+    else out += char;
+  }
+  return out.normalize("NFC").replace(/\s+/g, " ").trim();
+}
+
+/** Share of non-space characters that are Lao. */
+export function laoScriptPurity(text: string): number {
+  const symbols = [...text].filter((char) => !/\s/.test(char));
+  if (!symbols.length) return 0;
+  return symbols.filter((char) => /[\u0e80-\u0eff]/.test(char)).length / symbols.length;
+}
