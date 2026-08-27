@@ -27,8 +27,13 @@ export function thaiToLaoScript(input: string): string {
   if (!input) return "";
   let text = input.normalize("NFC");
 
-  // Silent letters: Thai karan (ธ์) silences the preceding consonant cluster.
-  text = text.replace(/[\u0e30-\u0e4e]*[ก-ฮ]\u0e4c/g, "");
+  // Silent letters: Thai karan silences the preceding consonant, and a second
+  // one when the syllable already has a written final (จันทน์ -> จัน).
+  text = text.replace(/([ก-ฮ])([ก-ฮ])\u0e4c/g, (match, first: string, second: string) =>
+    THAI_CONSONANT.test(first) && THAI_CONSONANT.test(second) ? "" : match);
+  text = text.replace(/[ก-ฮ]\u0e4c/g, "");
+  // Lao has no initial r-cluster: ประ -> ປະ
+  text = text.replace(/([ก-ฮ])ร(?=[ะัาำิีึืุู])/g, "$1");
   // เ-ีย / เ-ือ diphthongs map onto single Lao vowels.
   text = text.replace(/เ([ก-ฮ])ี?ย/g, "$1\u0ebd");
   text = text.replace(/เ([ก-ฮ])ื?อ/g, "$1\u0ebc\u0ead");
@@ -40,15 +45,23 @@ export function thaiToLaoScript(input: string): string {
   // เ-า -> Lao ເ..ົາ
   text = text.replace(/เ([ก-ฮ])า/g, "\u0ec0$1\u0ebb\u0eb2");
 
+  const characters = [...text];
   let out = "";
-  for (const char of text) {
-    if (CONSONANTS[char]) out += CONSONANTS[char];
-    else if (MARKS[char]) out += MARKS[char];
+  for (let index = 0; index < characters.length; index++) {
+    const char = characters[index] ?? "";
+    const next = characters[index + 1] ?? "";
+    if (CONSONANTS[char]) {
+      const isFinal = char !== "ห" && char !== "อ" && !/[\u0e30-\u0e4e]/.test(next) && FINALS[char] !== undefined;
+      out += isFinal ? FINALS[char] : CONSONANTS[char];
+      continue;
+    }
+    if (MARKS[char]) out += MARKS[char];
     else if (THAI_CONSONANT.test(char) || /[\u0e30-\u0e4f]/.test(char)) continue;
     else out += char;
   }
   return out.normalize("NFC").replace(/\s+/g, " ").trim();
 }
+
 
 /** Share of non-space characters that are Lao. */
 export function laoScriptPurity(text: string): number {
