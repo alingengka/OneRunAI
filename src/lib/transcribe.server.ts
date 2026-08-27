@@ -102,6 +102,47 @@ async function transcribeWithScribe(binary: Uint8Array<ArrayBuffer>, glossary: s
   return { text: thaiToLaoScript(raw), transliterated: true };
 }
 
+/**
+ * Gemini is multimodal on /v1/chat/completions and, verified live, emits Lao
+ * script directly, so it needs no Thai->Lao transliteration pass.
+ */
+async function transcribeWithGemini(
+  audioBase64: string,
+  apiKey: string,
+  context: string,
+  glossary: string[],
+): Promise<string> {
+  const instructions = [
+    "This recording is spoken Lao (Vientiane / Central Lao), not Thai.",
+    "Transcribe it verbatim in Lao script (U+0E80–U+0EFF) exactly as spoken.",
+    "Never translate, never use Thai script, never summarise, never invent speech that is not audible.",
+    "Preserve tone marks, repeated words, names, numbers and spoken particles.",
+    "Return the transcript text only, with no labels, quotes or commentary.",
+  ];
+  if (glossary.length) instructions.push(`Preferred spellings when audible: ${glossary.slice(0, 40).join(", ")}`);
+  if (context) instructions.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
+
+  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "google/gemini-3.7-flash",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: instructions.join(" ") },
+          { type: "input_audio", input_audio: { data: audioBase64, format: "wav" } },
+        ],
+      }],
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Gemini transcription failed [${response.status}]: ${body.slice(0, 300)}`);
+  }
+  const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  return (payload.choices?.[0]?.message?.content ?? "").trim();
+}
 
 export async function transcribeAudioServer(input: {
   audioBase64: string;
@@ -116,21 +157,36 @@ export async function transcribeAudioServer(input: {
   const binary = Uint8Array.from(atob(input.audioBase64), (character) => character.charCodeAt(0));
   const attempts = input.language === "lo" ? [0, 0] : [0];
   const alternatives: string[] = [];
+  const transliterated = new Set<string>();
   let lastError: Error | null = null;
-  let transliterated = false;
 
   if (input.language === "lo") {
-    try {
-      const scribe = await transcribeWithScribe(binary, input.glossary ?? []);
-      const text = cleanup(scribe.text, "lo");
+    const [scribeResult, geminiResult] = await Promise.allSettled([
+      transcribeWithScribe(binary, input.glossary ?? []),
+      apiKey
+        ? transcribeWithGemini(input.audioBase64, apiKey, input.context ?? "", input.glossary ?? [])
+        : Promise.reject(new Error("Missing LOVABLE_API_KEY")),
+    ]);
+
+    if (scribeResult.status === "fulfilled") {
+      const text = cleanup(scribeResult.value.text, "lo");
       if (text) {
         alternatives.push(text);
-        transliterated = scribe.transliterated;
+        if (scribeResult.value.transliterated) transliterated.add(text);
       }
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error("ElevenLabs transcription failed");
+    } else {
+      lastError = scribeResult.reason instanceof Error ? scribeResult.reason : new Error("ElevenLabs transcription failed");
+    }
+
+    if (geminiResult.status === "fulfilled") {
+      const text = cleanup(geminiResult.value, "lo");
+      if (text && !alternatives.includes(text)) alternatives.push(text);
+    } else if (apiKey) {
+      lastError = geminiResult.reason instanceof Error ? geminiResult.reason : new Error("Gemini transcription failed");
     }
   }
+
+
 
 
   for (let index = 0; index < attempts.length && apiKey; index++) {
