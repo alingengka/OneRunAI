@@ -53,3 +53,10 @@
 - STT ส่ง multipart WAV ที่ container/type ตรงจริง, ไม่ส่ง language code `lo`, และ surface ข้อผิดพลาด 4xx โดยไม่ retry
 - UI ใช้ design tokens และ components เดิม; ภาพ Ref ใช้เป็น functional reference เท่านั้น ไม่ฝังลงแอป
 - แยกงานเป็น focused modules เพื่อลด route หลักที่มีขนาดใหญ่และลด regression
+
+## อัปเดต 2026-08-27 — เปลี่ยน engine ถอดเสียงลาวเป็น ElevenLabs Scribe
+- ภาษาลาว (`language === "lo"`) เรียก ElevenLabs Speech-to-Text `scribe_v2` (`https://api.elevenlabs.io/v1/speech-to-text`) ด้วย `ELEVENLABS_API_KEY` จาก connector, `language_code=lao`, และส่ง glossary เป็น `biased_keywords`
+- ตรวจจริงพบว่า Scribe ถอดเสียงลาวได้ (`language_probability = 1.0`) แต่คืนข้อความเป็น "อักษรไทย" แม้ตั้ง `language_code=lao` จึงเพิ่ม `src/lib/lao-script.ts` แปลงอักษรไทย→ลาว (karan, cluster ร, สระ เ-ีย/เ-ือ/-ัว/-อ, ตัวสะกด) พร้อม unit test `src/lib/lao-script.test.ts`
+- Scribe เป็น candidate เพิ่มเข้าไปในชุดเดิม ไม่ตัด gateway ออก: `th`/`en` และ pass ของลาวจาก `openai/gpt-4o-transcribe` ยังทำงานเหมือนเดิม; candidate ที่ผ่าน transliteration ถูกหักคะแนน 0.03 เพราะเป็นการแปลงแบบประมาณ
+- คงพฤติกรรมเดิม: multi-candidate, `cleanup()` กรอง hallucination/สคริปต์ไทย, `scoreCandidate()` (agreement + script purity), context prompt ของ gateway, error 4xx โยนออกโดยไม่ retry (จะโยนก็ต่อเมื่อไม่มี candidate เหลือ)
+- ผลวัดจริงกับคลิปลาว 4 คำจาก Lingua Libre (ref: `ປະເທດລາວ ພາສາ ວຽງຈັນ ສະບາຍດີ`): Scribe+transliteration CER 0.04, gpt-4o-transcribe CER 0.00 — ตัวอย่างเดียวยังไม่พอสรุปว่าแม่นขึ้น ต้อง benchmark คลิปพูดต่อเนื่องจริงก่อน

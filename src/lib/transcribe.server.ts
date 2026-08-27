@@ -1,3 +1,5 @@
+import { thaiToLaoScript } from "./lao-script";
+
 const HALLUCINATIONS = new Set([
   "thank you", "thanks for watching", "you", "bye", "subtitles by",
   "ขอบคุณค่ะ", "ขอบคุณครับ", "ขอบคุณที่รับชม", "ຂອບໃຈ",
@@ -66,6 +68,41 @@ function scoreCandidate(candidate: string, others: string[], language?: string):
   return agreement * 0.72 + scriptPurity * 0.28;
 }
 
+/**
+ * ElevenLabs Scribe recognises Lao speech far better than the OpenAI model, but
+ * verified live responses come back rendered in Thai script even with
+ * language_code=lao, so the text is transliterated back into Lao script.
+ */
+async function transcribeWithScribe(binary: Uint8Array<ArrayBuffer>, glossary: string[]): Promise<{ text: string; transliterated: boolean }> {
+  const apiKey = process.env["ELEVENLABS_API_KEY"];
+  if (!apiKey) throw new Error("ElevenLabs is not connected to this project");
+  const form = new FormData();
+  form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
+  form.append("model_id", "scribe_v2");
+  form.append("language_code", "lao");
+  form.append("diarize", "false");
+  form.append("tag_audio_events", "false");
+  if (glossary.length) form.append("biased_keywords", JSON.stringify(glossary.slice(0, 40)));
+
+  const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+    method: "POST",
+    headers: { "xi-api-key": apiKey },
+    body: form,
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`ElevenLabs transcription failed [${response.status}]: ${body.slice(0, 300)}`);
+  }
+  const payload = (await response.json()) as { text?: string };
+  const raw = (payload.text ?? "").trim();
+  if (!raw) return { text: "", transliterated: false };
+  const lao = (raw.match(/[\u0e80-\u0eff]/g) ?? []).length;
+  const thai = (raw.match(/[\u0e00-\u0e7f]/g) ?? []).length;
+  if (lao >= thai) return { text: raw, transliterated: false };
+  return { text: thaiToLaoScript(raw), transliterated: true };
+}
+
+
 export async function transcribeAudioServer(input: {
   audioBase64: string;
   language?: "th" | "lo" | "en";
@@ -78,6 +115,21 @@ export async function transcribeAudioServer(input: {
   const attempts = input.language === "lo" ? [0, 0] : [0];
   const alternatives: string[] = [];
   let lastError: Error | null = null;
+  let transliterated = false;
+
+  if (input.language === "lo") {
+    try {
+      const scribe = await transcribeWithScribe(binary, input.glossary ?? []);
+      const text = cleanup(scribe.text, "lo");
+      if (text) {
+        alternatives.push(text);
+        transliterated = scribe.transliterated;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("ElevenLabs transcription failed");
+    }
+  }
+
 
   for (let index = 0; index < attempts.length; index++) {
     const form = new FormData();
@@ -89,6 +141,7 @@ export async function transcribeAudioServer(input: {
       form.append("language", input.language);
       if (input.context) form.append("prompt", `Continue without repeating: ${input.context.slice(-500)}`);
     }
+
     try {
       const response = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
         method: "POST",
@@ -107,7 +160,7 @@ export async function transcribeAudioServer(input: {
       if (text && !alternatives.includes(text)) alternatives.push(text);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Transcription failed");
-      if (index === 0 || alternatives.length === 0) throw lastError;
+      if (alternatives.length === 0) throw lastError;
       break;
     }
   }
@@ -117,7 +170,13 @@ export async function transcribeAudioServer(input: {
     return { text: "", alternatives: [], agreement: 0 };
   }
   const ranked = alternatives
-    .map((text) => ({ text, score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language) }))
+    .map((text, index) => ({
+      text,
+      // The Scribe candidate is first and went through Thai->Lao transliteration,
+      // which is lossy, so it only wins when it is clearly the better transcript.
+      score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language)
+        - (input.language === "lo" && index === 0 && transliterated ? 0.03 : 0),
+    }))
     .sort((a, b) => b.score - a.score);
   return { text: ranked[0]?.text ?? "", alternatives, agreement: ranked[0]?.score ?? 0 };
 }
