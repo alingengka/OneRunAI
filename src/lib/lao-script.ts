@@ -60,11 +60,13 @@ export function thaiToLaoScript(input: string): string {
   const leadVowels = new Set(["เ", "แ", "โ", "ใ", "ไ"]);
   let out = "";
   let sawVowel = false;
+  let pendingLead = false;
   for (let index = 0; index < characters.length; index++) {
     const char = characters[index] ?? "";
     const next = characters[index + 1] ?? "";
     if (leadVowels.has(char)) {
       sawVowel = false;
+      pendingLead = true;
       out += MARKS[char] ?? char;
       continue;
     }
@@ -78,8 +80,11 @@ export function thaiToLaoScript(input: string): string {
         sawVowel = false;
       } else {
         out += CONSONANTS[char];
+        if (pendingLead) sawVowel = true;
       }
+      pendingLead = false;
       continue;
+
     }
     if (MARKS[char]) {
       out += MARKS[char];
