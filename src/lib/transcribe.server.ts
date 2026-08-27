@@ -1,3 +1,5 @@
+import { thaiToLaoScript } from "./lao-script";
+
 const HALLUCINATIONS = new Set([
   "thank you", "thanks for watching", "you", "bye", "subtitles by",
   "ขอบคุณค่ะ", "ขอบคุณครับ", "ขอบคุณที่รับชม", "ຂອບໃຈ",
@@ -71,7 +73,7 @@ function scoreCandidate(candidate: string, others: string[], language?: string):
  * verified live responses come back rendered in Thai script even with
  * language_code=lao, so the text is transliterated back into Lao script.
  */
-async function transcribeWithScribe(binary: Uint8Array, glossary: string[]): Promise<string> {
+async function transcribeWithScribe(binary: Uint8Array<ArrayBuffer>, glossary: string[]): Promise<string> {
   const apiKey = process.env["ELEVENLABS_API_KEY"];
   if (!apiKey) throw new Error("ElevenLabs is not connected to this project");
   const form = new FormData();
