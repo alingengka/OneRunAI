@@ -229,13 +229,14 @@ export async function transcribeAudioServer(input: {
     return { text: "", alternatives: [], agreement: 0 };
   }
   const ranked = alternatives
-    .map((text, index) => ({
+    .map((text) => ({
       text,
-      // The Scribe candidate is first and went through Thai->Lao transliteration,
-      // which is lossy, so it only wins when it is clearly the better transcript.
+      // Thai->Lao transliteration (Scribe) is lossy, so such a candidate only
+      // wins when it is clearly better than a natively Lao-script candidate.
       score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language)
-        - (input.language === "lo" && index === 0 && transliterated ? 0.03 : 0),
+        - (transliterated.has(text) ? 0.03 : 0),
     }))
     .sort((a, b) => b.score - a.score);
+
   return { text: ranked[0]?.text ?? "", alternatives, agreement: ranked[0]?.score ?? 0 };
 }
