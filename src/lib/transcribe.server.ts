@@ -95,11 +95,13 @@ async function transcribeWithScribe(binary: Uint8Array<ArrayBuffer>, glossary: s
   }
   const payload = (await response.json()) as { text?: string };
   const raw = (payload.text ?? "").trim();
-  if (!raw) return "";
+  if (!raw) return { text: "", transliterated: false };
   const lao = (raw.match(/[\u0e80-\u0eff]/g) ?? []).length;
   const thai = (raw.match(/[\u0e00-\u0e7f]/g) ?? []).length;
-  return lao >= thai ? raw : thaiToLaoScript(raw);
+  if (lao >= thai) return { text: raw, transliterated: false };
+  return { text: thaiToLaoScript(raw), transliterated: true };
 }
+
 
 export async function transcribeAudioServer(input: {
   audioBase64: string;
