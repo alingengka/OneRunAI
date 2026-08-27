@@ -115,15 +115,21 @@ export async function transcribeAudioServer(input: {
   const attempts = input.language === "lo" ? [0, 0] : [0];
   const alternatives: string[] = [];
   let lastError: Error | null = null;
+  let transliterated = false;
 
   if (input.language === "lo") {
     try {
-      const text = cleanup(await transcribeWithScribe(binary, input.glossary ?? []), "lo");
-      if (text) alternatives.push(text);
+      const scribe = await transcribeWithScribe(binary, input.glossary ?? []);
+      const text = cleanup(scribe.text, "lo");
+      if (text) {
+        alternatives.push(text);
+        transliterated = scribe.transliterated;
+      }
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("ElevenLabs transcription failed");
     }
   }
+
 
   for (let index = 0; index < attempts.length; index++) {
     const form = new FormData();
