@@ -22,6 +22,17 @@ const MARKS: Record<string, string> = {
 
 const THAI_CONSONANT = /[ก-ฮ]/;
 
+// Thai syllable-final consonants collapse to Lao's small final inventory.
+const FINALS: Record<string, string> = {
+  "ก": "ກ", "ข": "ກ", "ค": "ກ", "ฆ": "ກ",
+  "จ": "ດ", "ช": "ດ", "ซ": "ດ", "ฎ": "ດ", "ฏ": "ດ", "ฐ": "ດ", "ฑ": "ດ", "ฒ": "ດ",
+  "ด": "ດ", "ต": "ດ", "ถ": "ດ", "ท": "ດ", "ธ": "ດ", "ศ": "ດ", "ษ": "ດ", "ส": "ດ",
+  "ญ": "ນ", "ณ": "ນ", "น": "ນ", "ร": "ນ", "ล": "ນ", "ฬ": "ນ",
+  "บ": "ບ", "ป": "ບ", "ผ": "ບ", "ฝ": "ບ", "พ": "ບ", "ฟ": "ບ", "ภ": "ບ",
+  "ง": "ງ", "ม": "ມ", "ย": "ຍ", "ว": "ວ",
+};
+
+
 /** Convert a Thai-script rendering of Lao speech into Lao script. */
 export function thaiToLaoScript(input: string): string {
   if (!input) return "";
