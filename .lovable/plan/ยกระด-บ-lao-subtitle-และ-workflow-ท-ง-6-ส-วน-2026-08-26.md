@@ -60,3 +60,5 @@
 - Scribe เป็น candidate เพิ่มเข้าไปในชุดเดิม ไม่ตัด gateway ออก: `th`/`en` และ pass ของลาวจาก `openai/gpt-4o-transcribe` ยังทำงานเหมือนเดิม; candidate ที่ผ่าน transliteration ถูกหักคะแนน 0.03 เพราะเป็นการแปลงแบบประมาณ
 - คงพฤติกรรมเดิม: multi-candidate, `cleanup()` กรอง hallucination/สคริปต์ไทย, `scoreCandidate()` (agreement + script purity), context prompt ของ gateway, error 4xx โยนออกโดยไม่ retry (จะโยนก็ต่อเมื่อไม่มี candidate เหลือ)
 - ผลวัดจริงกับคลิปลาว 4 คำจาก Lingua Libre (ref: `ປະເທດລາວ ພາສາ ວຽງຈັນ ສະບາຍດີ`): Scribe+transliteration CER 0.04, gpt-4o-transcribe CER 0.00 — ตัวอย่างเดียวยังไม่พอสรุปว่าแม่นขึ้น ต้อง benchmark คลิปพูดต่อเนื่องจริงก่อน
+- ทดสอบซ้ำ (27 ส.ค. 2026) กับตัวอย่าง `ປະເທດລາວ ພາສາ ວຽງຈັນ`: Scribe HTTP 200 คืน `ประเทศลาว ภาษาเวียงจันทน์` (อักษรไทย) → แปลงแล้ว CER 0.000, gateway CER 0.000 → ยังเสมอกัน ยังไม่พิสูจน์ว่าดีขึ้น ต้องใช้คลิปพูดต่อเนื่องจริงวัด
+- ถ้าไม่มี `LOVABLE_API_KEY` ภาษาลาวยังทำงานได้ด้วย ElevenLabs อย่างเดียว (gateway pass ถูกข้าม)

@@ -109,8 +109,10 @@ export async function transcribeAudioServer(input: {
   context?: string;
   glossary?: string[];
 }): Promise<TranscriptionResult> {
+  // Read lazily: Lao can complete on ElevenLabs alone if the gateway key is absent.
   const apiKey = process.env["LOVABLE_API_KEY"];
-  if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+  if (!apiKey && input.language !== "lo") throw new Error("Missing LOVABLE_API_KEY");
+
   const binary = Uint8Array.from(atob(input.audioBase64), (character) => character.charCodeAt(0));
   const attempts = input.language === "lo" ? [0, 0] : [0];
   const alternatives: string[] = [];
@@ -131,8 +133,9 @@ export async function transcribeAudioServer(input: {
   }
 
 
-  for (let index = 0; index < attempts.length; index++) {
+  for (let index = 0; index < attempts.length && apiKey; index++) {
     const form = new FormData();
+
     form.append("model", "openai/gpt-4o-transcribe");
     form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
     form.append("temperature", String(attempts[index]));
