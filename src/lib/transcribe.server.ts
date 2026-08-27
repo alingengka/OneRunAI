@@ -152,7 +152,7 @@ export async function transcribeAudioServer(input: {
       if (text && !alternatives.includes(text)) alternatives.push(text);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error("Transcription failed");
-      if (index === 0 || alternatives.length === 0) throw lastError;
+      if (alternatives.length === 0) throw lastError;
       break;
     }
   }
@@ -162,7 +162,13 @@ export async function transcribeAudioServer(input: {
     return { text: "", alternatives: [], agreement: 0 };
   }
   const ranked = alternatives
-    .map((text) => ({ text, score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language) }))
+    .map((text, index) => ({
+      text,
+      // The Scribe candidate is first and went through Thai->Lao transliteration,
+      // which is lossy, so it only wins when it is clearly the better transcript.
+      score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language)
+        - (input.language === "lo" && index === 0 && transliterated ? 0.03 : 0),
+    }))
     .sort((a, b) => b.score - a.score);
   return { text: ranked[0]?.text ?? "", alternatives, agreement: ranked[0]?.score ?? 0 };
 }
