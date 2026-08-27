@@ -57,21 +57,43 @@ export function thaiToLaoScript(input: string): string {
   text = text.replace(/เ([ก-ฮ])า/g, "\u0ec0$1\u0ebb\u0eb2");
 
   const characters = [...text];
+  const leadVowels = new Set(["เ", "แ", "โ", "ใ", "ไ"]);
   let out = "";
+  let sawVowel = false;
   for (let index = 0; index < characters.length; index++) {
     const char = characters[index] ?? "";
     const next = characters[index + 1] ?? "";
-    if (CONSONANTS[char]) {
-      const isFinal = char !== "ห" && char !== "อ" && !/[\u0e30-\u0e4e]/.test(next) && FINALS[char] !== undefined;
-      out += isFinal ? FINALS[char] : CONSONANTS[char];
+    if (leadVowels.has(char)) {
+      sawVowel = false;
+      out += MARKS[char] ?? char;
       continue;
     }
-    if (MARKS[char]) out += MARKS[char];
-    else if (THAI_CONSONANT.test(char) || /[\u0e30-\u0e4f]/.test(char)) continue;
-    else out += char;
+    if (CONSONANTS[char]) {
+      const isFinal = sawVowel
+        && char !== "ห" && char !== "อ"
+        && FINALS[char] !== undefined
+        && !/[\u0e30-\u0e4e]/.test(next);
+      if (isFinal) {
+        out += FINALS[char];
+        sawVowel = false;
+      } else {
+        out += CONSONANTS[char];
+      }
+      continue;
+    }
+    if (MARKS[char]) {
+      out += MARKS[char];
+      if (!/[\u0e48-\u0e4b]/.test(char)) sawVowel = true;
+      continue;
+    }
+    if (THAI_CONSONANT.test(char) || /[\u0e30-\u0e4f]/.test(char)) continue;
+    if (/[\u0eb0-\u0ebd\u0ec0-\u0ecd]/.test(char)) sawVowel = true;
+    else if (/\s/.test(char)) sawVowel = false;
+    out += char;
   }
   return out.normalize("NFC").replace(/\s+/g, " ").trim();
 }
+
 
 
 /** Share of non-space characters that are Lao. */
