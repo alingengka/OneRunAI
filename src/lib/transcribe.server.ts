@@ -73,7 +73,7 @@ function scoreCandidate(candidate: string, others: string[], language?: string):
  * verified live responses come back rendered in Thai script even with
  * language_code=lao, so the text is transliterated back into Lao script.
  */
-async function transcribeWithScribe(binary: Uint8Array<ArrayBuffer>, glossary: string[]): Promise<string> {
+async function transcribeWithScribe(binary: Uint8Array<ArrayBuffer>, glossary: string[]): Promise<{ text: string; transliterated: boolean }> {
   const apiKey = process.env["ELEVENLABS_API_KEY"];
   if (!apiKey) throw new Error("ElevenLabs is not connected to this project");
   const form = new FormData();
