@@ -66,6 +66,39 @@ function scoreCandidate(candidate: string, others: string[], language?: string):
   return agreement * 0.72 + scriptPurity * 0.28;
 }
 
+/**
+ * ElevenLabs Scribe recognises Lao speech far better than the OpenAI model, but
+ * verified live responses come back rendered in Thai script even with
+ * language_code=lao, so the text is transliterated back into Lao script.
+ */
+async function transcribeWithScribe(binary: Uint8Array, glossary: string[]): Promise<string> {
+  const apiKey = process.env["ELEVENLABS_API_KEY"];
+  if (!apiKey) throw new Error("ElevenLabs is not connected to this project");
+  const form = new FormData();
+  form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
+  form.append("model_id", "scribe_v2");
+  form.append("language_code", "lao");
+  form.append("diarize", "false");
+  form.append("tag_audio_events", "false");
+  if (glossary.length) form.append("biased_keywords", JSON.stringify(glossary.slice(0, 40)));
+
+  const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+    method: "POST",
+    headers: { "xi-api-key": apiKey },
+    body: form,
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`ElevenLabs transcription failed [${response.status}]: ${body.slice(0, 300)}`);
+  }
+  const payload = (await response.json()) as { text?: string };
+  const raw = (payload.text ?? "").trim();
+  if (!raw) return "";
+  const lao = (raw.match(/[\u0e80-\u0eff]/g) ?? []).length;
+  const thai = (raw.match(/[\u0e00-\u0e7f]/g) ?? []).length;
+  return lao >= thai ? raw : thaiToLaoScript(raw);
+}
+
 export async function transcribeAudioServer(input: {
   audioBase64: string;
   language?: "th" | "lo" | "en";
@@ -79,6 +112,15 @@ export async function transcribeAudioServer(input: {
   const alternatives: string[] = [];
   let lastError: Error | null = null;
 
+  if (input.language === "lo") {
+    try {
+      const text = cleanup(await transcribeWithScribe(binary, input.glossary ?? []), "lo");
+      if (text) alternatives.push(text);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("ElevenLabs transcription failed");
+    }
+  }
+
   for (let index = 0; index < attempts.length; index++) {
     const form = new FormData();
     form.append("model", "openai/gpt-4o-transcribe");
@@ -89,6 +131,7 @@ export async function transcribeAudioServer(input: {
       form.append("language", input.language);
       if (input.context) form.append("prompt", `Continue without repeating: ${input.context.slice(-500)}`);
     }
+
     try {
       const response = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
         method: "POST",
