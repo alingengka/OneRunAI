@@ -62,3 +62,15 @@
 - ผลวัดจริงกับคลิปลาว 4 คำจาก Lingua Libre (ref: `ປະເທດລາວ ພາສາ ວຽງຈັນ ສະບາຍດີ`): Scribe+transliteration CER 0.04, gpt-4o-transcribe CER 0.00 — ตัวอย่างเดียวยังไม่พอสรุปว่าแม่นขึ้น ต้อง benchmark คลิปพูดต่อเนื่องจริงก่อน
 - ทดสอบซ้ำ (27 ส.ค. 2026) กับตัวอย่าง `ປະເທດລາວ ພາສາ ວຽງຈັນ`: Scribe HTTP 200 คืน `ประเทศลาว ภาษาเวียงจันทน์` (อักษรไทย) → แปลงแล้ว CER 0.000, gateway CER 0.000 → ยังเสมอกัน ยังไม่พิสูจน์ว่าดีขึ้น ต้องใช้คลิปพูดต่อเนื่องจริงวัด
 - ถ้าไม่มี `LOVABLE_API_KEY` ภาษาลาวยังทำงานได้ด้วย ElevenLabs อย่างเดียว (gateway pass ถูกข้าม)
+
+## อัปเดต 2026-08-27 (2) — เพิ่ม Google Gemini เป็นเอนจินที่ 3 ใน ensemble
+- ตรวจ catalog จริง: Lovable AI Gateway **ไม่มี** โมเดล `google/*-transcribe` บน `/v1/audio/transcriptions` (มีเฉพาะ `openai/gpt-4o-transcribe` และ `-mini`) — Gemini ถอดเสียงผ่าน multimodal chat: `POST /v1/chat/completions` model `google/gemini-3.7-flash` + content part `input_audio` (base64 wav) ทดสอบจริงได้ HTTP 200
+- `language === "lo"` ตอนนี้ยิง Scribe + Gemini ขนานกัน (`Promise.allSettled`) แล้วต่อด้วย gateway `openai/gpt-4o-transcribe` 2 pass เหมือนเดิม — ไม่มีเอนจินไหนถูกถอดออก
+- Gemini คืน "อักษรลาวโดยตรง" ไม่ต้องผ่าน `thaiToLaoScript`; penalty 0.03 ผูกกับ candidate ที่ transliterate จริง (ใช้ Set แทน index) ไม่ hardcode ผู้ชนะ; ให้คะแนนด้วย `scoreCandidate()` เดิม
+- ถ้าไม่มี `LOVABLE_API_KEY` → เหลือ Scribe อย่างเดียวเหมือนเดิม; `th`/`en` ไม่เปลี่ยน
+- Benchmark จริง (คลิปลาว 12.6 วิ, 9 คำต่อเนื่องจาก Lingua Libre, ref `ສະບາຍດີ ປະເທດລາວ ພາສາ ລາວ ວຽງຈັນ ຫຼວງພະບາງ ແຂວງ ອາຊີອາຄະເນ ຮ້ອຍ`):
+  - ElevenLabs Scribe (Thai script → transliterate): **CER 0.109**
+  - `openai/gpt-4o-transcribe`: **CER 0.000** (pass ที่สองได้ 0.018)
+  - `google/gemini-3.7-flash` (input_audio): **CER 0.000**
+  - ผลรวม ensemble เลือกได้ CER 0.018 (แพ้ candidate ที่ดีที่สุด 0.018 เพราะ majority agreement เลือก ຫລ แทน ຫຼ)
+- สรุปตามข้อมูลจริงเท่าที่มี: Gemini ดีเท่า gpt-4o บนคลิปนี้และดีกว่า Scribe ชัดเจน แต่ยังเป็นคลิปสั้น 12.6 วิที่ต่อจากคำเดี่ยว ยังไม่ใช่คำพูดต่อเนื่องธรรมชาติ — ห้ามสรุปว่าแม่นขึ้นทั่วไปจนกว่าจะ benchmark คลิปพูดจริง
