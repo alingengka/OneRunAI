@@ -50,3 +50,21 @@
 - ความยาวผลลัพธ์ตรงผลรวม segments ภายใน tolerance ที่วัดจาก container/codec จริง
 - ภาพและเสียง decode/play ต่อเนื่องครบไฟล์ในทั้ง 3 รอบ และไฟล์มี captions, motion, viral text, noise reduction ตามตัวเลือกจริง
 - จะไม่ตอบว่าแก้แล้วจนกว่าผลตรวจคลิปยาวทั้ง 3 รอบผ่านและถูกบันทึกในแผนหลัก
+
+## ผลทดสอบจริง (คลิป 30s, 14 segments, รวม 27.090s) — 2026-08-31
+
+ทดสอบผ่าน flow จริงของแอป (decodeAudioFromFile → detectSpeechSegments → smoothSpeechSegments → exportBurnedVideo) ใน Chromium headless, ตรวจไฟล์ผลลัพธ์ด้วย ffprobe/ffmpeg
+
+| รอบ | ความละเอียด | Noise gate | ความยาวไฟล์ | ส่วนเกินจาก 27.090s | เฟรมวิดีโอ | เวลา render | ค้างที่ 100% | video gap >0.3s | freezedetect | console errors |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1280x720 | on | 27.602s | +0.512s (1.9%) | 696 | 28.96s | ไม่มี | 0 | ไม่พบ | 0 |
+| 2 | source 640x360 | off | 27.500s | +0.410s (1.5%) | 696 | 28.79s | ไม่มี | 0 | ไม่พบ | 0 |
+| 3 | 1920x1080 | on | 27.647s | +0.557s (2.1%) | 648 | 29.13s | ไม่มี | 0 | ไม่พบ | 0 |
+
+- ไม่มีเวลา seek ปนเข้าไฟล์: 13 ครั้ง seek (~0.1–0.5s ต่อครั้ง) ถูกกันออกด้วย pause/resume แบบรอ event; ส่วนเกินที่เหลือ 0.41–0.56s คือ latency ของ MediaRecorder.pause() ต่อรอยตัด (~30–40ms) เท่านั้น
+- เสียงต่อเนื่องตลอดไฟล์ (mean RMS ~4860): ช่วงเสียงเบา ~0.48s ที่แต่ละรอยตัดมาจาก padding เงียบใน source segment เอง ไม่ใช่เสียงหาย
+- ภาพขยับต่อเนื่อง: ไม่มีช่องว่าง timestamp เกิน 0.30s และ freezedetect (-60dB, 0.5s) ไม่พบเฟรมค้าง
+
+### แก้เพิ่มระหว่างทดสอบ
+- ลูปเรนเดอร์เดินต่อผ่าน safety timer 250ms (นอกเหนือจาก requestVideoFrameCallback) พร้อมพยายาม resume วิดีโอสูงสุด 3 ครั้ง แก้อาการ export ค้างที่ segment สุดท้ายเมื่อ decoder หยุดส่งเฟรม
+- เพิ่ม debug log แบบเปิดผ่าน `window.__EXPORT_DEBUG` สำหรับไล่ปัญหาช่วง export
