@@ -416,11 +416,13 @@ export async function exportBurnedVideo(
       onProgress?.(Math.min(1, elapsed / total));
     }
 
+    console.log('DBG loop done');
     // Let the encoder flush the tail before closing the file.
     await new Promise((r) => setTimeout(r, 250));
     recorder.requestData();
     recorder.stop();
     await done;
+    console.log('DBG recorder stopped');
     const blob = new Blob(chunks, { type: mimeType });
     if (blob.size < 1024) throw new Error("ไฟล์วิดีโอที่ส่งออกไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
     return { blob, ext: mimeExtension(mimeType) };
