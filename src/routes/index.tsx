@@ -80,6 +80,7 @@ import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
+import { motionAt } from "@/lib/media/motion";
 import { addSceneElement, buildScenes, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { StepBar, type Step } from "@/components/editor/StepBar";
@@ -522,6 +523,10 @@ function Studio() {
 
       measuredTimingRef.current = measured.sort((a, b) => a.start - b.start);
       if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
+      // งาน A: ใช้เวลาคำจริงขยายขอบช่วงพูด ไม่ให้ energy gate ตัดพยางค์ต้น/ท้ายขาด
+      const timingForCuts = measured.length ? measured : allWords;
+      const reconciled = reconcileSegmentsWithWords(segs, timingForCuts, { duration: buffer.duration });
+      if (reconciled.length) setSegments(reconciled);
       const ruled = applyRulesToWords(allWords, lexRules);
       if (ruled.changed) setLexRules(ruled.rules);
       setTranscript(wordsToTranscript(ruled.words));
@@ -703,7 +708,14 @@ function Studio() {
         [...groups],
         style,
         onProgress,
-        { noiseReduction, smoothCuts: true, captions: captionsOn, signal },
+        {
+          noiseReduction,
+          smoothCuts: true,
+          captions: captionsOn,
+          signal,
+          scenes,
+          sceneElements,
+        },
       );
       if (signal.aborted) return;
       saveBlob(blob, `${baseName()}-final.${ext}`);
