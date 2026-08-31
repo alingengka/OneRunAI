@@ -57,6 +57,7 @@ import {
   encodeWav16k,
   invertSegments,
   reconcileSegmentsWithWords,
+  estimateNoiseFloor,
   refineSpeechSegments,
   smoothSpeechSegments,
   type Segment,
@@ -64,7 +65,7 @@ import {
 import { alignTextToTiming, alignTextToTimingOnTimeline, forcedAlignWords, mapConcatTimeToTimeline, mergeAlignedChunks } from "@/lib/media/forced-align";
 import type { TimedWord } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
-import { exportBurnedVideo } from "@/lib/media/export-burned";
+import { exportBurnedVideo, targetSize, type ExportResolution } from "@/lib/media/export-burned";
 
 import {
   buildCutListJson,
@@ -142,6 +143,13 @@ function Studio() {
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   /** เวลาคำที่ผู้ถอดเสียงวัดมาจริง (Scribe) บนไทม์ไลน์ต้นฉบับ */
   const measuredTimingRef = useRef<TimedWord[]>([]);
+  /** ช่วงพูดดิบจาก energy analysis — ใช้เป็น input ของการถอดเสียงเสมอ
+   *  (แยกจาก state `segments` ที่ถูก reconcile ด้วยเวลาคำแล้วสำหรับการตัดจริง)
+   *  ถ้าปนกัน การกด "สร้างซับด้วย AI" ซ้ำจะสร้าง chunk จากช่วงที่ถูกขยาย/รวมไปแล้ว
+   *  ทำให้บริบทที่ส่งเข้าโมเดลเพี้ยนและความแม่นยำตก */
+  const analysisSegmentsRef = useRef<Segment[]>([]);
+  /** ระดับเสียงรบกวนพื้นหลังของคลิป ใช้เป็น threshold ของ noise gate ตอน export */
+  const noiseFloorRef = useRef(0);
 
   const [file, setFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string>("");
@@ -163,6 +171,7 @@ function Studio() {
   const [captionsOn, setCaptionsOn] = useState(true);
   const [removeSilence, setRemoveSilence] = useState(false);
   const [noiseReduction, setNoiseReduction] = useState(false);
+  const [resolution, setResolution] = useState<ExportResolution>("source");
   const [tiktokPreview, setTiktokPreview] = useState(false);
   const [autoResync, setAutoResync] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -307,6 +316,8 @@ function Studio() {
         });
         const segs = smoothSpeechSegments(detected, buffer.duration);
         if (!segs.length) throw new Error("ไม่พบช่วงเสียงพูด ลองลดค่าความไวเสียง");
+        analysisSegmentsRef.current = segs;
+        noiseFloorRef.current = estimateNoiseFloor(buffer);
         setSegments(segs);
         setDuration((d) => d || buffer!.duration);
         toast.success(`พบช่วงพูด ${segs.length} ช่วง`);
@@ -449,7 +460,8 @@ function Studio() {
     setTranscribing(true);
     try {
       let buffer = audioBufferRef.current;
-      let segs = segments;
+      // ใช้ช่วงพูดดิบเสมอ ไม่ใช่ช่วงที่ reconcile แล้ว เพื่อไม่ให้การถอดเสียงรอบถัดไปเพี้ยน
+      let segs = analysisSegmentsRef.current.length ? analysisSegmentsRef.current : segments;
       if (!buffer || !segs.length) {
         const r = await analyze(file, threshold, minSilence);
         buffer = r.buffer;
@@ -696,6 +708,7 @@ function Studio() {
     void runJob("ตัดช่วงเงียบและเรนเดอร์วิดีโอ", async (signal, onProgress) => {
       const blob = await exportTrimmedWebm(videoUrl, [...outputSegments], onProgress, {
         noiseReduction,
+        noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
         signal,
       });
@@ -709,7 +722,7 @@ function Studio() {
   const exportFinalVideo = () => {
     if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
-      const { blob, ext } = await exportBurnedVideo(
+      const { blob, ext, width, height, fps, frames } = await exportBurnedVideo(
         videoUrl,
         [...outputSegments],
         [...groups],
@@ -717,16 +730,23 @@ function Studio() {
         onProgress,
         {
           noiseReduction,
+          noiseFloor: noiseFloorRef.current,
           smoothCuts: true,
           captions: captionsOn,
           signal,
           scenes,
           sceneElements,
+          resolution,
         },
       );
       if (signal.aborted) return;
       saveBlob(blob, `${baseName()}-final.${ext}`);
-      toast.success("ได้วิดีโอพร้อมโพสต์แล้ว (ซับฝังในภาพ)");
+      const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
+      const realFps = seconds > 0 ? frames / seconds : fps;
+      toast.success(`ได้วิดีโอพร้อมโพสต์แล้ว ${width}x${height} · ~${realFps.toFixed(0)}fps`);
+      if (realFps < fps * 0.7) {
+        toast.warning("เครื่องวาดเฟรมไม่ทันที่ความละเอียดนี้ ถ้าภาพกระตุกให้ลองลดเป็น 1080");
+      }
     });
   };
 
@@ -735,6 +755,7 @@ function Studio() {
     void runJob("สร้าง CapCut Package", async (signal, onProgress) => {
       const video = await exportTrimmedWebm(videoUrl, [...outputSegments], (r) => onProgress(r * 0.9), {
         noiseReduction,
+        noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
         signal,
       });
@@ -1226,6 +1247,43 @@ function Studio() {
                 <p className="mb-3 text-xs text-muted-foreground">
                   ตัดช่วงเงียบ + ซีนที่ปิดไว้ แล้วฝังซับลงในภาพตามสไตล์ปัจจุบัน โพสต์ลง TikTok / Reels ได้ทันที
                 </p>
+                <div className="mb-3 space-y-2">
+                  <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">ความละเอียดที่ส่งออก</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {([
+                      { id: "source", label: "ต้นฉบับ" },
+                      { id: "4k", label: "4K" },
+                      { id: "1080", label: "1080 (HD)" },
+                      { id: "720", label: "720" },
+                    ] as { id: ExportResolution; label: string }[]).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => {
+                          setResolution(option.id);
+                          const v = videoRef.current;
+                          if (v?.videoWidth) {
+                            const t = targetSize(v.videoWidth, v.videoHeight, option.id);
+                            if (t.upscaled) {
+                              toast.warning(`ต้นฉบับ ${v.videoWidth}x${v.videoHeight} เล็กกว่า ${t.width}x${t.height} — เป็นการขยายภาพ (upscale) ไม่ได้เพิ่มรายละเอียดจริง`);
+                            }
+                          }
+                        }}
+                        className={cn(
+                          "rounded-full border px-3 py-1.5 text-xs transition",
+                          resolution === option.id
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-secondary text-muted-foreground",
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    ใช้ได้เฉพาะปุ่ม "เรนเดอร์วิดีโอพร้อมซับ" (เรนเดอร์ผ่าน canvas) — ไฟล์ .webm ตัดช่วงเงียบและ CapCut Package ยังใช้ความละเอียดต้นฉบับ
+                  </p>
+                </div>
                 <Button size="sm" onClick={exportFinalVideo} disabled={rendering || !keepSegments.length}>
                   {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
                   เรนเดอร์วิดีโอพร้อมซับ

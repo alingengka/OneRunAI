@@ -404,15 +404,21 @@ export function addChunkOverlap(
 export function reconcileSegmentsWithWords(
   segments: Segment[],
   words: { start: number; end: number }[],
-  opts: { duration?: number; pad?: number; joinGap?: number } = {},
+  opts: { duration?: number; pad?: number; joinGap?: number; maxGrow?: number; maxWord?: number; nearGap?: number } = {},
 ): Segment[] {
+  const maxWord = opts.maxWord ?? 1.2;
   const valid = words
     .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start)
+    // เวลาที่ยาวผิดปกติมักมาจากการเดา (interpolate) ไม่ใช่คำจริง ถ้าเอามาขยายขอบ
+    // จะกลืนช่วงเงียบที่ควรถูกตัดออก ทำให้ dead-air กลับมา
+    .filter((w) => w.end - w.start <= maxWord)
     .sort((a, b) => a.start - b.start);
   if (!segments.length || !valid.length) return segments;
 
-  const pad = opts.pad ?? 0.06;
-  const joinGap = opts.joinGap ?? 0.12;
+  const pad = opts.pad ?? 0.04;
+  const joinGap = opts.joinGap ?? 0.08;
+  // ขยายขอบได้แค่เล็กน้อยเท่านั้น (กันพยางค์ขาด) ไม่ใช่ยืดจนคลุมช่วงเงียบ
+  const maxGrow = opts.maxGrow ?? 0.12;
   const duration = opts.duration ?? Math.max(
     segments[segments.length - 1]?.end ?? 0,
     valid[valid.length - 1]?.end ?? 0,
@@ -428,13 +434,22 @@ export function reconcileSegmentsWithWords(
     if (!overlapping.length) continue;
     const first = overlapping[0]!;
     const last = overlapping[overlapping.length - 1]!;
-    seg.start = clamp(Math.min(seg.start, first.start - pad));
-    seg.end = clamp(Math.max(seg.end, last.end + pad));
+    const startFloor = seg.start - maxGrow;
+    const endCeil = seg.end + maxGrow;
+    seg.start = clamp(Math.max(startFloor, Math.min(seg.start, first.start - pad)));
+    seg.end = clamp(Math.min(endCeil, Math.max(seg.end, last.end + pad)));
   }
 
   // คำที่ energy gate พลาดทั้งคำ (เช่นพูดเบามาก) ให้เพิ่มเป็นช่วงใหม่
+  // แต่เฉพาะคำสั้น ๆ ที่อยู่ติดกับช่วงพูดจริงเท่านั้น — เวลาคำที่มาจากการเดา
+  // (interpolate) มักตกอยู่กลางความเงียบ ถ้าเพิ่มเข้าไปด้วยจะกลายเป็น dead-air
+  const near = opts.nearGap ?? 0.35;
+  const original = segments;
   for (const w of valid) {
     if (covered(w)) continue;
+    if (w.end - w.start > 0.6) continue;
+    const adjacent = original.some((s) => w.start - s.end <= near && s.start - w.end <= near);
+    if (!adjacent) continue;
     grown.push({ start: clamp(w.start - pad), end: clamp(w.end + pad) });
   }
 
@@ -448,3 +463,27 @@ export function reconcileSegmentsWithWords(
     }, [])
     .filter((s) => s.end - s.start > 0.05);
 }
+
+/**
+ * ระดับเสียงรบกวนพื้นหลัง (RMS) จากคลิป ใช้เป็น threshold ของ noise gate ตอน export
+ * ใช้เปอร์เซ็นไทล์ที่ 15 แบบเดียวกับ detectSpeechSegments เพื่อให้สอดคล้องกัน
+ */
+export function estimateNoiseFloor(buffer: AudioBuffer): number {
+  const sr = buffer.sampleRate;
+  const win = Math.max(256, Math.floor(sr * 0.025));
+  const hop = Math.max(128, Math.floor(sr * 0.01));
+  const data = buffer.getChannelData(0);
+  const frames: number[] = [];
+  for (let i = 0; i + win < buffer.length; i += hop) {
+    let sum = 0;
+    for (let j = i; j < i + win; j++) {
+      const v = data[j] ?? 0;
+      sum += v * v;
+    }
+    frames.push(Math.sqrt(sum / win));
+  }
+  if (!frames.length) return 0;
+  frames.sort((a, b) => a - b);
+  return frames[Math.floor(frames.length * 0.15)] ?? 0;
+}
+
