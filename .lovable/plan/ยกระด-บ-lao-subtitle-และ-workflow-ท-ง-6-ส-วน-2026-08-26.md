@@ -74,3 +74,36 @@
   - `google/gemini-3.7-flash` (input_audio): **CER 0.000**
   - ผลรวม ensemble เลือกได้ CER 0.018 (แพ้ candidate ที่ดีที่สุด 0.018 เพราะ majority agreement เลือก ຫລ แทน ຫຼ)
 - สรุปตามข้อมูลจริงเท่าที่มี: Gemini ดีเท่า gpt-4o บนคลิปนี้และดีกว่า Scribe ชัดเจน แต่ยังเป็นคลิปสั้น 12.6 วิที่ต่อจากคำเดี่ยว ยังไม่ใช่คำพูดต่อเนื่องธรรมชาติ — ห้ามสรุปว่าแม่นขึ้นทั่วไปจนกว่าจะ benchmark คลิปพูดจริง
+
+## อัปเดต 2026-08-31 — Word timing จริงจาก Scribe + `alignTextToTiming`
+
+### สถานะปัจจุบันของระบบซับ (อ่านต่อได้ทันที)
+- **ข้อความ**: ensemble 3 เอนจินสำหรับ `language === "lo"` ใน `src/lib/transcribe.server.ts`
+  1. ElevenLabs Scribe (`scribe_v2`, `language_code=lao`, `ELEVENLABS_API_KEY`) → คืน "อักษรไทย" ต้องผ่าน `thaiToLaoScript`
+  2. `google/gemini-3.7-flash` ผ่าน Lovable Gateway `/v1/chat/completions` + `input_audio` (คืนอักษรลาวตรง)
+  3. `openai/gpt-4o-transcribe` ผ่าน Gateway 2 pass (rolling context + glossary)
+  ผู้ชนะเลือกด้วย `scoreCandidate()` (agreement + script purity) และหักคะแนน 0.03 ให้ candidate ที่ผ่าน transliteration
+- **เวลา (ใหม่)**: `TranscriptionResult` เพิ่ม `words?: TimedWord[]` + `wordSource`; `buildScribeTiming()` รวม token ระดับอักษรของ Scribe เป็น "คำ" ด้วย `tokenizeWords` เดิม แล้วแปลงไทย→ลาว **รายคำ** (ไม่ใช่รายตัวอักษร) — เก็บ timing ไว้เสมอแม้ Scribe จะแพ้ ensemble
+- `alignTextToTiming(text, timing)` ใน `src/lib/media/forced-align.ts`: Needleman–Wunsch จับคู่คำผู้ชนะกับคำที่ Scribe วัดเวลาไว้ (similarity ระดับตัวอักษร รองรับสะกดต่างเล็กน้อย), คำที่จับคู่ได้ใช้เวลาจริง, คำที่จับไม่ได้ interpolate ตาม `speechWeight` เฉพาะช่วงระหว่าง anchor สองข้าง, ถ้าจับคู่ได้ < 40% คืน `null` → fallback `forcedAlignWords` เดิม
+- `alignTextToTimingOnTimeline()` แม็ปเวลาจาก chunk-local กลับไทม์ไลน์ต้นฉบับ; `src/routes/index.tsx` ใช้ที่ทุกจุด (chunk loop, whole-file, retry sync, retranscribe range) และเก็บ `measuredTimingRef` ไว้ให้ `applyTranscriptEdit` ใช้เวลาจริงตอนผู้ใช้แก้ข้อความ
+- retranscribe เฉพาะช่วง, accuracy panel, glossary/lex rules, multi-candidate scoring ยังอยู่ครบ ไม่ถูกลดทอน
+
+### ผลวัดจริง 2026-08-31 (มี ground truth)
+คลิป: ต่อไฟล์คำเดี่ยว Lingua Libre 6 คำ + ความเงียบ 0.35–0.4 วิ คั่น (รวม 10.77 วิ) — ground truth คือขอบไฟล์แต่ละคำ (รวม padding เงียบในไฟล์ต้นทาง)
+- ผู้ชนะ ensemble: `ສະບາຍດີ ປະເທດລາວ ພາສາ ວຽງຈັນ ຫລວງພະບາງ ຮ້ອຍ` (สะกด `ຫລ` ต่างจาก ground truth `ຫຼ` → เป็นเคสที่ต้องการทดสอบ alignment ข้ามสะกด)
+- Scribe คืน 10 คำพร้อมเวลาจริง; ผู้ชนะถูกตัดเป็น 9 คำ (`ປະເທດ`+`ລາວ`, `ຫລວງ`+`ພະ`+`ບາງ` แยกกัน) → จับคู่กับ ground truth ได้ตรงคำ 4/6
+- **mean |offset| เทียบ ground truth (start+end):**
+  - `forcedAlignWords` (energy envelope เดิม): **1.147 s** (drift สะสม เช่น `ວຽງຈັນ` เร็วไป 1.57 s, ทั้งประโยคจบที่ 9.17 s ทั้งที่เสียงจบ 10.42 s)
+  - `alignTextToTiming` (เวลา Scribe จริง): **0.299 s** (ทุกคำ start ช้ากว่า ground truth 0.20–0.43 s เพราะ ground truth นับ padding เงียบหัวไฟล์ต้นทางด้วย; ขอบจริงของเสียงพูดตรงกัน)
+- สรุปตามข้อมูลนี้: บนคลิปนี้ timing จาก Scribe ตรงกว่าชัดเจน แต่เป็นคลิปต่อจากคำเดี่ยว 1 ตัวอย่าง ยังไม่ใช่คำพูดต่อเนื่องธรรมชาติ — **ห้ามสรุปว่าตรงขึ้นทั่วไป** จนกว่าจะวัดคลิปพูดจริง
+
+### Edge case ที่ทดสอบแล้ว (regression tests ใน `src/lib/media/forced-align.test.ts`)
+- คำซ้ำในประโยค (`ພາສາ ລາວ ເວົ້າ ພາສາ ລາວ`) → จับคู่ตำแหน่งถูกทั้งคู่ (global alignment รักษาลำดับ)
+- ผู้ชนะมีคำเกินที่ Scribe ไม่มี → คำนั้น interpolate อยู่ในช่องว่างระหว่าง anchor เท่านั้น
+- สะกดต่างเล็กน้อย (`ຫຼວງພະບາງ` vs `ຫລວງພະບາງ`) → ยังจับคู่ได้และใช้เวลาจริง
+- ข้อความไม่เกี่ยวกันเลย → คืน `null` แล้ว fallback ไป forced-align
+
+### Known issues / ต่อไป
+- ถ้า Scribe ล้มเหลว (เช่นไม่มี `ELEVENLABS_API_KEY` หรือ 4xx) จะไม่มี timing จริงเลย → ทั้งคลิปกลับไปใช้ energy envelope ซึ่งวัดแล้วว่า drift มาก
+- gpt-4o-transcribe บน Lovable Gateway **ไม่รองรับ** `response_format=verbose_json` / `timestamp_granularities` (ทดสอบจริงได้ HTTP 400 `This model does not support the format you provided.`) และ Gemini เป็น chat completion → ไม่มีเวลาจริงจากสองเอนจินนี้
+- ground truth ที่ใช้ยังเป็นคลิปสังเคราะห์จากคำเดี่ยว ยังขาด benchmark คำพูดต่อเนื่องพร้อม timestamp อ้างอิงจริง

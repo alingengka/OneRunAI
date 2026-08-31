@@ -60,7 +60,8 @@ import {
   smoothSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
-import { alignTextToTimingOnTimeline, forcedAlignWords, mergeAlignedChunks } from "@/lib/media/forced-align";
+import { alignTextToTiming, alignTextToTimingOnTimeline, forcedAlignWords, mapConcatTimeToTimeline, mergeAlignedChunks } from "@/lib/media/forced-align";
+import type { TimedWord } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo } from "@/lib/media/export-burned";
 
@@ -136,6 +137,8 @@ function Studio() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioBufferRef = useRef<AudioBuffer | null>(null);
+  /** เวลาคำที่ผู้ถอดเสียงวัดมาจริง (Scribe) บนไทม์ไลน์ต้นฉบับ */
+  const measuredTimingRef = useRef<TimedWord[]>([]);
 
   const [file, setFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string>("");
@@ -459,6 +462,9 @@ function Studio() {
       const chunks = lang === "lo" ? addChunkOverlap(baseChunks, buffer.duration, 0.38) : baseChunks;
       const allWords: Word[] = [];
       const texts: string[] = [];
+      // เก็บเวลาคำที่วัดได้จริง (Scribe) บนไทม์ไลน์ต้นฉบับ ไว้ใช้ตอนแก้ข้อความ
+      const measured: TimedWord[] = [];
+
 
       if (chunks.length) {
         for (let i = 0; i < chunks.length; i++) {
@@ -478,6 +484,10 @@ function Studio() {
           const chunkDur = chunkSegs.reduce((n, s) => n + (s.end - s.start), 0);
           // Prefer the recogniser's measured word timings (ElevenLabs Scribe);
           // fall back to energy-envelope alignment when they cannot be matched.
+          for (const word of res.words ?? []) {
+            const start = mapConcatTimeToTimeline(word.start, chunkSegs);
+            measured.push({ text: word.text, start, end: Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, chunkSegs)) });
+          }
           const timed = alignTextToTimingOnTimeline(text, res.words ?? [], chunkSegs);
           const aligned = (timed ?? forcedAlignWords(buffer, chunkSegs, text, chunkDur)).map((word) => {
             const acoustic = word.confidence ?? 0.5;
@@ -499,6 +509,10 @@ function Studio() {
         const text = (res.text ?? "").trim();
         if (text) {
           texts.push(text);
+          for (const word of res.words ?? []) {
+            const start = mapConcatTimeToTimeline(word.start, segs);
+            measured.push({ text: word.text, start, end: Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, segs)) });
+          }
           allWords.push(
             ...(alignTextToTimingOnTimeline(text, res.words ?? [], segs)
               ?? forcedAlignWords(buffer!, segs, text, buffer!.duration)),
@@ -506,6 +520,7 @@ function Studio() {
         }
       }
 
+      measuredTimingRef.current = measured.sort((a, b) => a.start - b.start);
       if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
       const ruled = applyRulesToWords(allWords, lexRules);
       if (ruled.changed) setLexRules(ruled.rules);
@@ -722,10 +737,12 @@ function Studio() {
 
   const applyTranscriptEdit = () => {
     if (!transcript.trim()) { toast.error("ยังไม่มีข้อความ"); return; }
+    const timed = alignTextToTiming(transcript, measuredTimingRef.current);
     setWords(
-      audioBufferRef.current
-        ? forcedAlignWords(audioBufferRef.current, segments, transcript, duration)
-        : alignWordsToSegments(transcript, segments, duration),
+      timed
+        ?? (audioBufferRef.current
+          ? forcedAlignWords(audioBufferRef.current, segments, transcript, duration)
+          : alignWordsToSegments(transcript, segments, duration)),
     );
     toast.success("อัปเดตข้อความซับแล้ว");
   };
