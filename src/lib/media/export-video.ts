@@ -102,7 +102,7 @@ export async function exportTrimmedWebm(
       boundaryGain = audioContext.createGain();
       const destination = audioContext.createMediaStreamDestination();
       gate = options.noiseReduction && options.noiseFloor
-        ? createNoiseGate(audioContext, { noiseFloor: options.noiseFloor })
+      ? await createNoiseGate(audioContext, { noiseFloor: options.noiseFloor })
         : null;
       if (gate) {
         source.connect(highpass).connect(lowpass).connect(compressor).connect(gate.input);

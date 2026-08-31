@@ -16,10 +16,75 @@ export type NoiseGateOptions = {
 
 export type NoiseGateNode = { input: AudioNode; output: AudioNode; dispose: () => void };
 
-export function createNoiseGate(ctx: BaseAudioContext, opts: NoiseGateOptions): NoiseGateNode {
-  const threshold = Math.max(1e-6, opts.noiseFloor * (opts.openRatio ?? 2.2));
+export async function createNoiseGate(ctx: AudioContext, opts: NoiseGateOptions): Promise<NoiseGateNode> {
+  const noiseFloor = Number.isFinite(opts.noiseFloor) ? Math.max(0, Math.min(1, opts.noiseFloor)) : 0;
+  const openRatio = Number.isFinite(opts.openRatio) ? Math.max(1, opts.openRatio ?? 2.2) : 2.2;
+  const threshold = Math.max(1e-6, noiseFloor * openRatio);
   const closeThreshold = threshold * 0.6;
-  const floorGain = opts.floorGain ?? 0.06;
+  const floorGain = Number.isFinite(opts.floorGain) ? Math.max(0, Math.min(1, opts.floorGain ?? 0.06)) : 0.06;
+
+  // AudioWorklet runs away from the UI/canvas thread. This prevents a heavy
+  // 1080/4K paint from starving ScriptProcessorNode and freezing the export's
+  // audio graph. Older browsers retain the guarded ScriptProcessor fallback.
+  if (ctx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
+    const source = `
+      class ShortCutNoiseGate extends AudioWorkletProcessor {
+        constructor(options) {
+          super();
+          const values = options.processorOptions || {};
+          this.threshold = values.threshold;
+          this.closeThreshold = values.closeThreshold;
+          this.floorGain = values.floorGain;
+          this.gain = this.floorGain;
+        }
+        process(inputs, outputs) {
+          const input = inputs[0] || [];
+          const output = outputs[0] || [];
+          let sum = 0;
+          let count = 0;
+          for (const channel of input) {
+            for (let i = 0; i < channel.length; i++) {
+              const value = Number.isFinite(channel[i]) ? channel[i] : 0;
+              sum += value * value;
+              count++;
+            }
+          }
+          const rms = Math.sqrt(sum / Math.max(1, count));
+          const open = rms >= (this.gain > 0.5 ? this.closeThreshold : this.threshold);
+          const target = open ? 1 : this.floorGain;
+          const seconds = 128 / sampleRate;
+          const coefficient = Math.exp(-seconds / (target > this.gain ? 0.008 : 0.12));
+          const next = target + (this.gain - target) * coefficient;
+          for (let channelIndex = 0; channelIndex < output.length; channelIndex++) {
+            const destination = output[channelIndex];
+            const inputChannel = input[channelIndex] || input[0];
+            for (let i = 0; i < destination.length; i++) {
+              const value = inputChannel && Number.isFinite(inputChannel[i]) ? inputChannel[i] : 0;
+              const gain = this.gain + ((next - this.gain) * i) / Math.max(1, destination.length);
+              destination[i] = value * gain;
+            }
+          }
+          this.gain = next;
+          return true;
+        }
+      }
+      registerProcessor("shortcut-noise-gate", ShortCutNoiseGate);
+    `;
+    const moduleUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    try {
+      await ctx.audioWorklet.addModule(moduleUrl);
+      const node = new AudioWorkletNode(ctx, "shortcut-noise-gate", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        processorOptions: { threshold, closeThreshold, floorGain },
+      });
+      return { input: node, output: node, dispose: () => node.disconnect() };
+    } finally {
+      URL.revokeObjectURL(moduleUrl);
+    }
+  }
+
   const size = 1024;
   const processor = ctx.createScriptProcessor(size, 2, 2);
 
@@ -31,7 +96,9 @@ export function createNoiseGate(ctx: BaseAudioContext, opts: NoiseGateOptions): 
 
   processor.onaudioprocess = (event) => {
     const { inputBuffer, outputBuffer } = event;
-    const channels = Math.min(inputBuffer.numberOfChannels, outputBuffer.numberOfChannels);
+    const inputChannels = inputBuffer.numberOfChannels;
+    const outputChannels = outputBuffer.numberOfChannels;
+    const channels = Math.min(inputChannels, outputChannels);
     // RMS ของบล็อกนี้ (รวมทุกช่อง)
     let sum = 0;
     let count = 0;
@@ -57,6 +124,13 @@ export function createNoiseGate(ctx: BaseAudioContext, opts: NoiseGateOptions): 
         const g = gain + ((next - gain) * i) / output.length;
         output[i] = (input[i] ?? 0) * g;
       }
+    }
+    // Up-mix mono safely instead of leaving an unexpected output channel with
+    // stale samples. All indexing is guarded and every written value is finite.
+    for (let c = channels; c < outputChannels; c++) {
+      const output = outputBuffer.getChannelData(c);
+      const input = inputChannels ? inputBuffer.getChannelData(Math.min(c, inputChannels - 1)) : undefined;
+      for (let i = 0; i < output.length; i++) output[i] = (input?.[i] ?? 0) * next;
     }
     gain = next;
   };
