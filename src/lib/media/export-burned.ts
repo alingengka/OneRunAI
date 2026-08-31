@@ -132,7 +132,10 @@ export async function exportBurnedVideo(
   const video = document.createElement("video");
   video.src = url;
   video.muted = false;
-  video.volume = 0;
+  // ห้ามตั้ง volume = 0: MediaElementSource ใช้ค่า volume ของ element คูณสัญญาณ
+  // ที่ส่งเข้า Web Audio ด้วย ทำให้ไฟล์ที่ export ออกมาเงียบสนิท
+  // (เสียงไม่ออกลำโพงอยู่แล้ว เพราะ element ถูกต่อเข้ากราฟแทน default output)
+  video.volume = 1;
   video.playsInline = true;
   video.preload = "auto";
   video.style.position = "fixed";
@@ -405,18 +408,24 @@ export async function exportBurnedVideo(
     recorder.start(500);
     await new Promise((r) => setTimeout(r, 120));
 
+    // เฟดเสียงตรงรอยตัด "ตามเวลาจริงของวิดีโอ" ไม่ใช่ตารางเวลาของ AudioContext
+    // (การจองล่วงหน้าทำให้เกนค้างที่ค่าต่ำสุดเมื่อการเล่นช้ากว่ากำหนด → ไฟล์เงียบ)
+    const applyBoundaryGain = (time: number, seg: Segment) => {
+      if (options.smoothCuts === false || !audioContext) return;
+      const length = Math.max(0.06, seg.end - seg.start);
+      const fade = Math.min(0.05, length / 4);
+      const edge = Math.max(0, Math.min(time - seg.start, seg.end - time));
+      const target = Math.max(0.0001, Math.min(1, edge / fade));
+      boundaryGain.gain.setTargetAtTime(target, audioContext.currentTime, 0.008);
+    };
+
     for (const seg of segments) {
       if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
       await seek(video, seg.start);
       if (options.smoothCuts !== false) {
         const now = audioContext.currentTime;
-        const length = Math.max(0.06, seg.end - seg.start);
-        const fade = Math.min(0.05, length / 4);
         boundaryGain.gain.cancelScheduledValues(now);
         boundaryGain.gain.setValueAtTime(0.0001, now);
-        boundaryGain.gain.exponentialRampToValueAtTime(1, now + fade);
-        boundaryGain.gain.setValueAtTime(1, now + Math.max(fade + 0.01, length - fade));
-        boundaryGain.gain.exponentialRampToValueAtTime(0.0001, now + length);
       }
       try {
         await video.play();
@@ -434,6 +443,9 @@ export async function exportBurnedVideo(
           if (finished) return;
           finished = true;
           window.clearTimeout(watchdog);
+          if (options.smoothCuts !== false && audioContext) {
+            boundaryGain.gain.setTargetAtTime(0.0001, audioContext.currentTime, 0.008);
+          }
           video.pause();
           resolve();
         };
@@ -445,7 +457,9 @@ export async function exportBurnedVideo(
           if (finished) return;
           const time = video.currentTime;
           paint(time, seg);
+          applyBoundaryGain(time, seg);
           painted++;
+
           if (options.signal?.aborted || time >= seg.end || video.ended) {
             finish();
             return;

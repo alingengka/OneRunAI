@@ -213,3 +213,21 @@ Ground truth: `ສະບາຍດີ ພາສາ ລາວ ວຽງຈັນ �
   | 4K | 2160x3840 | 24 | 25 | 392 KB |
   - เห็นชัดว่า 4K วาดได้ ~12.5 เฟรม/วินาทีจริงบนเครื่องทดสอบ (เฟรมตกจากเป้า 24fps) → เพิ่มข้อความเตือนใน UI เมื่อเลือก 4K
 - known issue: การอัดเป็นแบบ realtime capture ดังนั้นความลื่นของไฟล์ 4K ขึ้นกับเครื่องผู้ใช้; ถ้าต้องการ 4K ลื่นจริงต้องเปลี่ยนไปใช้ WebCodecs แบบ frame-by-frame (งานใหญ่ ยังไม่ทำ)
+
+## แก้บั๊ก export เงียบ/ภาพค้าง (ตรวจจากไฟล์ export จริง)
+
+สาเหตุจริง 2 จุด (ไม่ใช่ noise gate):
+1. `video.volume = 0` — `MediaElementAudioSourceNode` คูณสัญญาณด้วย volume ของ element
+   ทำให้กราฟเสียงทั้งเส้นเป็นศูนย์ → แก้เป็น `volume = 1` ทั้ง `export-burned.ts` และ `export-video.ts`
+2. เฟดรอยตัด (`boundaryGain`) ถูก **จองตารางเวลาไว้ล่วงหน้า** ด้วย `audioContext.currentTime`
+   ต่อหนึ่ง segment แต่การเล่นจริงช้ากว่า (seek + play startup) เกนจึงวิ่งลงถึงค่าต่ำสุด 0.0001
+   ก่อนเสียงจริงจะมาถึง และค้างที่ค่านั้นตลอด → ไฟล์เงียบสนิท
+   แก้เป็นการคำนวณเกนจาก `video.currentTime` จริงในทุกเฟรม แล้วใช้ `setTargetAtTime`
+
+ผลทดสอบ export จริงผ่านเบราว์เซอร์ (คลิปจริง + captions + motion + viral text):
+- noise reduction เปิด / source: 3.48s, ค่าเฉลี่ยราว -14 ถึง -19 dB ต่อช่วง, เฟดชัดตรงรอยตัด
+- noise reduction ปิด / 1080: 3.54s, -21.3 dB, เฟรม 1080x1920 เปลี่ยนต่อเนื่อง (ไม่ค้าง)
+- noise reduction เปิด / 720: 3.42s, -15.9 dB, เฟรม 720x1280 เปลี่ยนต่อเนื่อง
+
+ข้อจำกัดที่ยังเหลือ: `createNoiseGate` ยังใช้ `ScriptProcessorNode` (deprecated, รันบน main thread)
+ที่ 4K อาจแย่งเวลาเรนเดอร์จนเฟรมตก — ควรย้ายไป AudioWorklet ในรอบถัดไป

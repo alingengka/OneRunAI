@@ -49,7 +49,9 @@ export async function exportTrimmedWebm(
   const video = document.createElement("video");
   video.src = url;
   video.muted = false;
-  video.volume = 0;
+  // ต้องเป็น 1: volume ของ element คูณสัญญาณที่เข้า Web Audio ด้วย
+  // ถ้าเป็น 0 ไฟล์ที่ export จะไม่มีเสียงเลย
+  video.volume = 1;
   video.playsInline = true;
   video.preload = "auto";
   video.style.position = "fixed";
@@ -137,13 +139,8 @@ export async function exportTrimmedWebm(
       await seek(video, seg.start);
       if (audioContext && boundaryGain && options.smoothCuts) {
         const now = audioContext.currentTime;
-        const length = Math.max(0.06, seg.end - seg.start);
-        const fade = Math.min(0.05, length / 4);
         boundaryGain.gain.cancelScheduledValues(now);
         boundaryGain.gain.setValueAtTime(0.0001, now);
-        boundaryGain.gain.exponentialRampToValueAtTime(1, now + fade);
-        boundaryGain.gain.setValueAtTime(1, now + Math.max(fade + 0.01, length - fade));
-        boundaryGain.gain.exponentialRampToValueAtTime(0.0001, now + length);
       }
       try {
         await video.play();
@@ -153,16 +150,32 @@ export async function exportTrimmedWebm(
       await new Promise<void>((resolve) => {
         let last = -1;
         let stalled = 0;
+        // เฟดตามเวลาจริงของวิดีโอ ไม่จองตารางเวลาไว้ล่วงหน้า
+        const fadeAt = (time: number) => {
+          if (!audioContext || !boundaryGain || !options.smoothCuts) return;
+          const length = Math.max(0.06, seg.end - seg.start);
+          const fade = Math.min(0.05, length / 4);
+          const edge = Math.max(0, Math.min(time - seg.start, seg.end - time));
+          const target = Math.max(0.0001, Math.min(1, edge / fade));
+          boundaryGain.gain.setTargetAtTime(target, audioContext.currentTime, 0.008);
+        };
+        const stop = () => {
+          if (audioContext && boundaryGain && options.smoothCuts) {
+            boundaryGain.gain.setTargetAtTime(0.0001, audioContext.currentTime, 0.008);
+          }
+          video.pause();
+          resolve();
+        };
         const tick = () => {
           const time = video.currentTime;
           if (options.signal?.aborted || time >= seg.end || video.ended) {
-            video.pause();
-            resolve();
+            stop();
             return;
           }
+          fadeAt(time);
           if (Math.abs(time - last) < 0.0005) {
             stalled += 1;
-            if (stalled > 240) { video.pause(); resolve(); return; }
+            if (stalled > 240) { stop(); return; }
           } else {
             stalled = 0;
           }
@@ -170,6 +183,7 @@ export async function exportTrimmedWebm(
           onProgress?.(Math.min(1, (elapsed + (time - seg.start)) / total));
           requestAnimationFrame(tick);
         };
+
         requestAnimationFrame(tick);
       });
       elapsed += seg.end - seg.start;
