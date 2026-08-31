@@ -113,7 +113,7 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
                 const sceneLen = Math.max(0.5, scene.end - scene.start);
                 const offset = Math.min(Math.max(0, element.offset ?? 0), Math.max(0, sceneLen - 0.5));
                 const dur = Math.min(Math.max(0.5, element.durationSec ?? 2.5), Math.max(0.5, sceneLen - offset));
-                const win = viralTextWindow(scene, { offset: element.offset, durationSec: element.durationSec });
+                const win = viralTextWindow(scene, element);
                 return (
                 <div key={`${element.id}-editor`} className="mt-3 space-y-2 rounded-lg border border-border bg-secondary/30 p-3">
                   <Input
