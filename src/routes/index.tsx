@@ -56,6 +56,7 @@ import {
   encodeSegmentsWav16k,
   encodeWav16k,
   invertSegments,
+  reconcileSegmentsWithWords,
   refineSpeechSegments,
   smoothSpeechSegments,
   type Segment,
