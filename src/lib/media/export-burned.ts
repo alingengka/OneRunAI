@@ -463,10 +463,13 @@ export async function exportBurnedVideo(
       else recorder.resume();
     });
 
+    const dbg = (m: string) => { if ((window as unknown as { __EXPORT_DEBUG?: boolean }).__EXPORT_DEBUG) console.log("[export] " + m); };
     for (let segmentIndex = 0; segmentIndex < normalizedSegments.length; segmentIndex++) {
       const seg = normalizedSegments[segmentIndex]!;
       if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
+      dbg(`seg ${segmentIndex + 1}/${normalizedSegments.length} ${seg.start.toFixed(2)}-${seg.end.toFixed(2)} rec=${recorder.state}`);
       if (segmentIndex > 0) await seek(video, seg.start);
+      dbg(`seeked ${video.currentTime.toFixed(2)}`);
       if (options.smoothCuts !== false) {
         const now = audioContext.currentTime;
         boundaryGain.gain.cancelScheduledValues(now);
@@ -530,7 +533,11 @@ export async function exportBurnedVideo(
             ? frameVideo.requestVideoFrameCallback(callback)
             : requestAnimationFrame(callback);
         };
-        const tick = () => {
+        // การตรวจสอบหนึ่งรอบ: วาดเฟรม, เฟดเสียง, และเช็คว่าจบช่วงหรือยัง
+        // เรียกได้ทั้งจาก requestVideoFrameCallback และจากตัวจับเวลาสำรอง
+        // (rVFC หยุดยิงเมื่อ decoder ไม่ส่งเฟรมใหม่ เช่นวิดีโอถูก pause เอง
+        //  ซึ่งเคยทำให้ export ค้างที่ช่วงสุดท้ายแบบไม่มีวันจบ)
+        const step = (scheduleNext: boolean) => {
           if (finished) return;
           const time = video.currentTime;
           if (time > lastMediaTime + 0.001) {
@@ -545,26 +552,42 @@ export async function exportBurnedVideo(
           if (time >= seg.end) { void finish("reached-end"); return; }
           if (video.ended) { void finish("source-ended"); return; }
           onProgress?.(Math.min(1, (elapsed + (time - seg.start)) / total));
-          requestNextFrame(tick);
+          if (scheduleNext) requestNextFrame(tick);
         };
+        const tick = () => step(true);
         abortHandler = () => fail(new DOMException("ยกเลิกการเรนเดอร์", "AbortError"));
         options.signal?.addEventListener("abort", abortHandler, { once: true });
+        let resumeAttempts = 0;
         healthTimer = window.setInterval(() => {
+          if (finished) return;
+          // เดินลูปต่อแม้ rVFC เงียบ เพื่อไม่ให้ค้างที่ 100%
+          step(false);
           if (finished) return;
           const now = performance.now();
           if (video.currentTime > lastMediaTime + 0.001) {
             lastMediaTime = video.currentTime;
             lastProgressWall = now;
-          } else if (!video.paused && now - lastProgressWall > 8000) {
+            return;
+          }
+          if (now - lastProgressWall < 3000) return;
+          if (video.paused && !video.ended && resumeAttempts < 3) {
+            resumeAttempts++;
+            lastProgressWall = now;
+            void video.play().catch(() => undefined);
+            return;
+          }
+          if (now - lastProgressWall > 8000) {
             fail(new Error(`ตัวถอดรหัสวิดีโอค้างเกิน 8 วินาทีที่ช่วง ${segmentIndex + 1} (${video.currentTime.toFixed(2)}s)`));
           }
-        }, 500);
+        }, 250);
         requestNextFrame(tick);
+
       });
 
       elapsed += seg.end - seg.start;
       // Emit bounded chunks only while the recorder is active. This keeps long
       // exports memory-safe without the pause/resume deadlock seen in Chromium.
+      dbg(`seg ${segmentIndex + 1} done rec=${recorder.state} t=${video.currentTime.toFixed(2)}`);
       if (recorder.state === "recording") recorder.requestData();
       onProgress?.(Math.min(1, elapsed / total));
     }
@@ -575,11 +598,13 @@ export async function exportBurnedVideo(
     await new Promise((resolve) => window.setTimeout(resolve, 250));
     // Stopping from the paused state excludes all seek/decode delays from the
     // recording timeline and is supported by MediaRecorder.
+    dbg(`stopping rec=${recorder.state} chunks=${chunks.length}`);
     recorder.stop();
     await Promise.race([
       done,
       new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("MediaRecorder ไม่ปิดไฟล์ภายใน 8 วินาที")), 8000)),
     ]);
+    dbg(`stopped chunks=${chunks.length}`);
     const blob = new Blob(chunks, { type: mimeType });
     if (blob.size < 1024) throw new Error("ไฟล์วิดีโอที่ส่งออกไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
     return { blob, ext: mimeExtension(mimeType), width, height, fps, frames: painted, chunks: chunkTimes.length, expectedDuration: total, segments: segmentDiagnostics };
