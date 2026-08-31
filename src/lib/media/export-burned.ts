@@ -266,9 +266,10 @@ export async function exportBurnedVideo(
     const drawViralText = (time: number) => {
       const hit = viralTextAt(time, options.scenes, options.sceneElements);
       if (!hit) return;
-      const span = 2.5;
-      const inRatio = Math.min(1, (hit.progress * span) / 0.3);
-      const outRatio = Math.min(1, ((1 - hit.progress) * span) / 0.3);
+      const span = hit.span;
+      const fade = Math.min(0.3, span / 3);
+      const inRatio = Math.min(1, (hit.progress * span) / fade);
+      const outRatio = Math.min(1, ((1 - hit.progress) * span) / fade);
       const alpha = Math.max(0, Math.min(inRatio, outRatio));
       if (alpha <= 0) return;
       const pop = inRatio < 1 ? 0.7 + 0.3 * (1 - Math.pow(1 - inRatio, 3)) : 1;
