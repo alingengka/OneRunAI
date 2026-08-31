@@ -1,4 +1,5 @@
 import type { Segment } from "./audio";
+import { motionAt, type MotionElement, type MotionScene } from "./motion";
 import {
   LINE_BREAK,
   isKeyword,
@@ -82,7 +83,14 @@ export async function exportBurnedVideo(
   groups: CaptionGroup[],
   style: CaptionStyle,
   onProgress?: Progress,
-  options: { noiseReduction?: boolean; smoothCuts?: boolean; captions?: boolean; signal?: AbortSignal } = {},
+  options: {
+    noiseReduction?: boolean;
+    smoothCuts?: boolean;
+    captions?: boolean;
+    signal?: AbortSignal;
+    scenes?: MotionScene[];
+    sceneElements?: MotionElement[];
+  } = {},
 ): Promise<{ blob: Blob; ext: "mp4" | "webm" }> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
