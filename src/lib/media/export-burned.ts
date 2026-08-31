@@ -1,5 +1,6 @@
 import type { Segment } from "./audio";
 import { motionAt, type MotionElement, type MotionScene } from "./motion";
+import { viralTextAt } from "../scenes";
 import {
   LINE_BREAK,
   isKeyword,
@@ -262,6 +263,38 @@ export async function exportBurnedVideo(
       });
     };
 
+    const drawViralText = (time: number) => {
+      const hit = viralTextAt(time, options.scenes, options.sceneElements);
+      if (!hit) return;
+      const span = 2.5;
+      const inRatio = Math.min(1, (hit.progress * span) / 0.3);
+      const outRatio = Math.min(1, ((1 - hit.progress) * span) / 0.3);
+      const alpha = Math.max(0, Math.min(inRatio, outRatio));
+      if (alpha <= 0) return;
+      const pop = inRatio < 1 ? 0.7 + 0.3 * (1 - Math.pow(1 - inRatio, 3)) : 1;
+
+      const fontSize = height * 0.075;
+      const text = hit.text.toUpperCase();
+      const y = hit.position === "middle" ? height * 0.47 : height * 0.13;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "center";
+      ctx.font = `900 ${fontSize}px ${style.fontFamily}`;
+      ctx.translate(width / 2, y);
+      ctx.scale(pop, pop);
+      ctx.lineJoin = "round";
+      ctx.miterLimit = 2;
+      ctx.lineWidth = Math.max(4, fontSize * 0.14);
+      ctx.strokeStyle = "#000000";
+      ctx.strokeText(text, 0, 0);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(text, 0, 0);
+      ctx.restore();
+      ctx.textAlign = "left";
+    };
+
     const total = segments.reduce((n, s) => n + (s.end - s.start), 0);
     let elapsed = 0;
 
@@ -305,6 +338,7 @@ export async function exportBurnedVideo(
         }
       }
       drawCaption(time);
+      drawViralText(time);
     };
 
     if (audioContext.state === "suspended") await audioContext.resume();
@@ -340,27 +374,44 @@ export async function exportBurnedVideo(
       await new Promise<void>((resolve) => {
         let last = -1;
         let stalled = 0;
+        let finished = false;
+        // Wall-clock watchdog: if the decoder stops delivering frames the frame
+        // callback stops firing entirely, so a frame-count guard alone can hang.
+        let watchdog = 0;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          window.clearTimeout(watchdog);
+          video.pause();
+          resolve();
+        };
+        const arm = () => {
+          window.clearTimeout(watchdog);
+          watchdog = window.setTimeout(finish, 3000);
+        };
         const tick = () => {
+          if (finished) return;
           const time = video.currentTime;
           paint(time, seg);
           if (options.signal?.aborted || time >= seg.end || video.ended) {
-            video.pause();
-            resolve();
+            finish();
             return;
           }
-          // Guard against a decoder stall so the export can never hang forever.
           if (Math.abs(time - last) < 0.0005) {
             stalled += 1;
-            if (stalled > 240) { video.pause(); resolve(); return; }
+            if (stalled > 240) { finish(); return; }
           } else {
             stalled = 0;
+            arm();
           }
           last = time;
           onProgress?.(Math.min(1, (elapsed + (time - seg.start)) / total));
           nextFrame(tick);
         };
+        arm();
         nextFrame(tick);
       });
+
       elapsed += seg.end - seg.start;
       onProgress?.(Math.min(1, elapsed / total));
     }

@@ -19,6 +19,9 @@ export type SceneElement = {
   label: string;
   enabled: boolean;
   intensity: number;
+  /** ข้อความสำหรับ viral text */
+  text?: string;
+  position?: "top" | "middle";
 };
 
 export function addSceneElement(elements: SceneElement[], sceneId: string, kind: SceneElementKind): SceneElement[] {
@@ -30,8 +33,29 @@ export function addSceneElement(elements: SceneElement[], sceneId: string, kind:
   };
   const existing = elements.find((element) => element.sceneId === sceneId && element.kind === kind);
   if (existing) return elements.map((element) => element.id === existing.id ? { ...element, enabled: true } : element);
-  return [...elements, { id: `${sceneId}-${kind}`, sceneId, kind, label: labels[kind], enabled: true, intensity: 0.7 }];
+  const created: SceneElement = { id: `${sceneId}-${kind}`, sceneId, kind, label: labels[kind], enabled: true, intensity: 0.7 };
+  if (kind === "viralText") {
+    created.text = "";
+    created.position = "top";
+  }
+  return [...elements, created];
 }
+
+export function updateSceneElementText(elements: SceneElement[], id: string, text: string): SceneElement[] {
+  return elements.map((element) => (element.id === id ? { ...element, text } : element));
+}
+
+export type SceneWindow = { id: string; start: number; end: number; segments?: Segment[] };
+
+/** viral text โผล่แค่ช่วงต้นซีน (สูงสุด 2.5 วินาที) */
+export function viralTextWindow(scene: SceneWindow) {
+  const length = scene.segments?.length
+    ? scene.segments.reduce((n, s) => n + (s.end - s.start), 0)
+    : scene.end - scene.start;
+  const span = Math.min(2.5, Math.max(0, length));
+  return { start: scene.start, end: scene.start + span };
+}
+
 
 /**
  * รวมช่วงพูดที่อยู่ติดกันเป็น "ซีน" เพื่อให้ผู้ใช้มองงานเป็นก้อน
@@ -64,4 +88,33 @@ export function sceneDuration(scene: Scene) {
 
 export function isInScenes(time: number, scenes: Scene[]) {
   return scenes.some((scene) => time >= scene.start - 0.001 && time <= scene.end + 0.001);
+}
+
+export type ViralTextHit = {
+  text: string;
+  position: "top" | "middle";
+  /** 0..1 ความคืบหน้าใน window */
+  progress: number;
+};
+
+/** หา viral text ที่ควรโชว์ ณ เวลานั้น */
+export function viralTextAt(
+  time: number,
+  scenes: SceneWindow[] | undefined,
+  elements: { sceneId: string; kind: string; enabled: boolean; text?: string; position?: "top" | "middle" }[] | undefined,
+): ViralTextHit | null {
+  if (!scenes?.length || !elements?.length) return null;
+  for (const scene of scenes) {
+    const element = elements.find((e) => e.sceneId === scene.id && e.kind === "viralText" && e.enabled);
+    if (!element?.text?.trim()) continue;
+    const win = viralTextWindow(scene);
+    if (time < win.start - 0.001 || time > win.end + 0.001) continue;
+    const span = Math.max(0.001, win.end - win.start);
+    return {
+      text: element.text.trim(),
+      position: element.position ?? "top",
+      progress: Math.max(0, Math.min(1, (time - win.start) / span)),
+    };
+  }
+  return null;
 }

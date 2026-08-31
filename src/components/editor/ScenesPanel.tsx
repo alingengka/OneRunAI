@@ -1,8 +1,11 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { sceneDuration, type Scene, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { Eye, EyeOff, Plus, Play, Scissors } from "lucide-react";
+
+const VIRAL_PRESETS = ["ห้ามพลาด!! / ຫ້າມພາດ!!", "อันนี้คือจริง?! / ອັນນີ້ແມ່ນຈິງ?!", "ลองดูนี่เลย / ລອງເບິ່ງນີ້ເລີຍ", "รู้ยัง? / ຮູ້ບໍ?", "3 วิสุดท้ายสำคัญ / 3 ວິນາທີສຸດທ້າຍ"];
 
 type Props = {
   scenes: Scene[];
@@ -14,7 +17,9 @@ type Props = {
   elements: SceneElement[];
   onAddElement: (sceneId: string, kind: SceneElementKind) => void;
   onToggleElement: (id: string) => void;
+  onUpdateElementText: (id: string, text: string) => void;
 };
+
 
 function clock(t: number) {
   const m = Math.floor(t / 60);
@@ -22,7 +27,7 @@ function clock(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement }: Props) {
+export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement, onUpdateElementText }: Props) {
   if (!scenes.length) {
     return (
       <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -100,6 +105,32 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
                 )
               ))}
             </div>
+            {elements
+              .filter((element) => element.sceneId === scene.id && element.kind === "viralText" && element.enabled)
+              .map((element) => (
+                <div key={`${element.id}-editor`} className="mt-3 space-y-2 rounded-lg border border-border bg-secondary/30 p-3">
+                  <Input
+                    value={element.text ?? ""}
+                    placeholder="พิมพ์ข้อความไวรัล เช่น ห้ามพลาด!!"
+                    onChange={(e) => onUpdateElementText(element.id, e.target.value)}
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {VIRAL_PRESETS.map((preset) => (
+                      <Button
+                        key={preset}
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px]"
+                        onClick={() => onUpdateElementText(element.id, preset)}
+                      >
+                        {preset}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">โชว์ช่วงต้นซีน สูงสุด 2.5 วินาที</p>
+                </div>
+              ))}
+
             {off && (
               <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
                 <Scissors className="h-3 w-3" /> ซีนนี้จะถูกตัดออกจากไฟล์ส่งออก
