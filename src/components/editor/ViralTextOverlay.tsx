@@ -15,9 +15,9 @@ export function ViralTextOverlay({ scenes, sceneElements, time, height }: Props)
   const hit = viralTextAt(time, scenes, sceneElements);
   if (!hit || height === 0) return null;
 
-  const span = 2.5;
-  const inRatio = Math.min(1, (hit.progress * span) / POP);
-  const outRatio = Math.min(1, ((1 - hit.progress) * span) / FADE);
+  const span = hit.span;
+  const inRatio = Math.min(1, (hit.progress * span) / Math.min(POP, span / 3));
+  const outRatio = Math.min(1, ((1 - hit.progress) * span) / Math.min(FADE, span / 3));
   const opacity = Math.min(inRatio, outRatio);
   const scale = 0.7 + 0.3 * (inRatio < 1 ? 1 - Math.pow(1 - inRatio, 3) : 1) + (inRatio < 1 ? 0 : 0);
 

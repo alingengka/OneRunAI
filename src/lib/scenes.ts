@@ -22,6 +22,10 @@ export type SceneElement = {
   /** ข้อความสำหรับ viral text */
   text?: string;
   position?: "top" | "middle";
+  /** วินาทีนับจากต้นซีนที่จะเริ่มโชว์ (default 0) */
+  offset?: number;
+  /** ความยาวที่โชว์ (default 2.5 วินาที) */
+  durationSec?: number;
 };
 
 export function addSceneElement(elements: SceneElement[], sceneId: string, kind: SceneElementKind): SceneElement[] {
@@ -37,6 +41,8 @@ export function addSceneElement(elements: SceneElement[], sceneId: string, kind:
   if (kind === "viralText") {
     created.text = "";
     created.position = "top";
+    created.offset = 0;
+    created.durationSec = 2.5;
   }
   return [...elements, created];
 }
@@ -45,15 +51,37 @@ export function updateSceneElementText(elements: SceneElement[], id: string, tex
   return elements.map((element) => (element.id === id ? { ...element, text } : element));
 }
 
+export function updateSceneElementTiming(
+  elements: SceneElement[],
+  id: string,
+  offset: number,
+  durationSec: number,
+): SceneElement[] {
+  return elements.map((element) =>
+    element.id === id
+      ? { ...element, offset: Math.max(0, offset), durationSec: Math.max(0.1, durationSec) }
+      : element,
+  );
+}
+
 export type SceneWindow = { id: string; start: number; end: number; segments?: Segment[] };
 
-/** viral text โผล่แค่ช่วงต้นซีน (สูงสุด 2.5 วินาที) */
-export function viralTextWindow(scene: SceneWindow) {
-  const length = scene.segments?.length
+export type ViralTiming = { offset?: number; durationSec?: number };
+
+/** ช่วงเวลาที่ viral text โผล่ (เลือกจังหวะเองได้ผ่าน offset/durationSec) */
+export function viralTextWindow(scene: SceneWindow, element?: ViralTiming) {
+  const sceneLength = Math.max(0, scene.end - scene.start);
+  const offset = Math.min(Math.max(0, element?.offset ?? 0), sceneLength);
+  const start = scene.start + offset;
+  const requested = Math.max(0, element?.durationSec ?? 2.5);
+  const fallbackLength = scene.segments?.length
     ? scene.segments.reduce((n, s) => n + (s.end - s.start), 0)
-    : scene.end - scene.start;
-  const span = Math.min(2.5, Math.max(0, length));
-  return { start: scene.start, end: scene.start + span };
+    : sceneLength;
+  const span = element?.durationSec === undefined && element?.offset === undefined
+    ? Math.min(2.5, Math.max(0, fallbackLength))
+    : requested;
+  const end = Math.min(scene.end, start + span);
+  return { start, end: Math.max(start, end) };
 }
 
 
@@ -95,25 +123,30 @@ export type ViralTextHit = {
   position: "top" | "middle";
   /** 0..1 ความคืบหน้าใน window */
   progress: number;
+  /** ความยาว window เป็นวินาที */
+  span: number;
 };
 
 /** หา viral text ที่ควรโชว์ ณ เวลานั้น */
 export function viralTextAt(
   time: number,
   scenes: SceneWindow[] | undefined,
-  elements: { sceneId: string; kind: string; enabled: boolean; text?: string; position?: "top" | "middle" }[] | undefined,
+  elements:
+    | ({ sceneId: string; kind: string; enabled: boolean; text?: string; position?: "top" | "middle" } & ViralTiming)[]
+    | undefined,
 ): ViralTextHit | null {
   if (!scenes?.length || !elements?.length) return null;
   for (const scene of scenes) {
     const element = elements.find((e) => e.sceneId === scene.id && e.kind === "viralText" && e.enabled);
     if (!element?.text?.trim()) continue;
-    const win = viralTextWindow(scene);
+    const win = viralTextWindow(scene, element);
     if (time < win.start - 0.001 || time > win.end + 0.001) continue;
     const span = Math.max(0.001, win.end - win.start);
     return {
       text: element.text.trim(),
       position: element.position ?? "top",
       progress: Math.max(0, Math.min(1, (time - win.start) / span)),
+      span,
     };
   }
   return null;
