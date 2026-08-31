@@ -1,4 +1,5 @@
 import type { Segment } from "./audio";
+import { motionAt, type MotionElement, type MotionScene } from "./motion";
 import {
   LINE_BREAK,
   isKeyword,
@@ -82,7 +83,14 @@ export async function exportBurnedVideo(
   groups: CaptionGroup[],
   style: CaptionStyle,
   onProgress?: Progress,
-  options: { noiseReduction?: boolean; smoothCuts?: boolean; captions?: boolean; signal?: AbortSignal } = {},
+  options: {
+    noiseReduction?: boolean;
+    smoothCuts?: boolean;
+    captions?: boolean;
+    signal?: AbortSignal;
+    scenes?: MotionScene[];
+    sceneElements?: MotionElement[];
+  } = {},
 ): Promise<{ blob: Blob; ext: "mp4" | "webm" }> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
@@ -270,14 +278,27 @@ export async function exportBurnedVideo(
 
     const FADE = 0.08; // seconds of visual cross-fade at each cut
     const paint = (time: number, seg: Segment) => {
-      ctx.drawImage(video, 0, 0, width, height);
+      // Motion (Ken Burns) applies to the image only — captions stay still.
+      const motion = motionAt(time, options.scenes, options.sceneElements);
+      if (motion.scale !== 1 || motion.translateX || motion.translateY) {
+        ctx.save();
+        ctx.translate(width / 2 + motion.translateX * width, height / 2 + motion.translateY * height);
+        ctx.scale(motion.scale, motion.scale);
+        ctx.drawImage(video, -width / 2, -height / 2, width, height);
+        ctx.restore();
+      } else {
+        ctx.drawImage(video, 0, 0, width, height);
+      }
       if (options.smoothCuts !== false) {
+        // Short segments get a proportionally shorter fade so a 0.2s clip is
+        // not almost entirely black.
+        const fade = Math.max(0.02, Math.min(FADE, (seg.end - seg.start) / 5));
         const into = time - seg.start;
         const left = seg.end - time;
         const edge = Math.min(into, left);
-        if (edge < FADE) {
+        if (edge < fade) {
           ctx.save();
-          ctx.globalAlpha = Math.max(0, Math.min(1, 1 - edge / FADE)) * 0.85;
+          ctx.globalAlpha = Math.max(0, Math.min(1, 1 - edge / fade)) * 0.85;
           ctx.fillStyle = "#000";
           ctx.fillRect(0, 0, width, height);
           ctx.restore();

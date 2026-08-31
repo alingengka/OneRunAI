@@ -56,6 +56,7 @@ import {
   encodeSegmentsWav16k,
   encodeWav16k,
   invertSegments,
+  reconcileSegmentsWithWords,
   refineSpeechSegments,
   smoothSpeechSegments,
   type Segment,
@@ -80,6 +81,7 @@ import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
+import { motionAt } from "@/lib/media/motion";
 import { addSceneElement, buildScenes, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { StepBar, type Step } from "@/components/editor/StepBar";
@@ -211,6 +213,11 @@ function Studio() {
   const activeGroup = useMemo(
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
     [groups, time],
+  );
+  // งาน B: พรีวิว motion จริงบนวิดีโอ ใช้สูตรเดียวกับตอน export
+  const previewMotion = useMemo(
+    () => motionAt(time, scenes, sceneElements),
+    [time, scenes, sceneElements],
   );
   const activeGroupIndex = useMemo(() => groups.findIndex((g) => time >= g.start && time <= g.end), [groups, time]);
   const accuracy = useMemo(() => syncAccuracy(words, segments, duration), [words, segments, duration]);
@@ -522,6 +529,10 @@ function Studio() {
 
       measuredTimingRef.current = measured.sort((a, b) => a.start - b.start);
       if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
+      // งาน A: ใช้เวลาคำจริงขยายขอบช่วงพูด ไม่ให้ energy gate ตัดพยางค์ต้น/ท้ายขาด
+      const timingForCuts = measured.length ? measured : allWords;
+      const reconciled = reconcileSegmentsWithWords(segs, timingForCuts, { duration: buffer.duration });
+      if (reconciled.length) setSegments(reconciled);
       const ruled = applyRulesToWords(allWords, lexRules);
       if (ruled.changed) setLexRules(ruled.rules);
       setTranscript(wordsToTranscript(ruled.words));
@@ -703,7 +714,14 @@ function Studio() {
         [...groups],
         style,
         onProgress,
-        { noiseReduction, smoothCuts: true, captions: captionsOn, signal },
+        {
+          noiseReduction,
+          smoothCuts: true,
+          captions: captionsOn,
+          signal,
+          scenes,
+          sceneElements,
+        },
       );
       if (signal.aborted) return;
       saveBlob(blob, `${baseName()}-final.${ext}`);
@@ -1394,7 +1412,10 @@ function Studio() {
                 <video
                   ref={videoRef}
                   src={videoUrl}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover will-change-transform"
+                  style={{
+                    transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,
+                  }}
                   playsInline
                   onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                   onEnded={() => setPlaying(false)}

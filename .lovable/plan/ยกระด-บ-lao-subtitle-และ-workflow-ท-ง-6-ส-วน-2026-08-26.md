@@ -107,3 +107,30 @@
 - ถ้า Scribe ล้มเหลว (เช่นไม่มี `ELEVENLABS_API_KEY` หรือ 4xx) จะไม่มี timing จริงเลย → ทั้งคลิปกลับไปใช้ energy envelope ซึ่งวัดแล้วว่า drift มาก
 - gpt-4o-transcribe บน Lovable Gateway **ไม่รองรับ** `response_format=verbose_json` / `timestamp_granularities` (ทดสอบจริงได้ HTTP 400 `This model does not support the format you provided.`) และ Gemini เป็น chat completion → ไม่มีเวลาจริงจากสองเอนจินนี้
 - ground truth ที่ใช้ยังเป็นคลิปสังเคราะห์จากคำเดี่ยว ยังขาด benchmark คำพูดต่อเนื่องพร้อม timestamp อ้างอิงจริง
+
+## อัปเดต 2026-08-31 — งาน A (dead-air แม่นขึ้น) + งาน B (Motion)
+
+### งาน A: reconcile ช่วงตัดด้วยเวลาคำจริง
+- เพิ่ม `reconcileSegmentsWithWords(segments, words, {duration, pad=0.06, joinGap=0.12})` ใน `src/lib/media/audio.ts`
+  - ขยายขอบ segment ที่ทับกับคำจริงให้คลุม `word.start` ของคำแรก ถึง `word.end` ของคำสุดท้าย (+pad)
+  - คำที่ energy gate พลาดทั้งคำ จะถูกเพิ่มเป็นช่วงใหม่
+  - merge ช่วงที่ห่างกัน ≤ joinGap และตัดช่วงสั้นกว่า 0.05s ทิ้ง
+- เรียกใช้ใน `src/routes/index.tsx` หลังถอดเสียงเสร็จ ก่อน `setSegments` โดยใช้ `measuredTimingRef` (Scribe) ถ้ามี ไม่งั้นใช้ `words`
+- Crossfade: `export-burned.ts` เดิมใช้ FADE คงที่ 0.08s → เปลี่ยนเป็น `min(0.08, segLen/5)` (ขั้นต่ำ 0.02s) เพื่อไม่ให้ช่วงสั้น ๆ ดำเกือบทั้งช่วง ส่วน audio fade (`min(0.05, len/4)`) ทั้งใน export-burned และ export-video ถือว่าเหมาะสมแล้ว ไม่แก้
+- ทดสอบจริง (unit): segments `[1.05–1.9, 3.0–3.4]` + words `[1.0–1.4, 1.5–2.05, 3.05–3.35, 5.0–5.4]`
+  → ผลลัพธ์ `[0.94–2.11, 2.99–3.41, 4.94–5.46]` คือ ขอบคำต้น/ท้ายไม่ถูกตัดขาด และคำที่ 5.0 ที่ energy พลาด ถูกเพิ่มกลับ
+
+### งาน B: Motion (Ken Burns) จริงใน export + preview
+- ไฟล์ใหม่ `src/lib/media/motion.ts`: `motionTransform(scene, time, intensity)` → `{scale, translateX, translateY}`
+  - progress = clamp((time-start)/(end-start)), easing = ease-in-out
+  - ทิศตาม `scene.index % 4`: zoom-in / zoom-out / pan-left / pan-right; zoom สูงสุด +12%·intensity, pan สูงสุด 6%·intensity
+  - `motionAt(time, scenes, elements)` เลือกซีนปัจจุบันและใช้เฉพาะ element kind `"motion"` ที่ enabled
+- `exportBurnedVideo` รับ options ใหม่ `scenes`, `sceneElements` (optional, caller เดิมไม่กระทบ) และใน `paint()` ใช้ `ctx.save/translate/scale/drawImage/restore` ก่อนวาดซับ — ซับไม่ขยับตามภาพ
+- Preview: `routes/index.tsx` คำนวณ `previewMotion` จาก `time` และใส่ CSS transform บน `<video>` ใช้สูตรเดียวกับ export
+- ขอบเขต: ไม่แตะ `exportTrimmedWebm` และ CapCut package ตามที่กำหนด
+
+### ผลทดสอบ export จริง (Playwright + Chromium)
+- คลิปทดสอบ 4s (testsrc 360x640 + sine) เรนเดอร์ 2 รอบด้วย segments `[0.2–2.0, 2.5–3.6]`, scenes 2 ซีน
+  - motion off: 177,199 bytes / motion on: 567,907 bytes (ไฟล์เล่นได้ทั้งคู่)
+  - ดึงเฟรมเดียวกันจากทั้งสองไฟล์แล้วเทียบ: เฟรมของไฟล์ motion ตรงกับการ center-crop-zoom ของไฟล์ปกติ โดย mean abs diff ลดลงต่อเนื่อง 31.2 (scale 1.00) → 10.5 (scale 1.12) ซึ่งตรงกับ zoom-in สูงสุด +12% ที่ปลายซีน → **ยืนยันว่า motion ถูก burn ลงไฟล์วิดีโอจริง**
+- ยังไม่ได้ทดสอบงาน A กับคลิปพูดจริงหลายจังหวะเงียบ (ต้องใช้ไฟล์ผู้ใช้ + ค่าใช้จ่าย transcription) — ที่ยืนยันได้ตอนนี้คือ unit-level behaviour ตามด้านบน
