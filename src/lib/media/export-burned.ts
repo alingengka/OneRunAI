@@ -445,6 +445,24 @@ export async function exportBurnedVideo(
       lastBoundaryUpdate = time;
     };
 
+    const transitionRecorder = (target: "paused" | "recording") => new Promise<void>((resolve, reject) => {
+      if (!recorder) { reject(new Error("MediaRecorder ถูกปิดก่อน export เสร็จ")); return; }
+      if (recorder.state === target) { resolve(); return; }
+      const event = target === "paused" ? "pause" : "resume";
+      const timeout = window.setTimeout(() => { cleanup(); reject(new Error(`MediaRecorder ไม่เข้าสู่สถานะ ${target}`)); }, 3000);
+      const cleanup = () => {
+        window.clearTimeout(timeout);
+        recorder?.removeEventListener(event, done);
+        recorder?.removeEventListener("error", failed);
+      };
+      const done = () => { cleanup(); resolve(); };
+      const failed = () => { cleanup(); reject(new Error("MediaRecorder หยุดทำงานระหว่าง export")); };
+      recorder.addEventListener(event, done, { once: true });
+      recorder.addEventListener("error", failed, { once: true });
+      if (target === "paused") recorder.pause();
+      else recorder.resume();
+    });
+
     for (let segmentIndex = 0; segmentIndex < normalizedSegments.length; segmentIndex++) {
       const seg = normalizedSegments[segmentIndex]!;
       if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
@@ -457,6 +475,7 @@ export async function exportBurnedVideo(
         lastBoundaryUpdate = seg.start;
       }
       if (segmentIndex === 0) recorder.start(1000);
+      else await transitionRecorder("recording");
       try {
         await video.play();
       } catch {
@@ -484,7 +503,7 @@ export async function exportBurnedVideo(
           video.pause();
           reject(error);
         };
-        const finish = (reason: ExportSegmentDiagnostic["reason"]) => {
+        const finish = async (reason: ExportSegmentDiagnostic["reason"]) => {
           if (finished) return;
           const played = Math.max(0, Math.min(seg.end, video.currentTime) - seg.start);
           const expected = seg.end - seg.start;
@@ -498,8 +517,13 @@ export async function exportBurnedVideo(
             boundaryGain.gain.setTargetAtTime(0.0001, audioContext.currentTime, 0.008);
           }
           video.pause();
-          segmentDiagnostics.push({ index: segmentIndex, start: seg.start, end: seg.end, played, reason });
-          resolve();
+          try {
+            await transitionRecorder("paused");
+            segmentDiagnostics.push({ index: segmentIndex, start: seg.start, end: seg.end, played, reason });
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
         };
         const requestNextFrame = (callback: () => void) => {
           frameRequest = typeof frameVideo.requestVideoFrameCallback === "function"
@@ -518,8 +542,8 @@ export async function exportBurnedVideo(
           painted++;
 
           if (options.signal?.aborted) { fail(new DOMException("ยกเลิกการเรนเดอร์", "AbortError")); return; }
-          if (time >= seg.end) { finish("reached-end"); return; }
-          if (video.ended) { finish("source-ended"); return; }
+          if (time >= seg.end) { void finish("reached-end"); return; }
+          if (video.ended) { void finish("source-ended"); return; }
           onProgress?.(Math.min(1, (elapsed + (time - seg.start)) / total));
           requestNextFrame(tick);
         };
@@ -549,6 +573,8 @@ export async function exportBurnedVideo(
     // rAF here: a hidden/background tab may throttle rAF indefinitely after
     // the source video pauses, leaving export stuck at 100%.
     await new Promise((resolve) => window.setTimeout(resolve, 250));
+    // Stopping from the paused state excludes all seek/decode delays from the
+    // recording timeline and is supported by MediaRecorder.
     recorder.stop();
     await Promise.race([
       done,
