@@ -1,4 +1,5 @@
 import type { Segment } from "./audio";
+import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
 
 type Progress = (ratio: number) => void;
 
@@ -40,7 +41,7 @@ export async function exportTrimmedWebm(
   url: string,
   segments: Segment[],
   onProgress?: Progress,
-  options: { noiseReduction?: boolean; smoothCuts?: boolean; signal?: AbortSignal } = {},
+  options: { noiseReduction?: boolean; noiseFloor?: number; smoothCuts?: boolean; signal?: AbortSignal } = {},
 ): Promise<Blob> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
@@ -58,6 +59,7 @@ export async function exportTrimmedWebm(
   let outputStream: MediaStream | null = null;
   let recorder: MediaRecorder | null = null;
   let audioContext: AudioContext | null = null;
+  let gate: NoiseGateNode | null = null;
 
   const waitFor = (ev: string) =>
     new Promise<void>((resolve, reject) => {
@@ -97,7 +99,15 @@ export async function exportTrimmedWebm(
       compressor.ratio.value = options.noiseReduction ? 5 : 2;
       boundaryGain = audioContext.createGain();
       const destination = audioContext.createMediaStreamDestination();
-      source.connect(highpass).connect(lowpass).connect(compressor).connect(boundaryGain).connect(destination);
+      gate = options.noiseReduction && options.noiseFloor
+        ? createNoiseGate(audioContext, { noiseFloor: options.noiseFloor })
+        : null;
+      if (gate) {
+        source.connect(highpass).connect(lowpass).connect(compressor).connect(gate.input);
+        gate.output.connect(boundaryGain).connect(destination);
+      } else {
+        source.connect(highpass).connect(lowpass).connect(compressor).connect(boundaryGain).connect(destination);
+      }
       stream.getAudioTracks().forEach((track) => { stream.removeTrack(track); track.stop(); });
       destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
     }
@@ -179,6 +189,7 @@ export async function exportTrimmedWebm(
     video.remove();
     if (recorder && recorder.state !== "inactive") recorder.stop();
     outputStream?.getTracks().forEach((track) => track.stop());
+    gate?.dispose();
     if (audioContext) void audioContext.close();
   }
 }

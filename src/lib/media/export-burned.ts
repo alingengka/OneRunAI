@@ -1,5 +1,6 @@
 import type { Segment } from "./audio";
 import { motionAt, type MotionElement, type MotionScene } from "./motion";
+import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
 import { viralTextAt } from "../scenes";
 import {
   LINE_BREAK,
@@ -78,6 +79,34 @@ function lineStyleAt(style: CaptionStyle, index: number): LineStyle {
  * Render a finished, ready-to-post video: silences removed and captions burned
  * into the frames, so the user can publish it without CapCut.
  */
+export type ExportResolution = "source" | "4k" | "1080" | "720";
+
+/** ความสูงของด้านสั้น (แนวตั้ง 9:16 → 1080 = 1080x1920) */
+const SHORT_SIDE: Record<Exclude<ExportResolution, "source">, number> = {
+  "4k": 2160,
+  "1080": 1080,
+  "720": 720,
+};
+
+/** คำนวณขนาด canvas เป้าหมายโดยรักษาสัดส่วนภาพเดิม (ปัดเป็นเลขคู่) */
+export function targetSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  resolution: ExportResolution = "source",
+): { width: number; height: number; upscaled: boolean } {
+  if (resolution === "source" || !sourceWidth || !sourceHeight) {
+    return { width: sourceWidth, height: sourceHeight, upscaled: false };
+  }
+  const short = Math.min(sourceWidth, sourceHeight);
+  const scale = SHORT_SIDE[resolution] / short;
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  return {
+    width: even(sourceWidth * scale),
+    height: even(sourceHeight * scale),
+    upscaled: scale > 1,
+  };
+}
+
 export async function exportBurnedVideo(
   url: string,
   segments: Segment[],
@@ -86,13 +115,17 @@ export async function exportBurnedVideo(
   onProgress?: Progress,
   options: {
     noiseReduction?: boolean;
+    /** RMS ของ noise floor ที่วัดจากคลิป ใช้เป็น threshold ของ noise gate */
+    noiseFloor?: number;
     smoothCuts?: boolean;
     captions?: boolean;
     signal?: AbortSignal;
     scenes?: MotionScene[];
     sceneElements?: MotionElement[];
+    resolution?: ExportResolution;
   } = {},
-): Promise<{ blob: Blob; ext: "mp4" | "webm" }> {
+): Promise<{ blob: Blob; ext: "mp4" | "webm"; width: number; height: number; fps: number; frames: number }> {
+
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
 
@@ -122,21 +155,29 @@ export async function exportBurnedVideo(
   let audioContext: AudioContext | null = null;
   let outputStream: MediaStream | null = null;
   let recorder: MediaRecorder | null = null;
+  let gate: NoiseGateNode | null = null;
+  /** จำนวนเฟรมที่วาดจริง ใช้ตรวจเฟรมตกตอนเรนเดอร์ความละเอียดสูง */
+  let painted = 0;
 
   try {
     await waitFor("loadedmetadata");
     if (video.readyState < 2) await waitFor("loadeddata");
     try { await (document as Document & { fonts?: FontFaceSet }).fonts?.ready; } catch { /* ignore */ }
 
-    const width = video.videoWidth || 1080;
-    const height = video.videoHeight || 1920;
+    const sourceWidth = video.videoWidth || 1080;
+    const sourceHeight = video.videoHeight || 1920;
+    const target = targetSize(sourceWidth, sourceHeight, options.resolution ?? "source");
+    const width = target.width;
+    const height = target.height;
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("เบราว์เซอร์นี้ไม่รองรับการเรนเดอร์วิดีโอ");
 
-    const stream = canvas.captureStream(30);
+    // 4K canvas วาดช้ากว่ามาก จับที่ 24fps เพื่อไม่ให้เฟรมตกจนภาพกระตุก
+    const fps = width * height >= 3840 * 2160 * 0.8 ? 24 : 30;
+    const stream = canvas.captureStream(fps);
     outputStream = stream;
 
     // Audio: route the element through Web Audio so we can clean and fade it.
@@ -153,17 +194,27 @@ export async function exportBurnedVideo(
     compressor.ratio.value = options.noiseReduction ? 5 : 2;
     const boundaryGain = audioContext.createGain();
     const destination = audioContext.createMediaStreamDestination();
-    source.connect(highpass).connect(lowpass).connect(compressor).connect(boundaryGain).connect(destination);
+    // noise gate จริง: ลดเสียงช่วงที่เบากว่า noise floor ลงจริง ไม่ใช่แค่กรองความถี่
+    gate = options.noiseReduction && options.noiseFloor
+      ? createNoiseGate(audioContext, { noiseFloor: options.noiseFloor })
+      : null;
+    if (gate) {
+      source.connect(highpass).connect(lowpass).connect(compressor).connect(gate.input);
+      gate.output.connect(boundaryGain).connect(destination);
+    } else {
+      source.connect(highpass).connect(lowpass).connect(compressor).connect(boundaryGain).connect(destination);
+    }
     destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
 
     const mimeType = pickMime();
     const chunks: BlobPart[] = [];
-    const bitrate = Math.min(16_000_000, Math.max(4_000_000, Math.round(width * height * 0.14)));
+    const bitrate = Math.min(48_000_000, Math.max(4_000_000, Math.round(width * height * 0.14)));
     recorder = new MediaRecorder(stream, {
       mimeType,
       videoBitsPerSecond: bitrate,
       audioBitsPerSecond: 128_000,
     });
+
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     const done = new Promise<void>((resolve) => { if (recorder) recorder.onstop = () => resolve(); });
 
@@ -394,6 +445,7 @@ export async function exportBurnedVideo(
           if (finished) return;
           const time = video.currentTime;
           paint(time, seg);
+          painted++;
           if (options.signal?.aborted || time >= seg.end || video.ended) {
             finish();
             return;
@@ -424,13 +476,15 @@ export async function exportBurnedVideo(
     await done;
     const blob = new Blob(chunks, { type: mimeType });
     if (blob.size < 1024) throw new Error("ไฟล์วิดีโอที่ส่งออกไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
-    return { blob, ext: mimeExtension(mimeType) };
+    return { blob, ext: mimeExtension(mimeType), width, height, fps, frames: painted };
+
 
   } finally {
     video.pause();
     video.remove();
     if (recorder && recorder.state !== "inactive") recorder.stop();
     outputStream?.getTracks().forEach((track) => track.stop());
+    gate?.dispose();
     if (audioContext) void audioContext.close();
   }
 }
