@@ -132,7 +132,10 @@ export async function exportBurnedVideo(
   const video = document.createElement("video");
   video.src = url;
   video.muted = false;
-  video.volume = 0;
+  // ห้ามตั้ง volume = 0: MediaElementSource ใช้ค่า volume ของ element คูณสัญญาณ
+  // ที่ส่งเข้า Web Audio ด้วย ทำให้ไฟล์ที่ export ออกมาเงียบสนิท
+  // (เสียงไม่ออกลำโพงอยู่แล้ว เพราะ element ถูกต่อเข้ากราฟแทน default output)
+  video.volume = 1;
   video.playsInline = true;
   video.preload = "auto";
   video.style.position = "fixed";
