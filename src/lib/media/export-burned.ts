@@ -545,11 +545,10 @@ export async function exportBurnedVideo(
       onProgress?.(Math.min(1, elapsed / total));
     }
 
-    // Let the encoder flush the tail before closing the file.
-    await new Promise((r) => setTimeout(r, 250));
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    await new Promise((resolve) => window.setTimeout(resolve, 80));
-    recorder.requestData();
+    // Let the encoder flush the tail before closing the file. Do not wait for
+    // rAF here: a hidden/background tab may throttle rAF indefinitely after
+    // the source video pauses, leaving export stuck at 100%.
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
     recorder.stop();
     await Promise.race([
       done,
