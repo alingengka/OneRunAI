@@ -123,25 +123,30 @@ export type ViralTextHit = {
   position: "top" | "middle";
   /** 0..1 ความคืบหน้าใน window */
   progress: number;
+  /** ความยาว window เป็นวินาที */
+  span: number;
 };
 
 /** หา viral text ที่ควรโชว์ ณ เวลานั้น */
 export function viralTextAt(
   time: number,
   scenes: SceneWindow[] | undefined,
-  elements: { sceneId: string; kind: string; enabled: boolean; text?: string; position?: "top" | "middle" }[] | undefined,
+  elements:
+    | ({ sceneId: string; kind: string; enabled: boolean; text?: string; position?: "top" | "middle" } & ViralTiming)[]
+    | undefined,
 ): ViralTextHit | null {
   if (!scenes?.length || !elements?.length) return null;
   for (const scene of scenes) {
     const element = elements.find((e) => e.sceneId === scene.id && e.kind === "viralText" && e.enabled);
     if (!element?.text?.trim()) continue;
-    const win = viralTextWindow(scene);
+    const win = viralTextWindow(scene, element);
     if (time < win.start - 0.001 || time > win.end + 0.001) continue;
     const span = Math.max(0.001, win.end - win.start);
     return {
       text: element.text.trim(),
       position: element.position ?? "top",
       progress: Math.max(0, Math.min(1, (time - win.start) / span)),
+      span,
     };
   }
   return null;
