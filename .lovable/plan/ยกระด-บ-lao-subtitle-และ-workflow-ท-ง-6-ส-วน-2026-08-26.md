@@ -167,3 +167,12 @@
 
 ### งานถัดไปตามลำดับที่ตกลง
 - Sound (per-scene sound element ให้มีผลจริง) → B-roll
+
+## Viral Text — จังหวะปรับเองได้ (2026-08-31)
+- `SceneElement` เพิ่ม `offset?` (วินาทีจากต้นซีน, default 0) และ `durationSec?` (default 2.5)
+- `viralTextWindow(scene, element)` คำนวณ start/end จาก offset+duration และ clamp ไม่ให้เกิน `scene.end`; element ที่ไม่มีค่าทั้งสอง (โปรเจกต์เก่า) ยังได้ต้นซีน 2.5 วิเหมือนเดิม
+- `viralTextAt` ส่ง element เข้า window และคืน `span` เพิ่ม เพื่อให้ pop-in/fade-out ของพรีวิว (`ViralTextOverlay`) และ export (`drawViralText`) สเกลตามความยาวจริง ไม่ hardcode 2.5
+- `updateSceneElementTiming()` + prop `onUpdateElementTiming` เชื่อมจาก routes/index.tsx
+- ScenesPanel: slider เริ่มที่ / ความยาวที่โชว์ + ปุ่ม "ตั้งจากตำแหน่งที่เล่นอยู่ตอนนี้" (ใช้ `activeTime`) และ hint บอกช่วงเวลาจริงในคลิป
+- ทดสอบ: unit tests ใน `src/lib/scenes.test.ts` ครอบคลุม offset กลางซีน, duration สั้น, clamp เกินขอบซีน, legacy default, clamp ค่าติดลบ — ผ่านทั้งหมด; `bunx tsgo --noEmit` ผ่าน; smoke test หน้าเว็บไม่มี console error
+- ยังไม่ได้ทดสอบ export จริงรอบใหม่หลังเปลี่ยน window (logic การวาดไม่เปลี่ยน มีแต่ค่าช่วงเวลา)
