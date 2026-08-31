@@ -286,7 +286,7 @@ export async function transcribeAudioServer(input: {
 
   if (!alternatives.length) {
     if (lastError) throw lastError;
-    return { text: "", alternatives: [], agreement: 0 };
+    return { text: "", alternatives: [], agreement: 0, words: scribeTiming, wordSource: scribeTiming.length ? "scribe" : null };
   }
   const ranked = alternatives
     .map((text) => ({
@@ -298,5 +298,11 @@ export async function transcribeAudioServer(input: {
     }))
     .sort((a, b) => b.score - a.score);
 
-  return { text: ranked[0]?.text ?? "", alternatives, agreement: ranked[0]?.score ?? 0 };
+  return {
+    text: ranked[0]?.text ?? "",
+    alternatives,
+    agreement: ranked[0]?.score ?? 0,
+    words: scribeTiming,
+    wordSource: scribeTiming.length ? "scribe" : null,
+  };
 }
