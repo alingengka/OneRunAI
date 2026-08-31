@@ -81,6 +81,14 @@ function lineStyleAt(style: CaptionStyle, index: number): LineStyle {
  */
 export type ExportResolution = "source" | "4k" | "1080" | "720";
 
+export type ExportSegmentDiagnostic = {
+  index: number;
+  start: number;
+  end: number;
+  played: number;
+  reason: "reached-end" | "source-ended";
+};
+
 /** ความสูงของด้านสั้น (แนวตั้ง 9:16 → 1080 = 1080x1920) */
 const SHORT_SIDE: Record<Exclude<ExportResolution, "source">, number> = {
   "4k": 2160,
@@ -124,7 +132,7 @@ export async function exportBurnedVideo(
     sceneElements?: MotionElement[];
     resolution?: ExportResolution;
   } = {},
-): Promise<{ blob: Blob; ext: "mp4" | "webm"; width: number; height: number; fps: number; frames: number }> {
+): Promise<{ blob: Blob; ext: "mp4" | "webm"; width: number; height: number; fps: number; frames: number; chunks: number; expectedDuration: number; segments: ExportSegmentDiagnostic[] }> {
 
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
@@ -199,7 +207,7 @@ export async function exportBurnedVideo(
     const destination = audioContext.createMediaStreamDestination();
     // noise gate จริง: ลดเสียงช่วงที่เบากว่า noise floor ลงจริง ไม่ใช่แค่กรองความถี่
     gate = options.noiseReduction && options.noiseFloor
-      ? createNoiseGate(audioContext, { noiseFloor: options.noiseFloor })
+      ? await createNoiseGate(audioContext, { noiseFloor: options.noiseFloor })
       : null;
     if (gate) {
       source.connect(highpass).connect(lowpass).connect(compressor).connect(gate.input);
@@ -211,6 +219,7 @@ export async function exportBurnedVideo(
 
     const mimeType = pickMime();
     const chunks: BlobPart[] = [];
+    const chunkTimes: number[] = [];
     const bitrate = Math.min(48_000_000, Math.max(4_000_000, Math.round(width * height * 0.14)));
     recorder = new MediaRecorder(stream, {
       mimeType,
@@ -218,8 +227,16 @@ export async function exportBurnedVideo(
       audioBitsPerSecond: 128_000,
     });
 
-    recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-    const done = new Promise<void>((resolve) => { if (recorder) recorder.onstop = () => resolve(); });
+    recorder.ondataavailable = (e) => {
+      if (!e.data.size) return;
+      chunks.push(e.data);
+      chunkTimes.push(performance.now());
+    };
+    const done = new Promise<void>((resolve, reject) => {
+      if (!recorder) { reject(new Error("สร้าง MediaRecorder ไม่สำเร็จ")); return; }
+      recorder.onstop = () => resolve();
+      recorder.onerror = () => reject(new Error("MediaRecorder เข้ารหัสวิดีโอไม่สำเร็จ"));
+    });
 
 
     const drawCaption = (time: number) => {
@@ -350,19 +367,28 @@ export async function exportBurnedVideo(
       ctx.textAlign = "left";
     };
 
-    const total = segments.reduce((n, s) => n + (s.end - s.start), 0);
+    const normalizedSegments = segments.map((segment, index) => {
+      const start = Math.max(0, Math.min(video.duration, segment.start));
+      const end = Math.max(0, Math.min(video.duration, segment.end));
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.02) {
+        throw new Error(`ช่วงวิดีโอที่ ${index + 1} ไม่ถูกต้อง (${segment.start}–${segment.end})`);
+      }
+      if (index > 0 && start < Math.min(video.duration, segments[index - 1]!.end) - 0.001) {
+        throw new Error(`ช่วงวิดีโอที่ ${index + 1} ซ้อนหรือเรียงลำดับผิด`);
+      }
+      return { start, end };
+    });
+    const total = normalizedSegments.reduce((n, s) => n + (s.end - s.start), 0);
     let elapsed = 0;
+    const segmentDiagnostics: ExportSegmentDiagnostic[] = [];
 
     // A frame source that follows the decoder when available (steadier than rAF,
     // which fires on display vsync and drops frames while seeking).
     type FrameVideo = HTMLVideoElement & {
       requestVideoFrameCallback?: (cb: () => void) => number;
+      cancelVideoFrameCallback?: (id: number) => void;
     };
     const frameVideo = video as FrameVideo;
-    const nextFrame = (cb: () => void) => {
-      if (typeof frameVideo.requestVideoFrameCallback === "function") frameVideo.requestVideoFrameCallback(cb);
-      else requestAnimationFrame(cb);
-    };
 
     const FADE = 0.08; // seconds of visual cross-fade at each cut
     const paint = (time: number, seg: Segment) => {
@@ -399,98 +425,139 @@ export async function exportBurnedVideo(
     if (audioContext.state === "suspended") await audioContext.resume();
 
     // Prime the first frame so the recording never starts on a blank canvas.
-    await seek(video, segments[0]!.start);
+    await seek(video, normalizedSegments[0]!.start);
     ctx.drawImage(video, 0, 0, width, height);
-    drawCaption(segments[0]!.start);
-
-    // Timeslice keeps chunks flowing, so a long render can't be lost in one
-    // oversized buffer and the file stays playable.
-    recorder.start(500);
-    await new Promise((r) => setTimeout(r, 120));
+    drawCaption(normalizedSegments[0]!.start);
 
     // เฟดเสียงตรงรอยตัด "ตามเวลาจริงของวิดีโอ" ไม่ใช่ตารางเวลาของ AudioContext
     // (การจองล่วงหน้าทำให้เกนค้างที่ค่าต่ำสุดเมื่อการเล่นช้ากว่ากำหนด → ไฟล์เงียบ)
-    const applyBoundaryGain = (time: number, seg: Segment) => {
+    let lastBoundaryTarget = -1;
+    let lastBoundaryUpdate = -Infinity;
+    const applyBoundaryGain = (time: number, seg: Segment, force = false) => {
       if (options.smoothCuts === false || !audioContext) return;
       const length = Math.max(0.06, seg.end - seg.start);
       const fade = Math.min(0.05, length / 4);
       const edge = Math.max(0, Math.min(time - seg.start, seg.end - time));
       const target = Math.max(0.0001, Math.min(1, edge / fade));
+      if (!force && Math.abs(target - lastBoundaryTarget) < 0.04 && time - lastBoundaryUpdate < 0.025) return;
       boundaryGain.gain.setTargetAtTime(target, audioContext.currentTime, 0.008);
+      lastBoundaryTarget = target;
+      lastBoundaryUpdate = time;
     };
 
-    for (const seg of segments) {
+    for (let segmentIndex = 0; segmentIndex < normalizedSegments.length; segmentIndex++) {
+      const seg = normalizedSegments[segmentIndex]!;
       if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
-      await seek(video, seg.start);
+      if (segmentIndex > 0) await seek(video, seg.start);
       if (options.smoothCuts !== false) {
         const now = audioContext.currentTime;
         boundaryGain.gain.cancelScheduledValues(now);
         boundaryGain.gain.setValueAtTime(0.0001, now);
+        lastBoundaryTarget = 0.0001;
+        lastBoundaryUpdate = seg.start;
       }
+      if (segmentIndex === 0) recorder.start();
       try {
         await video.play();
       } catch {
         throw new Error("เบราว์เซอร์บล็อกการเล่นวิดีโอ กรุณากดปุ่มอีกครั้ง");
       }
-      await new Promise<void>((resolve) => {
-        let last = -1;
-        let stalled = 0;
+      await new Promise<void>((resolve, reject) => {
+        let lastMediaTime = video.currentTime;
+        let lastProgressWall = performance.now();
         let finished = false;
-        // Wall-clock watchdog: if the decoder stops delivering frames the frame
-        // callback stops firing entirely, so a frame-count guard alone can hang.
-        let watchdog = 0;
-        const finish = () => {
+        let frameRequest = 0;
+        let healthTimer = 0;
+        let abortHandler: (() => void) | null = null;
+        const cleanup = () => {
+          window.clearInterval(healthTimer);
+          if (frameRequest) {
+            if (typeof frameVideo.cancelVideoFrameCallback === "function") frameVideo.cancelVideoFrameCallback(frameRequest);
+            else cancelAnimationFrame(frameRequest);
+          }
+          if (abortHandler) options.signal?.removeEventListener("abort", abortHandler);
+        };
+        const fail = (error: Error | DOMException) => {
           if (finished) return;
           finished = true;
-          window.clearTimeout(watchdog);
+          cleanup();
+          video.pause();
+          reject(error);
+        };
+        const finish = (reason: ExportSegmentDiagnostic["reason"]) => {
+          if (finished) return;
+          const played = Math.max(0, Math.min(seg.end, video.currentTime) - seg.start);
+          const expected = seg.end - seg.start;
+          if (reason !== "source-ended" && played + Math.max(0.08, 2 / fps) < expected) {
+            fail(new Error(`ช่วงที่ ${segmentIndex + 1} เล่นไม่ครบ: ${played.toFixed(3)}s จาก ${expected.toFixed(3)}s`));
+            return;
+          }
+          finished = true;
+          cleanup();
           if (options.smoothCuts !== false && audioContext) {
             boundaryGain.gain.setTargetAtTime(0.0001, audioContext.currentTime, 0.008);
           }
           video.pause();
+          segmentDiagnostics.push({ index: segmentIndex, start: seg.start, end: seg.end, played, reason });
           resolve();
         };
-        const arm = () => {
-          window.clearTimeout(watchdog);
-          watchdog = window.setTimeout(finish, 3000);
+        const requestNextFrame = (callback: () => void) => {
+          frameRequest = typeof frameVideo.requestVideoFrameCallback === "function"
+            ? frameVideo.requestVideoFrameCallback(callback)
+            : requestAnimationFrame(callback);
         };
         const tick = () => {
           if (finished) return;
           const time = video.currentTime;
+          if (time > lastMediaTime + 0.001) {
+            lastMediaTime = time;
+            lastProgressWall = performance.now();
+          }
           paint(time, seg);
           applyBoundaryGain(time, seg);
           painted++;
 
-          if (options.signal?.aborted || time >= seg.end || video.ended) {
-            finish();
-            return;
-          }
-          if (Math.abs(time - last) < 0.0005) {
-            stalled += 1;
-            if (stalled > 240) { finish(); return; }
-          } else {
-            stalled = 0;
-            arm();
-          }
-          last = time;
+          if (options.signal?.aborted) { fail(new DOMException("ยกเลิกการเรนเดอร์", "AbortError")); return; }
+          if (time >= seg.end) { finish("reached-end"); return; }
+          if (video.ended) { finish("source-ended"); return; }
           onProgress?.(Math.min(1, (elapsed + (time - seg.start)) / total));
-          nextFrame(tick);
+          requestNextFrame(tick);
         };
-        arm();
-        nextFrame(tick);
+        abortHandler = () => fail(new DOMException("ยกเลิกการเรนเดอร์", "AbortError"));
+        options.signal?.addEventListener("abort", abortHandler, { once: true });
+        healthTimer = window.setInterval(() => {
+          if (finished) return;
+          const now = performance.now();
+          if (video.currentTime > lastMediaTime + 0.001) {
+            lastMediaTime = video.currentTime;
+            lastProgressWall = now;
+          } else if (!video.paused && now - lastProgressWall > 8000) {
+            fail(new Error(`ตัวถอดรหัสวิดีโอค้างเกิน 8 วินาทีที่ช่วง ${segmentIndex + 1} (${video.currentTime.toFixed(2)}s)`));
+          }
+        }, 500);
+        requestNextFrame(tick);
       });
 
       elapsed += seg.end - seg.start;
+      // Emit bounded chunks only while the recorder is active. This keeps long
+      // exports memory-safe without the pause/resume deadlock seen in Chromium.
+      if (recorder.state === "recording") recorder.requestData();
       onProgress?.(Math.min(1, elapsed / total));
     }
 
     // Let the encoder flush the tail before closing the file.
     await new Promise((r) => setTimeout(r, 250));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
     recorder.requestData();
     recorder.stop();
-    await done;
+    await Promise.race([
+      done,
+      new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("MediaRecorder ไม่ปิดไฟล์ภายใน 8 วินาที")), 8000)),
+    ]);
     const blob = new Blob(chunks, { type: mimeType });
     if (blob.size < 1024) throw new Error("ไฟล์วิดีโอที่ส่งออกไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
-    return { blob, ext: mimeExtension(mimeType), width, height, fps, frames: painted };
+    return { blob, ext: mimeExtension(mimeType), width, height, fps, frames: painted, chunks: chunkTimes.length, expectedDuration: total, segments: segmentDiagnostics };
 
 
   } finally {

@@ -722,7 +722,7 @@ function Studio() {
   const exportFinalVideo = () => {
     if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
-      const { blob, ext, width, height, fps, frames } = await exportBurnedVideo(
+      const { blob, ext, width, height, fps, frames, chunks, expectedDuration, segments: exportDiagnostics } = await exportBurnedVideo(
         videoUrl,
         [...outputSegments],
         [...groups],
@@ -740,6 +740,16 @@ function Studio() {
         },
       );
       if (signal.aborted) return;
+      console.info("[export-burned] completed", {
+        expectedDuration,
+        chunks,
+        frames,
+        segments: exportDiagnostics,
+      });
+      const durationDelta = Math.abs(exportDiagnostics.reduce((sum, segment) => sum + segment.played, 0) - expectedDuration);
+      if (durationDelta > Math.max(0.12, 2 / fps)) {
+        throw new Error(`วิดีโอเล่นช่วงที่เลือกไม่ครบ (คลาดเคลื่อน ${durationDelta.toFixed(2)} วินาที)`);
+      }
       saveBlob(blob, `${baseName()}-final.${ext}`);
       const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
       const realFps = seconds > 0 ? frames / seconds : fps;
