@@ -1283,6 +1283,12 @@ function Studio() {
                   <p className="text-[11px] text-muted-foreground">
                     ใช้ได้เฉพาะปุ่ม "เรนเดอร์วิดีโอพร้อมซับ" (เรนเดอร์ผ่าน canvas) — ไฟล์ .webm ตัดช่วงเงียบและ CapCut Package ยังใช้ความละเอียดต้นฉบับ
                   </p>
+                  {resolution === "4k" ? (
+                    <p className="text-[11px] text-amber-500">
+                      4K เรนเดอร์ที่ 24fps และกินแรงเครื่องมาก บนเครื่องที่ไม่แรงพออาจมีเฟรมตกและภาพไม่ลื่นเท่า 1080
+                    </p>
+                  ) : null}
+
                 </div>
                 <Button size="sm" onClick={exportFinalVideo} disabled={rendering || !keepSegments.length}>
                   {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
