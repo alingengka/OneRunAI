@@ -107,7 +107,12 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
             </div>
             {elements
               .filter((element) => element.sceneId === scene.id && element.kind === "viralText" && element.enabled)
-              .map((element) => (
+              .map((element) => {
+                const sceneLen = Math.max(0.5, scene.end - scene.start);
+                const offset = Math.min(Math.max(0, element.offset ?? 0), Math.max(0, sceneLen - 0.5));
+                const dur = Math.min(Math.max(0.5, element.durationSec ?? 2.5), Math.max(0.5, sceneLen - offset));
+                const win = viralTextWindow(scene, { offset: element.offset, durationSec: element.durationSec });
+                return (
                 <div key={`${element.id}-editor`} className="mt-3 space-y-2 rounded-lg border border-border bg-secondary/30 p-3">
                   <Input
                     value={element.text ?? ""}
@@ -127,9 +132,50 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
                       </Button>
                     ))}
                   </div>
-                  <p className="text-[11px] text-muted-foreground">โชว์ช่วงต้นซีน สูงสุด 2.5 วินาที</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>เริ่มที่ (วินาทีจากต้นซีน)</span>
+                      <span className="font-mono">{offset.toFixed(1)}s</span>
+                    </div>
+                    <Slider
+                      value={[offset]}
+                      min={0}
+                      max={Math.max(0.1, sceneLen - 0.5)}
+                      step={0.1}
+                      onValueChange={([v]) => onUpdateElementTiming(element.id, v ?? 0, dur)}
+                    />
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>ความยาวที่โชว์ (วินาที)</span>
+                      <span className="font-mono">{dur.toFixed(1)}s</span>
+                    </div>
+                    <Slider
+                      value={[dur]}
+                      min={0.5}
+                      max={Math.max(0.5, sceneLen - offset)}
+                      step={0.1}
+                      onValueChange={([v]) => onUpdateElementTiming(element.id, offset, v ?? 0.5)}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      onClick={() =>
+                        onUpdateElementTiming(
+                          element.id,
+                          Math.min(Math.max(0, activeTime - scene.start), Math.max(0, sceneLen - 0.5)),
+                          dur,
+                        )
+                      }
+                    >
+                      <Clock className="h-3.5 w-3.5" /> ตั้งจากตำแหน่งที่เล่นอยู่ตอนนี้
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    โชว์ช่วง {clock(win.start)} – {clock(win.end)} ของคลิป
+                  </p>
                 </div>
-              ))}
+                );
+              })}
 
             {off && (
               <p className="mt-1 flex items-center gap-1 text-[11px] text-destructive">
