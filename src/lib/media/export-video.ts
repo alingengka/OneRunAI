@@ -49,7 +49,9 @@ export async function exportTrimmedWebm(
   const video = document.createElement("video");
   video.src = url;
   video.muted = false;
-  video.volume = 0;
+  // ต้องเป็น 1: volume ของ element คูณสัญญาณที่เข้า Web Audio ด้วย
+  // ถ้าเป็น 0 ไฟล์ที่ export จะไม่มีเสียงเลย
+  video.volume = 1;
   video.playsInline = true;
   video.preload = "auto";
   video.style.position = "fixed";
