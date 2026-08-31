@@ -459,6 +459,9 @@ function Studio() {
       const chunks = lang === "lo" ? addChunkOverlap(baseChunks, buffer.duration, 0.38) : baseChunks;
       const allWords: Word[] = [];
       const texts: string[] = [];
+      // เก็บเวลาคำที่วัดได้จริง (Scribe) บนไทม์ไลน์ต้นฉบับ ไว้ใช้ตอนแก้ข้อความ
+      const measured: TimedWord[] = [];
+
 
       if (chunks.length) {
         for (let i = 0; i < chunks.length; i++) {
