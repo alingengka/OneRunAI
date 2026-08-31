@@ -134,3 +134,36 @@
   - motion off: 177,199 bytes / motion on: 567,907 bytes (ไฟล์เล่นได้ทั้งคู่)
   - ดึงเฟรมเดียวกันจากทั้งสองไฟล์แล้วเทียบ: เฟรมของไฟล์ motion ตรงกับการ center-crop-zoom ของไฟล์ปกติ โดย mean abs diff ลดลงต่อเนื่อง 31.2 (scale 1.00) → 10.5 (scale 1.12) ซึ่งตรงกับ zoom-in สูงสุด +12% ที่ปลายซีน → **ยืนยันว่า motion ถูก burn ลงไฟล์วิดีโอจริง**
 - ยังไม่ได้ทดสอบงาน A กับคลิปพูดจริงหลายจังหวะเงียบ (ต้องใช้ไฟล์ผู้ใช้ + ค่าใช้จ่าย transcription) — ที่ยืนยันได้ตอนนี้คือ unit-level behaviour ตามด้านบน
+
+## อัปเดต 2026-08-31 (รอบ 2) — Viral Text (Scene element ตัวแรกหลัง Motion)
+
+### Data model (`src/lib/scenes.ts`)
+- `SceneElement` เพิ่ม `text?: string`, `position?: "top" | "middle"`
+- `addSceneElement(..., "viralText")` ตั้งค่าเริ่มต้น `text: ""`, `position: "top"`
+- `updateSceneElementText(elements, id, text)` สำหรับแก้ข้อความ
+- `viralTextWindow(scene)` = `scene.start` → `scene.start + min(2.5, sceneDuration)` (โผล่แค่ต้นซีน)
+- `viralTextAt(time, scenes, elements)` คืน `{text, position, progress}` ใช้ร่วมกันทั้ง preview และ export (ข้าม element ที่ปิดหรือข้อความว่าง)
+
+### UI + preview
+- `ScenesPanel.tsx`: เมื่อซีนมี viralText ที่เปิดอยู่ จะมี input ใต้แถวปุ่ม + ปุ่มวลีสำเร็จรูป 5 อัน (ไทย/ลาวคู่กัน เช่น "ห้ามพลาด!! / ຫ້າມພາດ!!") กดแล้วเซ็ตข้อความทันที แก้ต่อได้
+- callback ใหม่ `onUpdateElementText(id, text)` จาก `routes/index.tsx` → `setSceneElements(updateSceneElementText(...))`
+- คอมโพเนนต์ใหม่ `src/components/editor/ViralTextOverlay.tsx`: ข้อความใหญ่ตัวหนา uppercase ขาวขอบดำ จัดกลาง ตำแหน่ง top 10% (หรือ 44% ถ้า middle) pop-in 0.3s แรก + fade-out 0.3s สุดท้าย วางคู่กับ `CaptionOverlay` ในกรอบพรีวิว
+
+### Burn เข้าไฟล์ (`export-burned.ts`)
+- `drawViralText(time)` วาดบน canvas ด้วย `ctx.globalAlpha` ตาม progress + สเกล pop-in, ใช้ `options.scenes` / `options.sceneElements` เดิมจากงาน Motion (ไม่มี parameter ใหม่)
+- เรียกหลัง `ctx.restore()` ของ motion (พร้อมกับ caption) → viral text ไม่ขยับตาม pan/zoom
+
+### บั๊กที่เจอระหว่างทดสอบ และแก้แล้ว
+- export ค้างท้าย segment: เมื่อ decoder หยุดส่งเฟรม `requestVideoFrameCallback` ก็หยุดยิงไปด้วย ทำให้ตัวกันสตอลแบบนับเฟรมไม่ทำงานเลย (เห็นจริงตอนเรนเดอร์ทดสอบ ค้างที่ progress 0.99) → เพิ่ม watchdog แบบเวลาจริง (`setTimeout` 3s รีเซ็ตทุกครั้งที่เวลาเดินหน้า) ใน `exportBurnedVideo`
+
+### ผลทดสอบจริง
+- Unit (`src/lib/scenes.test.ts`, รันด้วย `bun run`): window cap 2.5s, ซีนสั้นใช้ความยาวจริง, ค่าเริ่มต้น element, hit/progress กลางหน้าต่าง, หายหลังหมด window, element ที่ปิดไม่แสดง — ผ่านทั้งหมด
+- Export จริง (Playwright + Chromium, คลิป testsrc 360x640, segment 0–1.5s, viral text "HAAMPLAAD"):
+  - ไม่มี viral text: 161,341 bytes / มี viral text: 243,414 bytes
+  - ดึงเฟรมที่ 20 จากทั้งสองไฟล์เทียบกัน เห็นข้อความ uppercase ขาวขอบดำอยู่ใกล้ขอบบนของเฟรมในไฟล์ที่เปิด viral text → **ยืนยันว่า burn ลงไฟล์จริง**
+  - ข้อจำกัด: คลิปทดสอบยาว 1.5s จึงไม่ครอบคลุมการหายไปหลัง 2.5s ในไฟล์ export (ตรวจส่วนนี้ด้วย unit test แทน)
+- `bunx tsgo --noEmit` ผ่าน
+- `sceneElements` ถูกเก็บเป็น array ตรง ๆ ใน `project-store.ts` อยู่แล้ว → `text`/`position` serialize/restore ได้โดยไม่ต้องแก้ schema
+
+### งานถัดไปตามลำดับที่ตกลง
+- Sound (per-scene sound element ให้มีผลจริง) → B-roll
