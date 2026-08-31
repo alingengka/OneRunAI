@@ -215,6 +215,7 @@ export async function transcribeAudioServer(input: {
   const attempts = input.language === "lo" ? [0, 0] : [0];
   const alternatives: string[] = [];
   const transliterated = new Set<string>();
+  let scribeTiming: TimedWord[] = [];
   let lastError: Error | null = null;
 
   if (input.language === "lo") {
@@ -226,6 +227,8 @@ export async function transcribeAudioServer(input: {
     ]);
 
     if (scribeResult.status === "fulfilled") {
+      // Keep Scribe's measured timeline even when another engine wins the text.
+      scribeTiming = scribeResult.value.timing;
       const text = cleanup(scribeResult.value.text, "lo");
       if (text) {
         alternatives.push(text);
