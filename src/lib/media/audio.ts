@@ -393,3 +393,58 @@ export function addChunkOverlap(
     }, []);
   });
 }
+
+/**
+ * งาน A: ทำให้ขอบเขตการตัดช่วงเงียบแม่นขึ้นด้วยเวลาคำจริงจากการถอดเสียง
+ *
+ * energy gate อาจเปิด/ปิดไม่ตรงพยางค์เป๊ะเมื่อ noise floor แกว่ง ฟังก์ชันนี้จึง
+ * ขยายขอบ segment ที่ทับกับคำจริงให้ครอบคลุมตั้งแต่ start ของคำแรกถึง end ของ
+ * คำสุดท้ายในช่วงนั้น และเพิ่มช่วงใหม่ให้คำที่ energy gate พลาดไปทั้งคำ
+ */
+export function reconcileSegmentsWithWords(
+  segments: Segment[],
+  words: { start: number; end: number }[],
+  opts: { duration?: number; pad?: number; joinGap?: number } = {},
+): Segment[] {
+  const valid = words
+    .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start)
+    .sort((a, b) => a.start - b.start);
+  if (!segments.length || !valid.length) return segments;
+
+  const pad = opts.pad ?? 0.06;
+  const joinGap = opts.joinGap ?? 0.12;
+  const duration = opts.duration ?? Math.max(
+    segments[segments.length - 1]?.end ?? 0,
+    valid[valid.length - 1]?.end ?? 0,
+  );
+  const clamp = (t: number) => Math.max(0, Math.min(duration, t));
+
+  const grown: Segment[] = segments.map((s) => ({ ...s }));
+  const covered = (w: { start: number; end: number }) =>
+    grown.some((s) => w.start < s.end && w.end > s.start);
+
+  for (const seg of grown) {
+    const overlapping = valid.filter((w) => w.start < seg.end && w.end > seg.start);
+    if (!overlapping.length) continue;
+    const first = overlapping[0]!;
+    const last = overlapping[overlapping.length - 1]!;
+    seg.start = clamp(Math.min(seg.start, first.start - pad));
+    seg.end = clamp(Math.max(seg.end, last.end + pad));
+  }
+
+  // คำที่ energy gate พลาดทั้งคำ (เช่นพูดเบามาก) ให้เพิ่มเป็นช่วงใหม่
+  for (const w of valid) {
+    if (covered(w)) continue;
+    grown.push({ start: clamp(w.start - pad), end: clamp(w.end + pad) });
+  }
+
+  return grown
+    .sort((a, b) => a.start - b.start)
+    .reduce<Segment[]>((acc, s) => {
+      const last = acc[acc.length - 1];
+      if (last && s.start - last.end <= joinGap) last.end = Math.max(last.end, s.end);
+      else acc.push({ ...s });
+      return acc;
+    }, [])
+    .filter((s) => s.end - s.start > 0.05);
+}
