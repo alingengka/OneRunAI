@@ -1,14 +1,21 @@
 import { thaiToLaoScript } from "./lao-script";
+import { tokenizeWords } from "./captions";
 
 const HALLUCINATIONS = new Set([
   "thank you", "thanks for watching", "you", "bye", "subtitles by",
   "ขอบคุณค่ะ", "ขอบคุณครับ", "ขอบคุณที่รับชม", "ຂອບໃຈ",
 ]);
 
+/** Word-level timing measured by the recogniser itself (seconds, clip-local). */
+export type TimedWord = { text: string; start: number; end: number };
+
 export type TranscriptionResult = {
   text: string;
   alternatives: string[];
   agreement: number;
+  /** Real word timings from ElevenLabs Scribe, present whenever Scribe answered. */
+  words?: TimedWord[];
+  wordSource?: "scribe" | null;
 };
 
 function laoPrompt(context: string, glossary: string[], strict: boolean): string {
