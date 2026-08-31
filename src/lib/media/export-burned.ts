@@ -218,7 +218,7 @@ export async function exportBurnedVideo(
     destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
 
     const mimeType = pickMime();
-    const chunks: BlobPart[] = [];
+    const chunks: Blob[] = [];
     const chunkTimes: number[] = [];
     const bitrate = Math.min(48_000_000, Math.max(4_000_000, Math.round(width * height * 0.14)));
     recorder = new MediaRecorder(stream, {
@@ -456,7 +456,7 @@ export async function exportBurnedVideo(
         lastBoundaryTarget = 0.0001;
         lastBoundaryUpdate = seg.start;
       }
-      if (segmentIndex === 0) recorder.start();
+      if (segmentIndex === 0) recorder.start(1000);
       try {
         await video.play();
       } catch {
