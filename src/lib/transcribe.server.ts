@@ -80,7 +80,10 @@ function scoreCandidate(candidate: string, others: string[], language?: string):
  * verified live responses come back rendered in Thai script even with
  * language_code=lao, so the text is transliterated back into Lao script.
  */
-async function transcribeWithScribe(binary: Uint8Array<ArrayBuffer>, glossary: string[]): Promise<{ text: string; transliterated: boolean }> {
+async function transcribeWithScribe(
+  binary: Uint8Array<ArrayBuffer>,
+  glossary: string[],
+): Promise<{ text: string; transliterated: boolean; timing: TimedWord[] }> {
   const apiKey = process.env["ELEVENLABS_API_KEY"];
   if (!apiKey) throw new Error("ElevenLabs is not connected to this project");
   const form = new FormData();
@@ -100,13 +103,60 @@ async function transcribeWithScribe(binary: Uint8Array<ArrayBuffer>, glossary: s
     const body = await response.text().catch(() => "");
     throw new Error(`ElevenLabs transcription failed [${response.status}]: ${body.slice(0, 300)}`);
   }
-  const payload = (await response.json()) as { text?: string };
+  const payload = (await response.json()) as {
+    text?: string;
+    words?: { text?: string; start?: number; end?: number; type?: string }[];
+  };
   const raw = (payload.text ?? "").trim();
-  if (!raw) return { text: "", transliterated: false };
+  if (!raw) return { text: "", transliterated: false, timing: [] };
   const lao = (raw.match(/[\u0e80-\u0eff]/g) ?? []).length;
   const thai = (raw.match(/[\u0e00-\u0e7f]/g) ?? []).length;
-  if (lao >= thai) return { text: raw, transliterated: false };
-  return { text: thaiToLaoScript(raw), transliterated: true };
+  const transliterated = lao < thai;
+  return {
+    text: transliterated ? thaiToLaoScript(raw) : raw,
+    transliterated,
+    timing: buildScribeTiming(payload.words ?? [], transliterated),
+  };
+}
+
+/**
+ * Scribe returns character/syllable level tokens. Rebuild the recognised string
+ * with a char -> token map, cut it into words with the same tokenizer the rest
+ * of the app uses, then take each word's start from its first token and end
+ * from its last one. Transliteration happens per word (never per character) so
+ * Thai->Lao syllable rules still apply.
+ */
+export function buildScribeTiming(
+  tokens: { text?: string; start?: number; end?: number; type?: string }[],
+  transliterated: boolean,
+): TimedWord[] {
+  const owners: { start: number; end: number }[] = [];
+  let text = "";
+  for (const token of tokens) {
+    if (token.type === "audio_event") continue;
+    const value = token.text ?? "";
+    if (!value) continue;
+    const start = Number.isFinite(token.start) ? Number(token.start) : owners[owners.length - 1]?.end ?? 0;
+    const end = Number.isFinite(token.end) ? Number(token.end) : start;
+    for (const _character of value) owners.push({ start, end });
+    text += value;
+  }
+  if (!text.trim()) return [];
+
+  const words: TimedWord[] = [];
+  let cursor = 0;
+  for (const word of tokenizeWords(text)) {
+    const index = text.indexOf(word, cursor);
+    if (index < 0) continue;
+    cursor = index + word.length;
+    const first = owners[index];
+    const last = owners[cursor - 1];
+    if (!first || !last) continue;
+    const value = transliterated ? thaiToLaoScript(word) : word;
+    if (!value.trim()) continue;
+    words.push({ text: value, start: first.start, end: Math.max(last.end, first.start + 0.03) });
+  }
+  return words;
 }
 
 /**
