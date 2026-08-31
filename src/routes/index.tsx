@@ -214,6 +214,11 @@ function Studio() {
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
     [groups, time],
   );
+  // งาน B: พรีวิว motion จริงบนวิดีโอ ใช้สูตรเดียวกับตอน export
+  const previewMotion = useMemo(
+    () => motionAt(time, scenes, sceneElements),
+    [time, scenes, sceneElements],
+  );
   const activeGroupIndex = useMemo(() => groups.findIndex((g) => time >= g.start && time <= g.end), [groups, time]);
   const accuracy = useMemo(() => syncAccuracy(words, segments, duration), [words, segments, duration]);
   const confidenceSummary = useMemo(() => {
@@ -1407,7 +1412,10 @@ function Studio() {
                 <video
                   ref={videoRef}
                   src={videoUrl}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-cover will-change-transform"
+                  style={{
+                    transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,
+                  }}
                   playsInline
                   onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                   onEnded={() => setPlaying(false)}
