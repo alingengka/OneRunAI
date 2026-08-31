@@ -217,3 +217,163 @@ export function mergeAlignedChunks(existing: Word[], incoming: Word[]): Word[] {
       return result;
     }, []);
 }
+
+export type TimedWord = { text: string; start: number; end: number };
+
+function normalize(value: string): string {
+  return value.normalize("NFC").replace(/[\s.,!?\u2028]/g, "");
+}
+
+/** 0–1 character similarity (normalised edit distance). */
+function wordSimilarity(left: string, right: string): number {
+  const a = [...normalize(left)];
+  const b = [...normalize(right)];
+  if (!a.length || !b.length) return 0;
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = row[0] ?? 0;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = row[j] ?? 0;
+      row[j] = Math.min((row[j] ?? 0) + 1, (row[j - 1] ?? 0) + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return Math.max(0, 1 - (row[b.length] ?? 0) / Math.max(a.length, b.length));
+}
+
+const MATCH_FLOOR = 0.55;
+
+/**
+ * Map the ensemble's winning text onto real recogniser timestamps.
+ *
+ * The winning transcript can come from any engine, but only ElevenLabs Scribe
+ * reports measured word times. A Needleman–Wunsch style alignment pairs each
+ * winning word with the closest Scribe word (approximate, cross-spelling), so
+ * matched words take their real start/end. Words with no counterpart are
+ * interpolated *between their two matched neighbours* (weighted by spoken
+ * length), never spread over the whole clip.
+ *
+ * Returns null when too few words could be matched — the caller should then
+ * fall back to energy-envelope forced alignment.
+ */
+export function alignTextToTiming(
+  text: string,
+  timing: TimedWord[],
+  options: { minMatchRatio?: number } = {},
+): Word[] | null {
+  const tokens = tokenizeWords(text);
+  const times = timing.filter((word) => Number.isFinite(word.start) && Number.isFinite(word.end) && word.end > word.start);
+  if (!tokens.length || !times.length) return null;
+
+  const gap = -0.45;
+  const rows = tokens.length;
+  const cols = times.length;
+  const score: number[][] = Array.from({ length: rows + 1 }, () => new Array<number>(cols + 1).fill(0));
+  for (let i = 1; i <= rows; i++) score[i]![0] = i * gap;
+  for (let j = 1; j <= cols; j++) score[0]![j] = j * gap;
+  for (let i = 1; i <= rows; i++) {
+    for (let j = 1; j <= cols; j++) {
+      const sim = wordSimilarity(tokens[i - 1] ?? "", times[j - 1]?.text ?? "");
+      const diagonal = (score[i - 1]![j - 1] ?? 0) + (sim >= MATCH_FLOOR ? sim : sim - 0.6);
+      score[i]![j] = Math.max(diagonal, (score[i - 1]![j] ?? 0) + gap, (score[i]![j - 1] ?? 0) + gap);
+    }
+  }
+
+  const pairs = new Map<number, TimedWord>();
+  let i = rows;
+  let j = cols;
+  while (i > 0 && j > 0) {
+    const sim = wordSimilarity(tokens[i - 1] ?? "", times[j - 1]?.text ?? "");
+    const diagonal = (score[i - 1]![j - 1] ?? 0) + (sim >= MATCH_FLOOR ? sim : sim - 0.6);
+    if (score[i]![j] === diagonal) {
+      if (sim >= MATCH_FLOOR) pairs.set(i - 1, times[j - 1]!);
+      i--;
+      j--;
+    } else if (score[i]![j] === (score[i - 1]![j] ?? 0) + gap) i--;
+    else j--;
+  }
+
+  const minRatio = options.minMatchRatio ?? 0.4;
+  if (pairs.size / tokens.length < minRatio) return null;
+
+  const clipStart = times[0]!.start;
+  const clipEnd = times[times.length - 1]!.end;
+  const words: Word[] = tokens.map((token) => ({ text: token, start: 0, end: 0 }));
+
+  // 1) anchors: real measured times
+  const anchors = [...pairs.keys()].sort((a, b) => a - b);
+  let previousEnd = clipStart;
+  for (const index of anchors) {
+    const match = pairs.get(index)!;
+    const start = Math.max(previousEnd, match.start);
+    const end = Math.max(start + 0.06, match.end);
+    words[index] = { text: tokens[index]!, start, end, confidence: 0.9, confidenceLabel: "high" };
+    previousEnd = end;
+  }
+
+  // 2) gaps: distribute the span between neighbouring anchors by spoken weight
+  const fill = (from: number, to: number, spanStart: number, spanEnd: number) => {
+    const slice = tokens.slice(from, to);
+    if (!slice.length) return;
+    const total = slice.reduce((sum, token) => sum + speechWeight(token), 0) || slice.length;
+    const available = Math.max(0.06 * slice.length, spanEnd - spanStart);
+    let cursor = spanStart;
+    slice.forEach((token, offset) => {
+      const share = (speechWeight(token) / total) * available;
+      const start = cursor;
+      const end = start + Math.max(0.06, share);
+      cursor = end;
+      words[from + offset] = { text: token, start, end, confidence: 0.5, confidenceLabel: "review" };
+    });
+  };
+
+  let cursor = 0;
+  for (const index of anchors) {
+    if (index > cursor) fill(cursor, index, cursor === 0 ? clipStart : words[cursor - 1]!.end, words[index]!.start);
+    cursor = index + 1;
+  }
+  if (cursor < tokens.length) {
+    fill(cursor, tokens.length, cursor === 0 ? clipStart : words[cursor - 1]!.end, Math.max(clipEnd, (words[cursor - 1]?.end ?? clipStart) + 0.2));
+  }
+
+  // 3) keep the sequence strictly monotonic
+  let last = 0;
+  for (const word of words) {
+    if (word.start < last) word.start = last;
+    if (word.end < word.start + 0.06) word.end = word.start + 0.06;
+    last = word.end;
+  }
+  return words;
+}
+
+/**
+ * Recogniser timings are measured on the concatenated chunk audio, while the
+ * editor timeline is the original clip. Map one back to the other.
+ */
+export function mapConcatTimeToTimeline(time: number, segs: Segment[]): number {
+  let elapsed = 0;
+  for (const seg of segs) {
+    const length = seg.end - seg.start;
+    if (time <= elapsed + length) return seg.start + Math.max(0, time - elapsed);
+    elapsed += length;
+  }
+  const last = segs[segs.length - 1];
+  return last ? last.end : time;
+}
+
+/** Same as alignTextToTiming but returned on the original clip timeline. */
+export function alignTextToTimingOnTimeline(
+  text: string,
+  timing: TimedWord[],
+  segs: Segment[],
+  options: { minMatchRatio?: number } = {},
+): Word[] | null {
+  const aligned = alignTextToTiming(text, timing, options);
+  if (!aligned) return null;
+  return aligned.map((word) => {
+    const start = mapConcatTimeToTimeline(word.start, segs);
+    const end = Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, segs));
+    return { ...word, start, end };
+  });
+}

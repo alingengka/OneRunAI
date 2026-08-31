@@ -60,7 +60,7 @@ import {
   smoothSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
-import { forcedAlignWords, mergeAlignedChunks } from "@/lib/media/forced-align";
+import { alignTextToTimingOnTimeline, forcedAlignWords, mergeAlignedChunks } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo } from "@/lib/media/export-burned";
 
@@ -476,7 +476,10 @@ function Studio() {
           if (!text) continue;
           texts.push(text);
           const chunkDur = chunkSegs.reduce((n, s) => n + (s.end - s.start), 0);
-          const aligned = forcedAlignWords(buffer, chunkSegs, text, chunkDur).map((word) => {
+          // Prefer the recogniser's measured word timings (ElevenLabs Scribe);
+          // fall back to energy-envelope alignment when they cannot be matched.
+          const timed = alignTextToTimingOnTimeline(text, res.words ?? [], chunkSegs);
+          const aligned = (timed ?? forcedAlignWords(buffer, chunkSegs, text, chunkDur)).map((word) => {
             const acoustic = word.confidence ?? 0.5;
             const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
             return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
@@ -496,7 +499,10 @@ function Studio() {
         const text = (res.text ?? "").trim();
         if (text) {
           texts.push(text);
-          allWords.push(...forcedAlignWords(buffer!, segs, text, buffer!.duration));
+          allWords.push(
+            ...(alignTextToTimingOnTimeline(text, res.words ?? [], segs)
+              ?? forcedAlignWords(buffer!, segs, text, buffer!.duration)),
+          );
         }
       }
 
@@ -551,7 +557,9 @@ function Studio() {
         const localContext = next.slice(Math.max(0, issue.index - 5), issue.index).map((word) => word.text).join(" ");
         const terms = parseGlossaryTerms(glossary);
         const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th", context: localContext, glossary: terms } });
-        const replacements = forcedAlignWords(audioBufferRef.current, [region], res.text ?? old.text, region.end - region.start);
+        const replacementText = res.text ?? old.text;
+        const replacements = alignTextToTimingOnTimeline(replacementText, res.words ?? [], [region])
+          ?? forcedAlignWords(audioBufferRef.current, [region], replacementText, region.end - region.start);
         if (replacements.length) next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
       }
       next.sort((a, b) => a.start - b.start);
@@ -589,7 +597,8 @@ function Studio() {
       });
       const text = (res.text ?? "").trim();
       if (!text) throw new Error("ไม่พบคำพูดในช่วงนี้");
-      const aligned = forcedAlignWords(buffer, [region], text, region.end - region.start).map((word) => {
+      const timed = alignTextToTimingOnTimeline(text, res.words ?? [], [region]);
+      const aligned = (timed ?? forcedAlignWords(buffer, [region], text, region.end - region.start)).map((word) => {
         const acoustic = word.confidence ?? 0.5;
         const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
         return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
