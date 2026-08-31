@@ -82,8 +82,9 @@ import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt } from "@/lib/media/motion";
-import { addSceneElement, buildScenes, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import { addSceneElement, buildScenes, updateSceneElementText, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
+import { ViralTextOverlay } from "@/components/editor/ViralTextOverlay";
 import { StepBar, type Step } from "@/components/editor/StepBar";
 import { AccuracyPanel } from "@/components/editor/AccuracyPanel";
 import { GlossaryManager } from "@/components/editor/GlossaryManager";
@@ -876,6 +877,10 @@ function Studio() {
     setSceneElements((current) => current.map((element) => element.id === id ? { ...element, enabled: !element.enabled } : element));
   };
 
+  const updateElementText = (id: string, text: string) => {
+    setSceneElements((current) => updateSceneElementText(current, id, text));
+  };
+
   const addElement = (sceneId: string, kind: SceneElementKind) => {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
@@ -1200,6 +1205,7 @@ function Studio() {
               elements={sceneElements}
               onAddElement={addElement}
               onToggleElement={toggleSceneElement}
+              onUpdateElementText={updateElementText}
             />
           )}
 
@@ -1441,6 +1447,7 @@ function Studio() {
                   onEditText={(text) => editActiveGroupText(text)}
                 />
               )}
+              <ViralTextOverlay scenes={scenes} sceneElements={sceneElements} time={time} height={frameHeight} />
               {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
             {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)</p>}

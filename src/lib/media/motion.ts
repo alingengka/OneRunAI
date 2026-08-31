@@ -49,7 +49,14 @@ export function motionTransform(
 }
 
 export type MotionScene = Pick<Scene, "id" | "index" | "start" | "end">;
-export type MotionElement = { sceneId: string; kind: string; enabled: boolean; intensity: number };
+export type MotionElement = {
+  sceneId: string;
+  kind: string;
+  enabled: boolean;
+  intensity: number;
+  text?: string;
+  position?: "top" | "middle";
+};
 
 /** หา transform ณ เวลานั้นจากรายการซีน + element ที่เปิด motion ไว้ */
 export function motionAt(
