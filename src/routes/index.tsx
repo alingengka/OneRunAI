@@ -721,6 +721,9 @@ function Studio() {
   /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
   const exportFinalVideo = () => {
     if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    if (resolution === "4k") {
+      toast.warning("4K เรนเดอร์ผ่านเบราว์เซอร์ได้จริงราว 6–12fps เท่านั้น ไฟล์จะไม่ลื่นเท่า 1080");
+    }
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
       const { blob, ext, width, height, fps, plannedFps, fpsAdapted, frames, chunks, expectedDuration, segments: exportDiagnostics } = await exportBurnedVideo(
         videoUrl,
@@ -1266,7 +1269,7 @@ function Studio() {
                   <div className="flex flex-wrap gap-2">
                     {([
                       { id: "source", label: "ต้นฉบับ" },
-                      { id: "4k", label: "4K" },
+                      { id: "4k", label: "4K (ไม่แนะนำ)" },
                       { id: "1080", label: "1080 (HD)" },
                       { id: "720", label: "720" },
                     ] as { id: ExportResolution; label: string }[]).map((option) => (
