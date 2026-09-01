@@ -66,6 +66,8 @@ import { alignTextToTiming, alignTextToTimingOnTimeline, forcedAlignWords, mapCo
 import type { TimedWord } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo, targetSize, type ExportResolution } from "@/lib/media/export-burned";
+import { exportWebCodecsVideo, supportsWebCodecsExport } from "@/lib/media/export-webcodecs";
+
 
 import {
   buildCutListJson,
@@ -721,26 +723,43 @@ function Studio() {
   /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
   const exportFinalVideo = () => {
     if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
-    if (resolution === "4k") {
-      toast.warning("4K เรนเดอร์ผ่านเบราว์เซอร์ได้จริงราว 6–12fps เท่านั้น ไฟล์จะไม่ลื่นเท่า 1080");
+    const webCodecs = supportsWebCodecsExport();
+    if (!webCodecs) {
+      toast.warning("เบราว์เซอร์นี้ไม่รองรับ WebCodecs กำลังใช้โหมดสำรอง (อาจกระตุก) แนะนำ Chrome หรือ Edge");
+    } else if (resolution === "4k") {
+      toast.info("4K จะใช้เวลาเรนเดอร์นานกว่ามาก แต่ไฟล์ที่ได้จะเดินเฟรมครบ ไม่กระตุก");
     }
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
+      const shared = {
+        noiseReduction,
+        noiseFloor: noiseFloorRef.current,
+        smoothCuts: true,
+        captions: captionsOn,
+        signal,
+        scenes,
+        sceneElements,
+        resolution,
+      };
+      const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
+
+      if (webCodecs) {
+        const result = await exportWebCodecsVideo(videoUrl, [...outputSegments], [...groups], style, onProgress, shared);
+        if (signal.aborted) return;
+        console.info("[export-webcodecs] completed", result);
+        saveBlob(result.blob, `${baseName()}-final.${result.ext}`);
+        toast.success(
+          `ได้วิดีโอพร้อมโพสต์แล้ว ${result.width}x${result.height} · ${result.fps}fps · ${result.frames} เฟรม`,
+        );
+        return;
+      }
+
       const { blob, ext, width, height, fps, plannedFps, fpsAdapted, frames, chunks, expectedDuration, segments: exportDiagnostics } = await exportBurnedVideo(
         videoUrl,
         [...outputSegments],
         [...groups],
         style,
         onProgress,
-        {
-          noiseReduction,
-          noiseFloor: noiseFloorRef.current,
-          smoothCuts: true,
-          captions: captionsOn,
-          signal,
-          scenes,
-          sceneElements,
-          resolution,
-        },
+        shared,
       );
       if (signal.aborted) return;
       console.info("[export-burned] completed", {
@@ -756,16 +775,14 @@ function Studio() {
         throw new Error(`วิดีโอเล่นช่วงที่เลือกไม่ครบ (คลาดเคลื่อน ${durationDelta.toFixed(2)} วินาที)`);
       }
       saveBlob(blob, `${baseName()}-final.${ext}`);
-      const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
       const realFps = seconds > 0 ? frames / seconds : fps;
       toast.success(`ได้วิดีโอพร้อมโพสต์แล้ว ${width}x${height} · ~${realFps.toFixed(0)}fps`);
       if (fpsAdapted) {
-        toast.warning(`เครื่องนี้เรนเดอร์ ${width}x${height} ได้ไม่ถึง ${plannedFps}fps จึงปรับเป็น ${fps}fps อัตโนมัติเพื่อให้ภาพเดินสม่ำเสมอ — ถ้าต้องการ ${plannedFps}fps ให้เลือก 1080`);
-      } else if (realFps < fps * 0.7) {
-        toast.warning("เครื่องวาดเฟรมไม่ทันที่ความละเอียดนี้ ถ้าภาพกระตุกให้ลองลดเป็น 1080");
+        toast.warning(`เครื่องนี้เรนเดอร์ ${width}x${height} ได้ไม่ถึง ${plannedFps}fps จึงปรับเป็น ${fps}fps อัตโนมัติ`);
       }
     });
   };
+
 
   const exportCapCutPackage = () => {
     if (!videoUrl || !keepSegments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
