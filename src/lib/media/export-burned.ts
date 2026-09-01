@@ -217,7 +217,9 @@ export async function exportBurnedVideo(
     ctx.imageSmoothingQuality = smoothingOverride ?? "high";
 
     // 4K canvas วาดช้ากว่ามาก จับที่ 24fps เพื่อไม่ให้เฟรมตกจนภาพกระตุก
-    const plannedFps = width * height >= 3840 * 2160 * 0.8 ? 24 : 30;
+    // 4K: การวัดจริงพบว่าเบราว์เซอร์วาด+เข้ารหัส 8.3 ล้านพิกเซลได้ ~6-12fps
+    // จึงตั้งเป้าที่ 15fps (เดินสม่ำเสมอ) แทน 24/30fps ที่เฟรมหลุดเป็นช่วง ๆ
+    const plannedFps = width * height >= 3840 * 2160 * 0.8 ? 15 : 30;
     let fps = plannedFps;
     let frameBudget = 1000 / fps;
     // จับเฟรมเอง (captureStream(0) + requestFrame) แทนการให้เบราว์เซอร์ดูดที่ fps
@@ -524,7 +526,7 @@ export async function exportBurnedVideo(
     let fpsAdapted = false;
     const recentCosts: number[] = [];
     let sinceAdapt = 0;
-    const FPS_LADDER = [30, 24, 20, 15, 12, 10, 8];
+    const FPS_LADDER = [30, 24, 20, 15, 12, 10, 8, 6];
     const adapt = (cost: number) => {
       recentCosts.push(cost);
       if (recentCosts.length > 20) recentCosts.shift();
