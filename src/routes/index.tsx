@@ -722,7 +722,7 @@ function Studio() {
   const exportFinalVideo = () => {
     if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
-      const { blob, ext, width, height, fps, frames, chunks, expectedDuration, segments: exportDiagnostics } = await exportBurnedVideo(
+      const { blob, ext, width, height, fps, plannedFps, fpsAdapted, frames, chunks, expectedDuration, segments: exportDiagnostics } = await exportBurnedVideo(
         videoUrl,
         [...outputSegments],
         [...groups],
@@ -744,6 +744,8 @@ function Studio() {
         expectedDuration,
         chunks,
         frames,
+        fps,
+        plannedFps,
         segments: exportDiagnostics,
       });
       const durationDelta = Math.abs(exportDiagnostics.reduce((sum, segment) => sum + segment.played, 0) - expectedDuration);
@@ -754,7 +756,9 @@ function Studio() {
       const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
       const realFps = seconds > 0 ? frames / seconds : fps;
       toast.success(`ได้วิดีโอพร้อมโพสต์แล้ว ${width}x${height} · ~${realFps.toFixed(0)}fps`);
-      if (realFps < fps * 0.7) {
+      if (fpsAdapted) {
+        toast.warning(`เครื่องนี้เรนเดอร์ ${width}x${height} ได้ไม่ถึง ${plannedFps}fps จึงปรับเป็น ${fps}fps อัตโนมัติเพื่อให้ภาพเดินสม่ำเสมอ — ถ้าต้องการ ${plannedFps}fps ให้เลือก 1080`);
+      } else if (realFps < fps * 0.7) {
         toast.warning("เครื่องวาดเฟรมไม่ทันที่ความละเอียดนี้ ถ้าภาพกระตุกให้ลองลดเป็น 1080");
       }
     });
@@ -1295,7 +1299,7 @@ function Studio() {
                   </p>
                   {resolution === "4k" ? (
                     <p className="text-[11px] text-amber-500">
-                      4K เรนเดอร์ที่ 24fps และกินแรงเครื่องมาก บนเครื่องที่ไม่แรงพออาจมีเฟรมตกและภาพไม่ลื่นเท่า 1080
+                      จากการทดสอบจริง เครื่องส่วนใหญ่เรนเดอร์ 4K ผ่านเบราว์เซอร์ได้เพียง ~6–12fps ระบบจะลด fps ให้อัตโนมัติเพื่อให้ภาพเดินสม่ำเสมอแทนที่จะเฟรมหลุดเป็นช่วง ๆ แนะนำให้ใช้ 1080 สำหรับงานจริง
                     </p>
                   ) : null}
 

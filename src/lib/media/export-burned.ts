@@ -152,7 +152,7 @@ export async function exportBurnedVideo(
     sceneElements?: MotionElement[];
     resolution?: ExportResolution;
   } = {},
-): Promise<{ blob: Blob; ext: "mp4" | "webm"; width: number; height: number; fps: number; frames: number; chunks: number; expectedDuration: number; segments: ExportSegmentDiagnostic[]; frameStats: { avgMs: number; p95Ms: number; maxMs: number; maxAtSec: number; overBudget: number; budgetMs: number } }> {
+): Promise<{ blob: Blob; ext: "mp4" | "webm"; width: number; height: number; fps: number; plannedFps: number; fpsAdapted: boolean; frames: number; painted: number; chunks: number; expectedDuration: number; segments: ExportSegmentDiagnostic[]; frameStats: { avgMs: number; p95Ms: number; maxMs: number; maxAtSec: number; overBudget: number; budgetMs: number } }> {
 
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
@@ -213,12 +213,19 @@ export async function exportBurnedVideo(
     if (!ctx) throw new Error("เบราว์เซอร์นี้ไม่รองรับการเรนเดอร์วิดีโอ");
     // ค่าเริ่มต้นของเบราว์เซอร์อาจเป็น "low" ทำให้ภาพที่ scale ดูเบลอ
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
+    const smoothingOverride = (window as unknown as { __EXPORT_SMOOTHING?: ImageSmoothingQuality }).__EXPORT_SMOOTHING;
+    ctx.imageSmoothingQuality = smoothingOverride ?? "high";
 
     // 4K canvas วาดช้ากว่ามาก จับที่ 24fps เพื่อไม่ให้เฟรมตกจนภาพกระตุก
-    const fps = width * height >= 3840 * 2160 * 0.8 ? 24 : 30;
-    const frameBudget = 1000 / fps;
-    const stream = canvas.captureStream(fps);
+    const plannedFps = width * height >= 3840 * 2160 * 0.8 ? 24 : 30;
+    let fps = plannedFps;
+    let frameBudget = 1000 / fps;
+    // จับเฟรมเอง (captureStream(0) + requestFrame) แทนการให้เบราว์เซอร์ดูดที่ fps
+    // คงที่ ถ้าเราวาดไม่ทัน เบราว์เซอร์จะได้เฟรมห่างแบบสุ่ม (ที่ 4K เคยเหลือ 6fps
+    // และเฟรมขาดช่วงเกือบทุกช่วง) การจับเองทำให้ระยะห่างเฟรมสม่ำเสมอตาม fps ที่
+    // เครื่องทำได้จริง
+    const stream = canvas.captureStream(0);
+    const captureTrack = stream.getVideoTracks()[0] as (MediaStreamTrack & { requestFrame?: () => void }) | undefined;
     outputStream = stream;
 
     // Audio: route the element through Web Audio so we can clean and fade it.
@@ -511,6 +518,41 @@ export async function exportBurnedVideo(
       drawViralText(time);
     };
 
+    // ---- ตัวจับเฟรมแบบปรับ fps อัตโนมัติ ----
+    let lastCaptureAt = -Infinity;
+    let captured = 0;
+    let fpsAdapted = false;
+    const recentCosts: number[] = [];
+    let sinceAdapt = 0;
+    const FPS_LADDER = [30, 24, 20, 15, 12, 10, 8];
+    const adapt = (cost: number) => {
+      recentCosts.push(cost);
+      if (recentCosts.length > 20) recentCosts.shift();
+      sinceAdapt++;
+      if (recentCosts.length < 10 || sinceAdapt < 10) return;
+      sinceAdapt = 0;
+      const sorted = [...recentCosts].sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+      if (median <= 0) return;
+      // เผื่อเวลาให้ encoder/decoder อีก 25%
+      const achievable = 1000 / (median * 1.25);
+      const next = FPS_LADDER.find((v) => v <= plannedFps && v <= achievable) ?? FPS_LADDER[FPS_LADDER.length - 1]!;
+      if (next < fps) {
+        fps = next;
+        frameBudget = 1000 / fps;
+        fpsAdapted = true;
+      }
+    };
+    /** ส่งเฟรมที่วาดแล้วเข้าสตรีมตามจังหวะ fps ปัจจุบัน */
+    const commitFrame = (force = false) => {
+      if (typeof captureTrack?.requestFrame !== "function") return;
+      const now = performance.now();
+      if (!force && now - lastCaptureAt < (1000 / fps) * 0.9) return;
+      lastCaptureAt = now;
+      captured++;
+      captureTrack.requestFrame();
+    };
+
     if (audioContext.state === "suspended") await audioContext.resume();
 
     // Prime the first frame so the recording never starts on a blank canvas.
@@ -569,6 +611,7 @@ export async function exportBurnedVideo(
       // วาดเฟรมแรกของช่วงใหม่ก่อนเปิดบันทึกอีกครั้ง ไม่งั้น recorder จะเก็บ
       // เฟรมสุดท้ายของช่วงก่อนหน้าค้างไว้ ~0.1s ทุกรอยตัด (อาการภาพกระตุก)
       paint(video.currentTime, seg);
+      commitFrame(true);
       try {
         await video.play();
       } catch {
@@ -582,7 +625,7 @@ export async function exportBurnedVideo(
           let settled = false;
           const finishWait = () => { if (!settled) { settled = true; resolve(); } };
           const timer = window.setTimeout(finishWait, 400);
-          const onFrame = () => { window.clearTimeout(timer); paint(video.currentTime, seg); finishWait(); };
+          const onFrame = () => { window.clearTimeout(timer); paint(video.currentTime, seg); commitFrame(true); finishWait(); };
           if (typeof frameVideo.requestVideoFrameCallback === "function") frameVideo.requestVideoFrameCallback(onFrame);
           else requestAnimationFrame(onFrame);
         });
@@ -653,6 +696,8 @@ export async function exportBurnedVideo(
           paint(time, seg);
           applyBoundaryGain(time, seg);
           const cost = performance.now() - frameStart;
+          commitFrame();
+          adapt(cost);
           frameCostTotal += cost;
           if (cost > frameCostMax) { frameCostMax = cost; frameCostMaxAt = time; }
           if (cost > frameBudget) frameCostOverBudget++;
@@ -728,7 +773,7 @@ export async function exportBurnedVideo(
       budgetMs: frameBudget,
     };
     dbg(`frame cost avg=${frameStats.avgMs.toFixed(2)}ms p95=${frameStats.p95Ms.toFixed(2)}ms max=${frameStats.maxMs.toFixed(2)}ms@${frameStats.maxAtSec.toFixed(2)}s over=${frameStats.overBudget}/${frameCosts.length}`);
-    return { blob, ext: mimeExtension(mimeType), width, height, fps, frames: painted, chunks: chunkTimes.length, expectedDuration: total, segments: segmentDiagnostics, frameStats };
+    return { blob, ext: mimeExtension(mimeType), width, height, fps, plannedFps, fpsAdapted, frames: captured, painted, chunks: chunkTimes.length, expectedDuration: total, segments: segmentDiagnostics, frameStats };
 
 
   } finally {
