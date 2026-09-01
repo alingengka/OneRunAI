@@ -16,7 +16,7 @@ export type NoiseGateOptions = {
 
 export type NoiseGateNode = { input: AudioNode; output: AudioNode; dispose: () => void };
 
-export async function createNoiseGate(ctx: AudioContext, opts: NoiseGateOptions): Promise<NoiseGateNode> {
+export async function createNoiseGate(ctx: BaseAudioContext, opts: NoiseGateOptions): Promise<NoiseGateNode> {
   const noiseFloor = Number.isFinite(opts.noiseFloor) ? Math.max(0, Math.min(1, opts.noiseFloor)) : 0;
   const openRatio = Number.isFinite(opts.openRatio) ? Math.max(1, opts.openRatio ?? 2.2) : 2.2;
   const threshold = Math.max(1e-6, noiseFloor * openRatio);
