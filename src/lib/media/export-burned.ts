@@ -1,7 +1,7 @@
 import type { Segment } from "./audio";
-import { motionAt, type MotionElement, type MotionScene } from "./motion";
+import { motionTransform, NO_MOTION, type MotionElement, type MotionScene } from "./motion";
 import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
-import { viralTextAt } from "../scenes";
+import { viralTextWindow } from "../scenes";
 import {
   LINE_BREAK,
   isKeyword,
@@ -48,10 +48,15 @@ async function seek(video: HTMLVideoElement, time: number): Promise<void> {
   });
 }
 
-type Line = { words: { text: string; active: boolean; keyword: boolean }[] };
+type StaticWord = { text: string; start: number; end: number; keyword: boolean };
+type StaticLine = { words: StaticWord[] };
 
-function layoutGroup(group: CaptionGroup, time: number, style: CaptionStyle): Line[] {
-  const lines: Line[] = [{ words: [] }];
+/**
+ * แบ่งบรรทัดของกลุ่มซับ "ครั้งเดียวต่อกลุ่ม" (ไม่ขึ้นกับเวลา)
+ * สถานะ active คำนวณตอนวาดจาก start/end ที่เก็บไว้ ทำให้ไม่ต้อง layout ใหม่ทุกเฟรม
+ */
+function layoutGroupStatic(group: CaptionGroup, style: CaptionStyle): StaticLine[] {
+  const lines: StaticLine[] = [{ words: [] }];
   const perLine = Math.max(0, Math.round(style.wordsPerLine ?? 0));
   for (const word of group.words) {
     if (word.text === LINE_BREAK) {
@@ -61,10 +66,10 @@ function layoutGroup(group: CaptionGroup, time: number, style: CaptionStyle): Li
     const current = lines[lines.length - 1]!;
     if (perLine > 0 && current.words.length >= perLine) lines.push({ words: [] });
     const target = lines[lines.length - 1]!;
-    const text = style.uppercase ? word.text.toUpperCase() : word.text;
     target.words.push({
-      text,
-      active: time >= word.start - 0.01 && time <= word.end + 0.01,
+      text: style.uppercase ? word.text.toUpperCase() : word.text,
+      start: word.start,
+      end: word.end,
       keyword: isKeyword(word.text),
     });
   }
@@ -74,6 +79,21 @@ function layoutGroup(group: CaptionGroup, time: number, style: CaptionStyle): Li
 function lineStyleAt(style: CaptionStyle, index: number): LineStyle {
   return style.lineStyles?.[index] ?? {};
 }
+
+/** ค้นหาช่วงเวลาแบบ binary search (ช่วงเรียงตาม start และไม่ซ้อนกัน) */
+function findWindow<T extends { start: number; end: number }>(list: T[], time: number, pad = 0): T | null {
+  let lo = 0;
+  let hi = list.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const item = list[mid]!;
+    if (time < item.start - pad) hi = mid - 1;
+    else if (time > item.end + pad) lo = mid + 1;
+    else return item;
+  }
+  return null;
+}
+
 
 /**
  * Render a finished, ready-to-post video: silences removed and captions burned
@@ -132,7 +152,7 @@ export async function exportBurnedVideo(
     sceneElements?: MotionElement[];
     resolution?: ExportResolution;
   } = {},
-): Promise<{ blob: Blob; ext: "mp4" | "webm"; width: number; height: number; fps: number; frames: number; chunks: number; expectedDuration: number; segments: ExportSegmentDiagnostic[] }> {
+): Promise<{ blob: Blob; ext: "mp4" | "webm"; width: number; height: number; fps: number; frames: number; chunks: number; expectedDuration: number; segments: ExportSegmentDiagnostic[]; frameStats: { avgMs: number; p95Ms: number; maxMs: number; maxAtSec: number; overBudget: number; budgetMs: number } }> {
 
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
   if (typeof MediaRecorder === "undefined") throw new Error("เบราว์เซอร์นี้ไม่รองรับการอัดวิดีโอ");
@@ -169,6 +189,12 @@ export async function exportBurnedVideo(
   let gate: NoiseGateNode | null = null;
   /** จำนวนเฟรมที่วาดจริง ใช้ตรวจเฟรมตกตอนเรนเดอร์ความละเอียดสูง */
   let painted = 0;
+  /** สถิติเวลาวาดต่อเฟรม (ms) ใช้หาว่าเฟรมไหนช้าจนภาพกระตุก */
+  const frameCosts: number[] = [];
+  let frameCostTotal = 0;
+  let frameCostMax = 0;
+  let frameCostMaxAt = 0;
+  let frameCostOverBudget = 0;
 
   try {
     await waitFor("loadedmetadata");
@@ -185,9 +211,13 @@ export async function exportBurnedVideo(
     canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("เบราว์เซอร์นี้ไม่รองรับการเรนเดอร์วิดีโอ");
+    // ค่าเริ่มต้นของเบราว์เซอร์อาจเป็น "low" ทำให้ภาพที่ scale ดูเบลอ
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
 
     // 4K canvas วาดช้ากว่ามาก จับที่ 24fps เพื่อไม่ให้เฟรมตกจนภาพกระตุก
     const fps = width * height >= 3840 * 2160 * 0.8 ? 24 : 30;
+    const frameBudget = 1000 / fps;
     const stream = canvas.captureStream(fps);
     outputStream = stream;
 
@@ -220,7 +250,11 @@ export async function exportBurnedVideo(
     const mimeType = pickMime();
     const chunks: Blob[] = [];
     const chunkTimes: number[] = [];
-    const bitrate = Math.min(48_000_000, Math.max(4_000_000, Math.round(width * height * 0.14)));
+    // bitrate ตามมาตรฐาน short-form vertical: ~0.2 bit ต่อพิกเซลต่อเฟรม
+    // (720x1280@30 ≈ 11 Mbps, 1080x1920@30 ≈ 25 Mbps, 2160x3840@24 ≈ 40 Mbps)
+    // สูตรเดิม width*height*0.14 ให้ 1080p แค่ ~2.9 Mbps จนภาพแตก
+    const bitrateOverride = (window as unknown as { __EXPORT_BITRATE?: number }).__EXPORT_BITRATE;
+    const bitrate = bitrateOverride ?? Math.min(64_000_000, Math.max(8_000_000, Math.round(width * height * fps * 0.2)));
     recorder = new MediaRecorder(stream, {
       mimeType,
       videoBitsPerSecond: bitrate,
@@ -239,19 +273,29 @@ export async function exportBurnedVideo(
     });
 
 
-    const drawCaption = (time: number) => {
-      if (options.captions === false || !groups.length) return;
-      const group = groups.find((g) => time >= g.start - 0.02 && time <= g.end + 0.12);
-      if (!group) return;
-      const lines = layoutGroup(group, time, style);
-      if (!lines.length) return;
+    // กลุ่มซับเรียงตามเวลา + แคช layout/ความกว้างข้อความต่อกลุ่ม
+    // (measureText เป็นงานหนักที่สุดใน hot loop ถ้าทำใหม่ทุกเฟรม)
+    const sortedGroups = [...groups].sort((a, b) => a.start - b.start);
+    type LineMetric = {
+      widths: number[];
+      space: number;
+      total: number;
+      weight: number | string;
+      family: string;
+      ls: LineStyle;
+      gap: number;
+    };
+    type GroupLayout = { lines: StaticLine[]; metrics: LineMetric[]; blockHeight: number };
+    const layoutCache = new Map<CaptionGroup, GroupLayout>();
+    const fontSize = (style.size / 100) * height;
+    const baseGap = (style.lineGap ?? 0.08) * fontSize;
+    const lineHeight = fontSize * 1.18;
 
-      const fontSize = (style.size / 100) * height;
-      const baseGap = (style.lineGap ?? 0.08) * fontSize;
-      const lineHeight = fontSize * 1.18;
-      ctx.textBaseline = "middle";
-
-      const metrics = lines.map((line, i) => {
+    const layoutFor = (group: CaptionGroup): GroupLayout => {
+      const cached = layoutCache.get(group);
+      if (cached) return cached;
+      const lines = layoutGroupStatic(group, style);
+      const metrics: LineMetric[] = lines.map((line, i) => {
         const ls = lineStyleAt(style, i);
         const weight = ls.fontWeight ?? style.fontWeight;
         const family = ls.fontFamily ?? style.fontFamily;
@@ -261,14 +305,27 @@ export async function exportBurnedVideo(
         const total = widths.reduce((n, w) => n + w, 0) + space * Math.max(0, line.words.length - 1);
         return { widths, space, total, weight, family, ls, gap: (ls.gap ?? 0) * fontSize };
       });
-
       const blockHeight = metrics.reduce((n, m, i) => n + lineHeight + (i ? baseGap + m.gap : 0), 0);
+      const layout: GroupLayout = { lines, metrics, blockHeight };
+      layoutCache.set(group, layout);
+      return layout;
+    };
+
+    const drawCaption = (time: number) => {
+      if (options.captions === false || !sortedGroups.length) return;
+      const group = findWindow(sortedGroups, time, 0.02);
+      if (!group || time > group.end + 0.12) return;
+      const { lines, metrics, blockHeight } = layoutFor(group);
+      if (!lines.length) return;
+
+      ctx.textBaseline = "middle";
       const centerX = (style.posX / 100) * width;
       let y = (style.posY / 100) * height - blockHeight / 2 + lineHeight / 2;
 
       lines.forEach((line, i) => {
         const m = metrics[i]!;
         if (i) y += baseGap + m.gap;
+
         const left =
           style.textAlign === "left"
             ? centerX - (width * 0.72) / 2
@@ -287,7 +344,7 @@ export async function exportBurnedVideo(
         ctx.font = `${m.weight} ${fontSize}px ${m.family}`;
         line.words.forEach((word, wi) => {
           const w = m.widths[wi]!;
-          const highlighted = word.active;
+          const highlighted = time >= word.start - 0.01 && time <= word.end + 0.01;
           if (highlighted && style.highlight === "box") {
             ctx.fillStyle = style.highlightColor;
             ctx.globalAlpha = 1;
@@ -334,38 +391,69 @@ export async function exportBurnedVideo(
       });
     };
 
+    // ตารางค้นหาที่คำนวณล่วงหน้า: ไม่ต้องวน scenes/elements ทุกเฟรมอีก
+    const motionWindows = (options.scenes ?? [])
+      .map((scene) => {
+        const element = (options.sceneElements ?? []).find(
+          (e) => e.sceneId === scene.id && e.kind === "motion" && e.enabled,
+        );
+        return element ? { start: scene.start, end: scene.end, scene, intensity: element.intensity } : null;
+      })
+      .filter((w): w is NonNullable<typeof w> => !!w)
+      .sort((a, b) => a.start - b.start);
+
+    const viralWindows = (options.scenes ?? [])
+      .map((scene) => {
+        const element = (options.sceneElements ?? []).find(
+          (e) => e.sceneId === scene.id && e.kind === "viralText" && e.enabled,
+        );
+        if (!element?.text?.trim()) return null;
+        const win = viralTextWindow(scene, element);
+        return {
+          start: win.start,
+          end: win.end,
+          text: element.text.trim().toUpperCase(),
+          position: element.position ?? "top",
+        };
+      })
+      .filter((w): w is NonNullable<typeof w> => !!w)
+      .sort((a, b) => a.start - b.start);
+
+    const viralFontSize = height * 0.075;
+    const viralFont = `900 ${viralFontSize}px ${style.fontFamily}`;
+
     const drawViralText = (time: number) => {
-      const hit = viralTextAt(time, options.scenes, options.sceneElements);
+      if (!viralWindows.length) return;
+      const hit = findWindow(viralWindows, time, 0.001);
       if (!hit) return;
-      const span = hit.span;
+      const span = Math.max(0.001, hit.end - hit.start);
+      const progress = Math.max(0, Math.min(1, (time - hit.start) / span));
       const fade = Math.min(0.3, span / 3);
-      const inRatio = Math.min(1, (hit.progress * span) / fade);
-      const outRatio = Math.min(1, ((1 - hit.progress) * span) / fade);
+      const inRatio = Math.min(1, (progress * span) / fade);
+      const outRatio = Math.min(1, ((1 - progress) * span) / fade);
       const alpha = Math.max(0, Math.min(inRatio, outRatio));
       if (alpha <= 0) return;
       const pop = inRatio < 1 ? 0.7 + 0.3 * (1 - Math.pow(1 - inRatio, 3)) : 1;
-
-      const fontSize = height * 0.075;
-      const text = hit.text.toUpperCase();
       const y = hit.position === "middle" ? height * 0.47 : height * 0.13;
 
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.textBaseline = "middle";
       ctx.textAlign = "center";
-      ctx.font = `900 ${fontSize}px ${style.fontFamily}`;
+      ctx.font = viralFont;
       ctx.translate(width / 2, y);
       ctx.scale(pop, pop);
       ctx.lineJoin = "round";
       ctx.miterLimit = 2;
-      ctx.lineWidth = Math.max(4, fontSize * 0.14);
+      ctx.lineWidth = Math.max(4, viralFontSize * 0.14);
       ctx.strokeStyle = "#000000";
-      ctx.strokeText(text, 0, 0);
+      ctx.strokeText(hit.text, 0, 0);
       ctx.fillStyle = "#ffffff";
-      ctx.fillText(text, 0, 0);
+      ctx.fillText(hit.text, 0, 0);
       ctx.restore();
       ctx.textAlign = "left";
     };
+
 
     const normalizedSegments = segments.map((segment, index) => {
       const start = Math.max(0, Math.min(video.duration, segment.start));
@@ -393,7 +481,8 @@ export async function exportBurnedVideo(
     const FADE = 0.08; // seconds of visual cross-fade at each cut
     const paint = (time: number, seg: Segment) => {
       // Motion (Ken Burns) applies to the image only — captions stay still.
-      const motion = motionAt(time, options.scenes, options.sceneElements);
+      const mw = motionWindows.length ? findWindow(motionWindows, time, 0.001) : null;
+      const motion = mw ? motionTransform(mw.scene, time, mw.intensity) : NO_MOTION;
       if (motion.scale !== 1 || motion.translateX || motion.translateY) {
         ctx.save();
         ctx.translate(width / 2 + motion.translateX * width, height / 2 + motion.translateY * height);
@@ -477,13 +566,29 @@ export async function exportBurnedVideo(
         lastBoundaryTarget = 0.0001;
         lastBoundaryUpdate = seg.start;
       }
-      if (segmentIndex === 0) recorder.start(1000);
-      else await transitionRecorder("recording");
+      // วาดเฟรมแรกของช่วงใหม่ก่อนเปิดบันทึกอีกครั้ง ไม่งั้น recorder จะเก็บ
+      // เฟรมสุดท้ายของช่วงก่อนหน้าค้างไว้ ~0.1s ทุกรอยตัด (อาการภาพกระตุก)
+      paint(video.currentTime, seg);
       try {
         await video.play();
       } catch {
         throw new Error("เบราว์เซอร์บล็อกการเล่นวิดีโอ กรุณากดปุ่มอีกครั้ง");
       }
+      if (segmentIndex === 0) recorder.start(1000);
+      else {
+        // รอให้ decoder ส่งเฟรมจริงก่อน แล้วค่อย resume — ช่วงหน่วงหลัง play()
+        // จะไม่ถูกบันทึกเป็นเฟรมค้าง
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const finishWait = () => { if (!settled) { settled = true; resolve(); } };
+          const timer = window.setTimeout(finishWait, 400);
+          const onFrame = () => { window.clearTimeout(timer); paint(video.currentTime, seg); finishWait(); };
+          if (typeof frameVideo.requestVideoFrameCallback === "function") frameVideo.requestVideoFrameCallback(onFrame);
+          else requestAnimationFrame(onFrame);
+        });
+        await transitionRecorder("recording");
+      }
+
       await new Promise<void>((resolve, reject) => {
         let lastMediaTime = video.currentTime;
         let lastProgressWall = performance.now();
@@ -544,8 +649,14 @@ export async function exportBurnedVideo(
             lastMediaTime = time;
             lastProgressWall = performance.now();
           }
+          const frameStart = performance.now();
           paint(time, seg);
           applyBoundaryGain(time, seg);
+          const cost = performance.now() - frameStart;
+          frameCostTotal += cost;
+          if (cost > frameCostMax) { frameCostMax = cost; frameCostMaxAt = time; }
+          if (cost > frameBudget) frameCostOverBudget++;
+          frameCosts.push(cost);
           painted++;
 
           if (options.signal?.aborted) { fail(new DOMException("ยกเลิกการเรนเดอร์", "AbortError")); return; }
@@ -607,7 +718,17 @@ export async function exportBurnedVideo(
     dbg(`stopped chunks=${chunks.length}`);
     const blob = new Blob(chunks, { type: mimeType });
     if (blob.size < 1024) throw new Error("ไฟล์วิดีโอที่ส่งออกไม่มีข้อมูล กรุณาลองใช้ Chrome หรือ Edge");
-    return { blob, ext: mimeExtension(mimeType), width, height, fps, frames: painted, chunks: chunkTimes.length, expectedDuration: total, segments: segmentDiagnostics };
+    const sortedCosts = [...frameCosts].sort((a, b) => a - b);
+    const frameStats = {
+      avgMs: frameCosts.length ? frameCostTotal / frameCosts.length : 0,
+      p95Ms: sortedCosts.length ? sortedCosts[Math.min(sortedCosts.length - 1, Math.floor(sortedCosts.length * 0.95))]! : 0,
+      maxMs: frameCostMax,
+      maxAtSec: frameCostMaxAt,
+      overBudget: frameCostOverBudget,
+      budgetMs: frameBudget,
+    };
+    dbg(`frame cost avg=${frameStats.avgMs.toFixed(2)}ms p95=${frameStats.p95Ms.toFixed(2)}ms max=${frameStats.maxMs.toFixed(2)}ms@${frameStats.maxAtSec.toFixed(2)}s over=${frameStats.overBudget}/${frameCosts.length}`);
+    return { blob, ext: mimeExtension(mimeType), width, height, fps, frames: painted, chunks: chunkTimes.length, expectedDuration: total, segments: segmentDiagnostics, frameStats };
 
 
   } finally {

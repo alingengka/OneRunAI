@@ -56,7 +56,11 @@ export type MotionElement = {
   intensity: number;
   text?: string;
   position?: "top" | "middle";
+  /** สำหรับ viral text: จังหวะที่โผล่ */
+  offset?: number;
+  durationSec?: number;
 };
+
 
 /** หา transform ณ เวลานั้นจากรายการซีน + element ที่เปิด motion ไว้ */
 export function motionAt(
