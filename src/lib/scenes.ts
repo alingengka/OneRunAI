@@ -86,7 +86,7 @@ export type SoundCue = { id: string; time: number; soundId: string; volume: numb
 export function sceneSoundCues(
   scenes: SceneWindow[] | undefined,
   elements:
-    | { id: string; sceneId: string; kind: string; enabled: boolean; intensity?: number; offset?: number; soundId?: string }[]
+    | { id?: string; sceneId: string; kind: string; enabled: boolean; intensity?: number; offset?: number; soundId?: string }[]
     | undefined,
 ): SoundCue[] {
   if (!scenes?.length || !elements?.length) return [];
@@ -97,7 +97,7 @@ export function sceneSoundCues(
       const sceneLen = Math.max(0, scene.end - scene.start);
       const offset = Math.min(Math.max(0, element.offset ?? 0), sceneLen);
       cues.push({
-        id: element.id,
+        id: element.id ?? `${scene.id}-sound`,
         time: scene.start + offset,
         soundId: element.soundId ?? "whoosh",
         volume: Math.max(0, Math.min(1, element.intensity ?? 0.7)),
