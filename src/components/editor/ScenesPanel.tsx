@@ -4,6 +4,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { sceneDuration, viralTextWindow, type Scene, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import { SFX_PRESETS, playSfxNow } from "@/lib/media/sfx";
 import { Clock, Eye, EyeOff, Plus, Play, Scissors } from "lucide-react";
 
 const VIRAL_PRESETS = ["ห้ามพลาด!! / ຫ້າມພາດ!!", "อันนี้คือจริง?! / ອັນນີ້ແມ່ນຈິງ?!", "ลองดูนี่เลย / ລອງເບິ່ງນີ້ເລີຍ", "รู้ยัง? / ຮູ້ບໍ?", "3 วิสุดท้ายสำคัญ / 3 ວິນາທີສຸດທ້າຍ"];
@@ -20,6 +21,8 @@ type Props = {
   onToggleElement: (id: string) => void;
   onUpdateElementText: (id: string, text: string) => void;
   onUpdateElementTiming: (id: string, offset: number, durationSec: number) => void;
+  onUpdateElementSound: (id: string, soundId: string) => void;
+  onUpdateElementIntensity: (id: string, intensity: number) => void;
 };
 
 
@@ -29,7 +32,7 @@ function clock(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement, onUpdateElementText, onUpdateElementTiming }: Props) {
+export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement, onUpdateElementText, onUpdateElementTiming, onUpdateElementSound, onUpdateElementIntensity }: Props) {
   if (!scenes.length) {
     return (
       <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
