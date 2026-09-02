@@ -85,7 +85,8 @@ import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt } from "@/lib/media/motion";
-import { addSceneElement, buildScenes, updateSceneElementText, updateSceneElementTiming, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import { addSceneElement, buildScenes, sceneSoundCues, updateSceneElementIntensity, updateSceneElementSound, updateSceneElementText, updateSceneElementTiming, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import { playSfxNow } from "@/lib/media/sfx";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { ViralTextOverlay } from "@/components/editor/ViralTextOverlay";
 import { StepBar, type Step } from "@/components/editor/StepBar";
@@ -289,6 +290,26 @@ function Studio() {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [removeSilence, keepSegments, silences]);
+
+  // เล่นเสียงเอฟเฟกต์ของซีนตอนพรีวิว (ไม่ผสมกับเสียง UI ของแอป)
+  const firedSoundsRef = useRef<Record<string, number>>({});
+  const lastSoundTimeRef = useRef(0);
+  useEffect(() => {
+    const cues = sceneSoundCues(scenes, sceneElements);
+    const previous = lastSoundTimeRef.current;
+    lastSoundTimeRef.current = time;
+    if (time < previous - 0.05) {
+      // seek ย้อนกลับ → ให้จุดที่อยู่หลังเวลาปัจจุบันเล่นได้ใหม่
+      for (const cue of cues) if (cue.time >= time) delete firedSoundsRef.current[cue.id];
+    }
+    if (!playing) return;
+    for (const cue of cues) {
+      if (cue.time <= previous || cue.time > time + 0.001) continue;
+      if (firedSoundsRef.current[cue.id] === cue.time) continue;
+      firedSoundsRef.current[cue.id] = cue.time;
+      void playSfxNow(cue.soundId, cue.volume);
+    }
+  }, [time, playing, scenes, sceneElements]);
 
   useEffect(() => {
     setAudioEnabled(sfx.enabled);
@@ -940,6 +961,14 @@ function Studio() {
     setSceneElements((current) => updateSceneElementTiming(current, id, offset, durationSec));
   };
 
+  const updateElementSound = (id: string, soundId: string) => {
+    setSceneElements((current) => updateSceneElementSound(current, id, soundId));
+  };
+
+  const updateElementIntensity = (id: string, intensity: number) => {
+    setSceneElements((current) => updateSceneElementIntensity(current, id, intensity));
+  };
+
   const addElement = (sceneId: string, kind: SceneElementKind) => {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
@@ -1266,6 +1295,8 @@ function Studio() {
               onToggleElement={toggleSceneElement}
               onUpdateElementText={updateElementText}
               onUpdateElementTiming={updateElementTiming}
+              onUpdateElementSound={updateElementSound}
+              onUpdateElementIntensity={updateElementIntensity}
             />
           )}
 

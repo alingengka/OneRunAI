@@ -4,6 +4,7 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { sceneDuration, viralTextWindow, type Scene, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import { SFX_PRESETS, playSfxNow } from "@/lib/media/sfx";
 import { Clock, Eye, EyeOff, Plus, Play, Scissors } from "lucide-react";
 
 const VIRAL_PRESETS = ["ห้ามพลาด!! / ຫ້າມພາດ!!", "อันนี้คือจริง?! / ອັນນີ້ແມ່ນຈິງ?!", "ลองดูนี่เลย / ລອງເບິ່ງນີ້ເລີຍ", "รู้ยัง? / ຮູ້ບໍ?", "3 วิสุดท้ายสำคัญ / 3 ວິນາທີສຸດທ້າຍ"];
@@ -20,6 +21,8 @@ type Props = {
   onToggleElement: (id: string) => void;
   onUpdateElementText: (id: string, text: string) => void;
   onUpdateElementTiming: (id: string, offset: number, durationSec: number) => void;
+  onUpdateElementSound: (id: string, soundId: string) => void;
+  onUpdateElementIntensity: (id: string, intensity: number) => void;
 };
 
 
@@ -29,7 +32,7 @@ function clock(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement, onUpdateElementText, onUpdateElementTiming }: Props) {
+export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement, onUpdateElementText, onUpdateElementTiming, onUpdateElementSound, onUpdateElementIntensity }: Props) {
   if (!scenes.length) {
     return (
       <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -176,6 +179,81 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
                     โชว์ช่วง {clock(win.start)} – {clock(win.end)} ของคลิป
                   </p>
                 </div>
+                );
+              })}
+
+            {elements
+              .filter((element) => element.sceneId === scene.id && element.kind === "sound" && element.enabled)
+              .map((element) => {
+                const sceneLen = Math.max(0.5, scene.end - scene.start);
+                const offset = Math.min(Math.max(0, element.offset ?? 0), sceneLen);
+                const volume = Math.max(0, Math.min(1, element.intensity ?? 0.7));
+                const soundId = element.soundId ?? SFX_PRESETS[0]!.id;
+                return (
+                  <div key={`${element.id}-sfx`} className="mt-3 space-y-2 rounded-lg border border-border bg-secondary/30 p-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {SFX_PRESETS.map((preset) => (
+                        <Button
+                          key={preset.id}
+                          size="sm"
+                          variant={soundId === preset.id ? "secondary" : "outline"}
+                          className="h-7 text-[11px]"
+                          onClick={() => onUpdateElementSound(element.id, preset.id)}
+                        >
+                          {preset.icon} {preset.label}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>เริ่มที่ (วินาทีจากต้นซีน)</span>
+                      <span className="font-mono">{offset.toFixed(1)}s</span>
+                    </div>
+                    <Slider
+                      value={[offset]}
+                      min={0}
+                      max={Math.max(0.1, sceneLen)}
+                      step={0.1}
+                      onValueChange={([v]) => onUpdateElementTiming(element.id, v ?? 0, element.durationSec ?? 1)}
+                    />
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>ความดัง</span>
+                      <span className="font-mono">{Math.round(volume * 100)}%</span>
+                    </div>
+                    <Slider
+                      value={[volume]}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      onValueChange={([v]) => onUpdateElementIntensity(element.id, v ?? 0.7)}
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px]"
+                        onClick={() => void playSfxNow(soundId, volume)}
+                      >
+                        <Play className="h-3.5 w-3.5" /> ทดสอบเสียง
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px]"
+                        onClick={() =>
+                          onUpdateElementTiming(
+                            element.id,
+                            Math.min(Math.max(0, activeTime - scene.start), sceneLen),
+                            element.durationSec ?? 1,
+                          )
+                        }
+                      >
+                        <Clock className="h-3.5 w-3.5" /> ตั้งจากตำแหน่งที่เล่นอยู่ตอนนี้
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      เล่นที่ {clock(scene.start + offset)} ของคลิป
+                    </p>
+                  </div>
                 );
               })}
 
