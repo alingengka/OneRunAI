@@ -15,6 +15,8 @@ import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
 import { createBurnRenderer, targetSize, type ExportResolution } from "./burn-render";
 import type { CaptionGroup, CaptionStyle } from "../captions";
+import { sceneSoundCues } from "../scenes";
+import { scheduleSfx } from "./sfx";
 
 type Progress = (ratio: number) => void;
 
