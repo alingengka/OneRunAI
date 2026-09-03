@@ -115,7 +115,7 @@ async function pickAudioCodec(sampleRate: number, channels: number) {
  * ประมวลผลเสียงล่วงหน้า: ตัดเฉพาะช่วงที่เก็บไว้มาต่อกัน + noise reduction เดิม
  * คืนค่าเป็น AudioBuffer ของ timeline ผลลัพธ์ (เวลาต่อเนื่องหลังตัดช่วงเงียบแล้ว)
  */
-async function renderAudio(
+export async function renderAudio(
   url: string,
   segments: Segment[],
   total: number,
