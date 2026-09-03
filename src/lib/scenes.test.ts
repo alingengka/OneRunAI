@@ -1,4 +1,4 @@
-import { addSceneElement, updateSceneElementText, updateSceneElementTiming, viralTextAt, viralTextWindow, type Scene } from "./scenes";
+import { addSceneElement, sceneSoundCues, updateSceneElementIntensity, updateSceneElementSound, updateSceneElementText, updateSceneElementTiming, viralTextAt, viralTextWindow, type Scene } from "./scenes";
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
@@ -56,3 +56,23 @@ assert(viralTextAt(17.5, [scene], timed) === null, "viral text ends after chosen
 
 timed = updateSceneElementTiming(timed, "scene-0-viralText", -5, 0);
 assert((timed[0]?.offset ?? -1) === 0 && (timed[0]?.durationSec ?? 0) >= 0.1, "timing updates are clamped to sane values");
+
+// ---- sound cues ----
+{
+  const withSound = updateSceneElementSound(
+    updateSceneElementIntensity(addSceneElement(elements, "scene-0", "sound"), "scene-0-sound", 0.4),
+    "scene-0-sound",
+    "impact",
+  );
+  const cues = sceneSoundCues([scene], updateSceneElementTiming(withSound, "scene-0-sound", 3, 1));
+  assert(cues.length === 1, "one sound cue expected");
+  assert(cues[0]!.time === 13, "cue time = scene.start + offset");
+  assert(cues[0]!.soundId === "impact" && Math.abs(cues[0]!.volume - 0.4) < 1e-6, "cue keeps preset and intensity");
+
+  const clamped = sceneSoundCues([scene], updateSceneElementTiming(withSound, "scene-0-sound", 99, 1));
+  assert(clamped[0]!.time === 20, "offset clamps to scene end");
+
+  const off = sceneSoundCues([scene], withSound.map((e) => (e.kind === "sound" ? { ...e, enabled: false } : e)));
+  assert(off.length === 0, "disabled sound produces no cue");
+  assert(sceneSoundCues(undefined, withSound).length === 0, "no scenes -> no cues");
+}
