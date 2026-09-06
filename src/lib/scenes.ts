@@ -26,8 +26,6 @@ export type SceneElement = {
   offset?: number;
   /** ความยาวที่โชว์ (default 2.5 วินาที) */
   durationSec?: number;
-  /** id ของ sound preset (ใช้กับ kind = "sound") */
-  soundId?: string;
 };
 
 export function addSceneElement(elements: SceneElement[], sceneId: string, kind: SceneElementKind): SceneElement[] {
@@ -46,25 +44,11 @@ export function addSceneElement(elements: SceneElement[], sceneId: string, kind:
     created.offset = 0;
     created.durationSec = 2.5;
   }
-  if (kind === "sound") {
-    created.soundId = "whoosh";
-    created.offset = 0;
-  }
   return [...elements, created];
 }
 
 export function updateSceneElementText(elements: SceneElement[], id: string, text: string): SceneElement[] {
   return elements.map((element) => (element.id === id ? { ...element, text } : element));
-}
-
-export function updateSceneElementSound(elements: SceneElement[], id: string, soundId: string): SceneElement[] {
-  return elements.map((element) => (element.id === id ? { ...element, soundId } : element));
-}
-
-export function updateSceneElementIntensity(elements: SceneElement[], id: string, intensity: number): SceneElement[] {
-  return elements.map((element) =>
-    element.id === id ? { ...element, intensity: Math.max(0, Math.min(1, intensity)) } : element,
-  );
 }
 
 export function updateSceneElementTiming(
@@ -78,33 +62,6 @@ export function updateSceneElementTiming(
       ? { ...element, offset: Math.max(0, offset), durationSec: Math.max(0.1, durationSec) }
       : element,
   );
-}
-
-export type SoundCue = { id: string; time: number; soundId: string; volume: number };
-
-/** จุดที่ต้องเล่นเสียงเอฟเฟกต์ (เวลาอ้างอิงคลิปต้นฉบับ) เรียงตามเวลา */
-export function sceneSoundCues(
-  scenes: SceneWindow[] | undefined,
-  elements:
-    | { id?: string; sceneId: string; kind: string; enabled: boolean; intensity?: number; offset?: number; soundId?: string }[]
-    | undefined,
-): SoundCue[] {
-  if (!scenes?.length || !elements?.length) return [];
-  const cues: SoundCue[] = [];
-  for (const scene of scenes) {
-    for (const element of elements) {
-      if (element.sceneId !== scene.id || element.kind !== "sound" || !element.enabled) continue;
-      const sceneLen = Math.max(0, scene.end - scene.start);
-      const offset = Math.min(Math.max(0, element.offset ?? 0), sceneLen);
-      cues.push({
-        id: element.id ?? `${scene.id}-sound`,
-        time: scene.start + offset,
-        soundId: element.soundId ?? "whoosh",
-        volume: Math.max(0, Math.min(1, element.intensity ?? 0.7)),
-      });
-    }
-  }
-  return cues.sort((a, b) => a.time - b.time);
 }
 
 export type SceneWindow = { id: string; start: number; end: number; segments?: Segment[] };

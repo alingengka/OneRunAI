@@ -59,8 +59,6 @@ export type MotionElement = {
   /** สำหรับ viral text: จังหวะที่โผล่ */
   offset?: number;
   durationSec?: number;
-  /** สำหรับ sound: preset ที่เลือก */
-  soundId?: string;
 };
 
 

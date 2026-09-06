@@ -15,8 +15,6 @@ import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
 import { createBurnRenderer, targetSize, type ExportResolution } from "./burn-render";
 import type { CaptionGroup, CaptionStyle } from "../captions";
-import { sceneSoundCues } from "../scenes";
-import { scheduleSfx } from "./sfx";
 
 type Progress = (ratio: number) => void;
 
@@ -115,17 +113,11 @@ async function pickAudioCodec(sampleRate: number, channels: number) {
  * ประมวลผลเสียงล่วงหน้า: ตัดเฉพาะช่วงที่เก็บไว้มาต่อกัน + noise reduction เดิม
  * คืนค่าเป็น AudioBuffer ของ timeline ผลลัพธ์ (เวลาต่อเนื่องหลังตัดช่วงเงียบแล้ว)
  */
-export async function renderAudio(
+async function renderAudio(
   url: string,
   segments: Segment[],
   total: number,
-  options: {
-    noiseReduction?: boolean;
-    noiseFloor?: number;
-    smoothCuts?: boolean;
-    scenes?: MotionScene[];
-    sceneElements?: MotionElement[];
-  },
+  options: { noiseReduction?: boolean; noiseFloor?: number; smoothCuts?: boolean },
 ): Promise<AudioBuffer | null> {
   let decoded: AudioBuffer;
   try {
@@ -182,31 +174,6 @@ export async function renderAudio(
     }
     source.start(cursor, segment.start, length);
     cursor += length;
-  }
-
-  // ---- เสียงเอฟเฟกต์ของซีน ----
-  // ต่อตรงเข้า destination ไม่ผ่าน noise gate/compressor ของเสียงพูด เพื่อไม่ให้ถูกดักหรือดัก
-  // เสียงพูดตามไปด้วย ส่วนจุดที่ตกในช่วงเงียบที่ถูกตัดทิ้ง เราจะ "เลื่อนไปจุดที่ใกล้ที่สุด
-  // ในช่วงที่เก็บไว้" แทนการทิ้ง เพราะผู้ใช้ตั้งใจวางเสียงไว้ตรงรอยต่อนั้นอยู่แล้ว
-  const cues = sceneSoundCues(options.scenes, options.sceneElements);
-  if (cues.length) {
-    const mapToOutput = (time: number): number | null => {
-      let acc = 0;
-      let lastEnd: number | null = null;
-      for (const segment of segments) {
-        const length = Math.max(0, segment.end - segment.start);
-        if (time < segment.start) return acc; // อยู่ในช่วงเงียบก่อนหน้า → ต้นช่วงที่เก็บไว้ถัดไป
-        if (time <= segment.end) return acc + (time - segment.start);
-        acc += length;
-        lastEnd = acc;
-      }
-      return lastEnd; // เลยช่วงสุดท้าย → ท้ายไฟล์
-    };
-    for (const cue of cues) {
-      const at = mapToOutput(cue.time);
-      if (at === null || at >= total) continue;
-      scheduleSfx(offline, cue.soundId, at, offline.destination, cue.volume);
-    }
   }
 
   const rendered = await offline.startRendering();
