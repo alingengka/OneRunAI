@@ -288,8 +288,10 @@ function Studio() {
       transcribing,
       analyzing,
       segmentCount: segments.length,
+      segments,
+      speechSegments: analysisSegmentsRef.current,
     };
-  }, [visibleWords, groups, style, duration, transcribing, analyzing, segments.length]);
+  }, [visibleWords, groups, style, duration, transcribing, analyzing, segments]);
 
 
   // measure preview frame for font scaling
