@@ -1,7 +1,7 @@
 import type { Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
-import { createBurnRenderer, targetSize, type ExportResolution } from "./burn-render";
+import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 export { targetSize };
