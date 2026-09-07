@@ -2,11 +2,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { sceneDuration, viralTextWindow, type Scene, type SceneElement, type SceneElementKind } from "@/lib/scenes";
-import { Clock, Eye, EyeOff, Plus, Play, Scissors } from "lucide-react";
+import { AudioLines, Clapperboard, Clock, Eye, EyeOff, Plus, Play, Scissors, Type, Zap } from "lucide-react";
 
 const VIRAL_PRESETS = ["ห้ามพลาด!! / ຫ້າມພາດ!!", "อันนี้คือจริง?! / ອັນນີ້ແມ່ນຈິງ?!", "ลองดูนี่เลย / ລອງເບິ່ງນີ້ເລີຍ", "รู้ยัง? / ຮູ້ບໍ?", "3 วิสุดท้ายสำคัญ / 3 ວິນາທີສຸດທ້າຍ"];
+
+const elementKinds: { kind: SceneElementKind; label: string; icon: typeof Clapperboard }[] = [
+  { kind: "broll", label: "B-roll", icon: Clapperboard },
+  { kind: "motion", label: "Motion", icon: Zap },
+  { kind: "sound", label: "Sound", icon: AudioLines },
+  { kind: "viralText", label: "Viral text", icon: Type },
+];
 
 type Props = {
   scenes: Scene[];
@@ -43,37 +56,45 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
     .reduce((n, s) => n + sceneDuration(s), 0);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between rounded-xl border border-border bg-secondary/40 p-3 text-xs">
-        <span className="font-medium">{scenes.length} ซีน · ใช้จริง {keptTotal.toFixed(1)}s</span>
-        <span className="text-muted-foreground">ปิดสวิตช์เพื่อลบซีนออกจากงานและไฟล์ที่ส่งออก</span>
+    <div className="space-y-4">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border pb-4 text-xs">
+        <div className="min-w-0">
+          <p className="font-semibold text-foreground">ลำดับซีน</p>
+          <p className="mt-1 text-muted-foreground">{scenes.length} ซีน · ความยาวที่ใช้จริง {keptTotal.toFixed(1)} วินาที</p>
+        </div>
+        <span className="hidden text-right text-muted-foreground sm:block">ปิดสวิตช์เพื่อตัดซีนออก</span>
       </div>
       {scenes.map((scene) => {
         const off = dropped.includes(scene.id);
         const active = activeTime >= scene.start && activeTime <= scene.end;
+        const sceneElements = elements.filter((element) => element.sceneId === scene.id);
+        const missingKinds = elementKinds.filter(({ kind }) => !sceneElements.some((element) => element.kind === kind));
         return (
-          <div
+          <article
             key={scene.id}
             className={cn(
-              "rounded-xl border p-3 transition",
+              "overflow-hidden rounded-lg border transition-colors",
               off ? "border-border bg-muted/40 opacity-60" : "border-border bg-card",
-              active && !off && "border-primary ring-1 ring-primary/30",
+              active && !off && "border-primary/70 ring-1 ring-primary/20",
             )}
           >
-            <div className="flex items-center justify-between gap-3">
-              <button
-                type="button"
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 p-4">
+              <Button
+                variant="ghost"
                 onClick={() => onSeek(scene.start)}
-                className="flex items-center gap-2 text-left"
+                className="h-auto min-w-0 justify-start gap-3 p-0 text-left hover:bg-transparent"
               >
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-secondary text-xs font-semibold">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary">
                   {scene.index + 1}
                 </span>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {clock(scene.start)} – {clock(scene.end)} · {sceneDuration(scene).toFixed(1)}s
+                <span className="min-w-0">
+                  <span className="block font-mono text-xs font-medium text-foreground">
+                    {clock(scene.start)} – {clock(scene.end)}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">ความยาว {sceneDuration(scene).toFixed(1)} วินาที</span>
                 </span>
-              </button>
-              <div className="flex items-center gap-2">
+              </Button>
+              <div className="flex shrink-0 items-center gap-2">
                 <Button size="icon" variant="ghost" onClick={() => onPreview(scene.start, scene.end)} aria-label="เล่นซีนนี้">
                   <Play className="h-4 w-4" />
                 </Button>
@@ -84,15 +105,16 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
                 />
               </div>
             </div>
-            <p className="mt-2 line-clamp-2 text-sm">
+            <p className="px-4 pb-4 text-sm leading-6">
               {scene.text || <span className="text-muted-foreground">— ยังไม่มีซับในซีนนี้ —</span>}
             </p>
-            <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
-              {elements.filter((element) => element.sceneId === scene.id).map((element) => (
+            <div className="flex flex-wrap items-center gap-2 border-t border-border bg-secondary/25 px-4 py-3">
+              {sceneElements.map((element) => (
                 <Button
                   key={element.id}
                   size="sm"
                   variant={element.enabled ? "secondary" : "outline"}
+                  className={cn("h-8", !element.enabled && "text-muted-foreground")}
                   onClick={() => onToggleElement(element.id)}
                   title={`${element.enabled ? "ปิด" : "เปิด"} ${element.label}`}
                 >
@@ -100,13 +122,20 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
                   {element.label}
                 </Button>
               ))}
-              {(["broll", "motion", "sound", "viralText"] as SceneElementKind[]).map((kind) => (
-                elements.some((element) => element.sceneId === scene.id && element.kind === kind) ? null : (
-                  <Button key={kind} size="sm" variant="ghost" onClick={() => onAddElement(scene.id, kind)}>
-                    <Plus className="h-3.5 w-3.5" /> {kind === "viralText" ? "Viral text" : kind === "broll" ? "B-roll" : kind === "motion" ? "Motion" : "Sound"}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 border border-dashed border-border" aria-label={`เพิ่มฟีเจอร์ให้ซีนที่ ${scene.index + 1}`} title="เพิ่มฟีเจอร์">
+                    <Plus className="h-3.5 w-3.5" />
                   </Button>
-                )
-              ))}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {missingKinds.length ? missingKinds.map(({ kind, label, icon: Icon }) => (
+                    <DropdownMenuItem key={kind} onSelect={() => onAddElement(scene.id, kind)}>
+                      <Icon /> {label}
+                    </DropdownMenuItem>
+                  )) : <DropdownMenuItem disabled>เพิ่มครบทุกฟีเจอร์แล้ว</DropdownMenuItem>}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
             {elements
               .filter((element) => element.sceneId === scene.id && element.kind === "viralText" && element.enabled)
@@ -205,7 +234,7 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
                 <Scissors className="h-3 w-3" /> ซีนนี้จะถูกตัดออกจากไฟล์ส่งออก
               </p>
             )}
-          </div>
+          </article>
         );
       })}
     </div>
