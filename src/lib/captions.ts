@@ -111,7 +111,12 @@ export type CaptionStyle = {
   name: string;
   fontFamily: string;
   fontWeight: number;
+  /** ตัวหนาสังเคราะห์ (ใช้ได้กับทุกฟอนต์) */
+  bold?: boolean;
+  /** ตัวเอียงสังเคราะห์ (ใช้ได้กับทุกฟอนต์) */
+  italic?: boolean;
   uppercase: boolean;
+
   /** font size in % of video height */
   size: number;
   color: string;
