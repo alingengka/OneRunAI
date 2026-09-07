@@ -114,7 +114,7 @@
   --sidebar-accent-foreground: var(--text-primary);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--accent-secondary);
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Noto Sans Thai", "Inter", system-ui, sans-serif;
 }
 
 
