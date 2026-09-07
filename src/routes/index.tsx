@@ -584,7 +584,7 @@ function Studio() {
           texts.push(out.text);
           pushDbg("chunk", { i, range: [chunkSegs[0]!.start, chunkSegs[chunkSegs.length-1]!.end], segs: chunkSegs.map((s2) => [s2.start, s2.end]), aligned: out.aligned.map((w) => [w.text, +w.start.toFixed(2), +w.end.toFixed(2)]) });
           const merged = mergeAlignedChunks(allWords, out.aligned);
-          pushDbg("merge", (merged.map((w) => [w.text, +w.start.toFixed(2)]));
+          pushDbg("merge", merged.map((w) => [w.text, +w.start.toFixed(2)]));
           allWords.splice(0, allWords.length, ...merged);
 
           setTranscript(texts.join(" "));
