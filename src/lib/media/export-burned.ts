@@ -120,7 +120,7 @@ export async function exportBurnedVideo(
   try {
     await waitFor("loadedmetadata");
     if (video.readyState < 2) await waitFor("loadeddata");
-    try { await (document as Document & { fonts?: FontFaceSet }).fonts?.ready; } catch { /* ignore */ }
+    await ensureCaptionFonts(style);
 
     const sourceWidth = video.videoWidth || 1080;
     const sourceHeight = video.videoHeight || 1920;
