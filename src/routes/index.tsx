@@ -52,7 +52,6 @@ import {
   baseStyle,
   groupWords,
   LINE_BREAK,
-
   type CaptionStyle,
   type Word,
 } from "@/lib/captions";
@@ -72,12 +71,18 @@ import {
   smoothSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
-import { alignTextToTiming, alignTextToTimingOnTimeline, closeSpeechGaps, forcedAlignWords, mapConcatTimeToTimeline, mergeAlignedChunks } from "@/lib/media/forced-align";
+import {
+  alignTextToTiming,
+  alignTextToTimingOnTimeline,
+  closeSpeechGaps,
+  forcedAlignWords,
+  mapConcatTimeToTimeline,
+  mergeAlignedChunks,
+} from "@/lib/media/forced-align";
 import type { TimedWord } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo, targetSize, type ExportResolution } from "@/lib/media/export-burned";
 import { exportWebCodecsVideo, supportsWebCodecsExport } from "@/lib/media/export-webcodecs";
-
 
 import {
   buildCutListJson,
@@ -95,7 +100,15 @@ import { wordsToTranscript, buildRowWords, type SyncIssue } from "@/lib/caption-
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt } from "@/lib/media/motion";
-import { addSceneElement, buildScenes, updateSceneElementFormat, updateSceneElementText, updateSceneElementTiming, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import {
+  addSceneElement,
+  buildScenes,
+  updateSceneElementFormat,
+  updateSceneElementText,
+  updateSceneElementTiming,
+  type SceneElement,
+  type SceneElementKind,
+} from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { ViralTextOverlay } from "@/components/editor/ViralTextOverlay";
 
@@ -104,7 +117,6 @@ import { GlossaryManager } from "@/components/editor/GlossaryManager";
 import { applyRulesToWords, parseGlossaryTerms, type LexRule } from "@/lib/lao-glossary";
 import { buildAccuracyReport } from "@/lib/accuracy-report";
 import { OneRunLogo } from "@/components/brand/OneRunLogo";
-
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -137,7 +149,6 @@ const LANGUAGES: { code: LangCode; label: string; font: string }[] = [
   { code: "en", label: "English", font: "'Inter', system-ui, sans-serif" },
 ];
 
-
 function fmt(t: number) {
   const m = Math.floor(t / 60);
   const s = Math.floor(t % 60);
@@ -146,7 +157,12 @@ function fmt(t: number) {
 }
 
 function Studio() {
-  const { play, setVolume: setAudioVolume, setEnabled: setAudioEnabled, setPack: setAudioPack } = useAudioFeedback();
+  const {
+    play,
+    setVolume: setAudioVolume,
+    setEnabled: setAudioEnabled,
+    setPack: setAudioPack,
+  } = useAudioFeedback();
   const transcribe = useServerFn(transcribeAudio);
   const translate = useServerFn(translateLines);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -182,7 +198,6 @@ function Studio() {
   const [tab, setTab] = useState<Tab>("tools");
   const [languages, setLanguages] = useState<LangCode[]>(["th"]);
 
-
   const [captionsOn, setCaptionsOn] = useState(true);
   const [removeSilence, setRemoveSilence] = useState(false);
   const [noiseReduction, setNoiseReduction] = useState(false);
@@ -194,7 +209,11 @@ function Studio() {
   const [rendering, setRendering] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [retryingSync, setRetryingSync] = useState(false);
-  const [sfx, setSfx] = useState<{ enabled: boolean; volume: number; pack: SoundPack }>({ enabled: true, volume: 0.35, pack: "clean" });
+  const [sfx, setSfx] = useState<{ enabled: boolean; volume: number; pack: SoundPack }>({
+    enabled: true,
+    volume: 0.35,
+    pack: "clean",
+  });
   const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
   const [projectName, setProjectName] = useState("Untitled short");
   const [sceneElements, setSceneElements] = useState<SceneElement[]>([]);
@@ -249,7 +268,10 @@ function Studio() {
     () => (duration ? invertSegments(keepSegments, duration) : []),
     [keepSegments, duration],
   );
-  const groups = useMemo(() => groupWords(visibleWords, style.wordsPerGroup), [visibleWords, style.wordsPerGroup]);
+  const groups = useMemo(
+    () => groupWords(visibleWords, style.wordsPerGroup),
+    [visibleWords, style.wordsPerGroup],
+  );
   const activeGroup = useMemo(
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
     [groups, time],
@@ -259,7 +281,10 @@ function Studio() {
     () => motionAt(time, scenes, sceneElements),
     [time, scenes, sceneElements],
   );
-  const activeGroupIndex = useMemo(() => groups.findIndex((g) => time >= g.start && time <= g.end), [groups, time]);
+  const activeGroupIndex = useMemo(
+    () => groups.findIndex((g) => time >= g.start && time <= g.end),
+    [groups, time],
+  );
   const previewLineCount = useMemo(() => {
     if (!activeGroup) return 3;
     const manual = activeGroup.words.filter((w) => w.text === LINE_BREAK).length;
@@ -287,7 +312,6 @@ function Studio() {
       speechSegments: analysisSegmentsRef.current,
     };
   }, [visibleWords, groups, style, duration, transcribing, analyzing, segments]);
-
 
   // measure preview frame for font scaling
   useEffect(() => {
@@ -328,43 +352,46 @@ function Studio() {
   }, [sfx, setAudioEnabled, setAudioPack, setAudioVolume]);
 
   useEffect(() => {
-    if (!playing || !sfx.enabled || activeGroupIndex < 0 || activeGroupIndex === lastSoundGroupRef.current) return;
+    if (
+      !playing ||
+      !sfx.enabled ||
+      activeGroupIndex < 0 ||
+      activeGroupIndex === lastSoundGroupRef.current
+    )
+      return;
     lastSoundGroupRef.current = activeGroupIndex;
     void play(style.animation);
   }, [activeGroupIndex, play, playing, sfx.enabled, style.animation]);
 
-  const analyze = useCallback(
-    async (target: File, thresholdDb: number, minSil: number) => {
-      setAnalyzing(true);
-      try {
-        let buffer = audioBufferRef.current;
-        if (!buffer) {
-          buffer = await decodeAudioFromFile(target);
-          audioBufferRef.current = buffer;
-        }
-        const detected = detectSpeechSegments(buffer, {
-          ...defaultSilenceOptions,
-          thresholdDb,
-          minSilence: minSil,
-        });
-        const segs = smoothSpeechSegments(detected, buffer.duration);
-        if (!segs.length) throw new Error("ไม่พบช่วงเสียงพูด ลองลดค่าความไวเสียง");
-        analysisSegmentsRef.current = segs;
-        noiseFloorRef.current = estimateNoiseFloor(buffer);
-        setSegments(segs);
-        setDuration((d) => d || buffer!.duration);
-        toast.success(`พบช่วงพูด ${segs.length} ช่วง`);
-        play("success");
-        return { buffer, segs };
-      } catch (e) {
-        toast.error("อ่านเสียงจากไฟล์นี้ไม่ได้ ลองไฟล์ MP4/WebM ที่มีเสียง");
-        throw e;
-      } finally {
-        setAnalyzing(false);
+  const analyze = useCallback(async (target: File, thresholdDb: number, minSil: number) => {
+    setAnalyzing(true);
+    try {
+      let buffer = audioBufferRef.current;
+      if (!buffer) {
+        buffer = await decodeAudioFromFile(target);
+        audioBufferRef.current = buffer;
       }
-    },
-    [],
-  );
+      const detected = detectSpeechSegments(buffer, {
+        ...defaultSilenceOptions,
+        thresholdDb,
+        minSilence: minSil,
+      });
+      const segs = smoothSpeechSegments(detected, buffer.duration);
+      if (!segs.length) throw new Error("ไม่พบช่วงเสียงพูด ลองลดค่าความไวเสียง");
+      analysisSegmentsRef.current = segs;
+      noiseFloorRef.current = estimateNoiseFloor(buffer);
+      setSegments(segs);
+      setDuration((d) => d || buffer!.duration);
+      toast.success(`พบช่วงพูด ${segs.length} ช่วง`);
+      play("success");
+      return { buffer, segs };
+    } catch (e) {
+      toast.error("อ่านเสียงจากไฟล์นี้ไม่ได้ ลองไฟล์ MP4/WebM ที่มีเสียง");
+      throw e;
+    } finally {
+      setAnalyzing(false);
+    }
+  }, []);
 
   const onPickFile = async (f: File) => {
     audioBufferRef.current = null;
@@ -388,14 +415,16 @@ function Studio() {
       setProjectName(f.name.replace(/\.[^.]+$/, ""));
     }
     setTime(0);
-    if (preserveRestored) { analysisPromiseRef.current = null; return; }
+    if (preserveRestored) {
+      analysisPromiseRef.current = null;
+      return;
+    }
     const pending = analyze(f, threshold, minSilence).catch(() => undefined);
     analysisPromiseRef.current = pending;
     const r = await pending;
     if (analysisPromiseRef.current === pending) analysisPromiseRef.current = null;
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
-
 
   // ── บันทึกงานอัตโนมัติ (ช่วงที่ตัด + ซับที่แก้แล้ว) ก่อนปิดหน้า ──────────
   useEffect(() => {
@@ -421,7 +450,24 @@ function Studio() {
       projectName,
       sfx,
     }),
-    [file, duration, segments, words, transcript, glossary, lexRules, style, languages, threshold, minSilence, noiseReduction, dropped, sceneElements, projectName, sfx],
+    [
+      file,
+      duration,
+      segments,
+      words,
+      transcript,
+      glossary,
+      lexRules,
+      style,
+      languages,
+      threshold,
+      minSilence,
+      noiseReduction,
+      dropped,
+      sceneElements,
+      projectName,
+      sfx,
+    ],
   );
 
   useEffect(() => {
@@ -440,7 +486,10 @@ function Studio() {
 
   const restoreProject = () => {
     const p = loadProject();
-    if (!p) { toast.error("ไม่มีงานที่บันทึกไว้"); return; }
+    if (!p) {
+      toast.error("ไม่มีงานที่บันทึกไว้");
+      return;
+    }
     setSegments(p.segments);
     setWords(p.words);
     setTranscript(p.transcript);
@@ -464,7 +513,10 @@ function Studio() {
 
   // ── แปลซับเป็นภาษาอื่น (คงเวลาเดิม) ─────────────────────────────────────
   const translateCaptions = async (target: LangCode) => {
-    if (!words.length) { toast.error("ยังไม่มีซับให้แปล"); return; }
+    if (!words.length) {
+      toast.error("ยังไม่มีซับให้แปล");
+      return;
+    }
     setTranslating(true);
     const id = toast.loading("กำลังแปลซับ…");
     try {
@@ -495,10 +547,11 @@ function Studio() {
     }
   };
 
-
-
   const runTranscribe = async () => {
-    if (!file) { toast.error("อัปโหลดคลิปก่อน"); return; }
+    if (!file) {
+      toast.error("อัปโหลดคลิปก่อน");
+      return;
+    }
     setTranscribing(true);
     try {
       // ถ้าไฟล์ยังวิเคราะห์ไม่เสร็จ ต้องรอให้เสร็จก่อน ไม่งั้นจะถอดเสียงจาก
@@ -524,7 +577,8 @@ function Studio() {
         gap: lang === "lo" ? 0.8 : 0.55,
         pad: lang === "lo" ? 0.25 : 0.12,
       });
-      const chunks = lang === "lo" ? addChunkOverlap(baseChunks, buffer.duration, 0.38) : baseChunks;
+      const chunks =
+        lang === "lo" ? addChunkOverlap(baseChunks, buffer.duration, 0.38) : baseChunks;
       const allWords: Word[] = [];
       const texts: string[] = [];
       // เก็บเวลาคำที่วัดได้จริง (Scribe) บนไทม์ไลน์ต้นฉบับ ไว้ใช้ตอนแก้ข้อความ
@@ -540,21 +594,47 @@ function Studio() {
         for (let attempt = 0; attempt < attempts; attempt++) {
           try {
             const res = await transcribe({
-              data: { audioBase64: b64, language: lang, context: texts.join(" ").slice(-600), glossary: terms },
+              data: {
+                audioBase64: b64,
+                language: lang,
+                context: texts.join(" ").slice(-600),
+                glossary: terms,
+              },
             });
             const text = (res.text ?? "").trim();
-            if (!text) { lastError = new Error("empty"); continue; }
+            if (!text) {
+              lastError = new Error("empty");
+              continue;
+            }
             const chunkDur = chunkSegs.reduce((n, s) => n + (s.end - s.start), 0);
             for (const word of res.words ?? []) {
               const start = mapConcatTimeToTimeline(word.start, chunkSegs);
-              measured.push({ text: word.text, start, end: Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, chunkSegs)) });
+              measured.push({
+                text: word.text,
+                start,
+                end: Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, chunkSegs)),
+              });
             }
             const timed = alignTextToTimingOnTimeline(text, res.words ?? [], chunkSegs);
-            const aligned = (timed ?? forcedAlignWords(buffer!, chunkSegs, text, chunkDur)).map((word) => {
-              const acoustic = word.confidence ?? 0.5;
-              const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
-              return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
-            });
+            const aligned = (timed ?? forcedAlignWords(buffer!, chunkSegs, text, chunkDur)).map(
+              (word) => {
+                const acoustic = word.confidence ?? 0.5;
+                const confidence = Math.max(
+                  0.15,
+                  Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38),
+                );
+                return {
+                  ...word,
+                  confidence,
+                  confidenceLabel:
+                    confidence >= 0.78
+                      ? ("high" as const)
+                      : confidence >= 0.52
+                        ? ("review" as const)
+                        : ("low" as const),
+                };
+              },
+            );
             return { skipped: false as const, text, aligned };
           } catch (error) {
             lastError = error;
@@ -569,7 +649,10 @@ function Studio() {
           const chunkSegs = chunks[i]!;
           const out = await transcribeChunk(chunkSegs, 2);
           if ("skipped" in out && out.skipped) continue;
-          if ("failed" in out) { missing.push(chunkSegs); continue; }
+          if ("failed" in out) {
+            missing.push(chunkSegs);
+            continue;
+          }
           texts.push(out.text);
           const merged = mergeAlignedChunks(allWords, out.aligned);
           allWords.splice(0, allWords.length, ...merged);
@@ -583,7 +666,10 @@ function Studio() {
         for (const chunkSegs of missing) {
           const out = await transcribeChunk(chunkSegs, 1);
           if ("skipped" in out && out.skipped) continue;
-          if ("failed" in out) { stillMissing.push(chunkSegs); continue; }
+          if ("failed" in out) {
+            stillMissing.push(chunkSegs);
+            continue;
+          }
           texts.push(out.text);
           allWords.push(...out.aligned);
           allWords.sort((a, b) => a.start - b.start);
@@ -591,28 +677,36 @@ function Studio() {
         }
         if (stillMissing.length) {
           const ranges = stillMissing
-            .map((segs2) => `${(segs2[0]?.start ?? 0).toFixed(1)}–${(segs2[segs2.length - 1]?.end ?? 0).toFixed(1)} วิ`)
+            .map(
+              (segs2) =>
+                `${(segs2[0]?.start ?? 0).toFixed(1)}–${(segs2[segs2.length - 1]?.end ?? 0).toFixed(1)} วิ`,
+            )
             .join(", ");
-          toast.error(`ถอดเสียงไม่สำเร็จ ${stillMissing.length} ช่วง (${ranges}) — กด "สร้างซับด้วย AI" อีกครั้งเพื่อลองช่วงที่ขาด`);
+          toast.error(
+            `ถอดเสียงไม่สำเร็จ ${stillMissing.length} ช่วง (${ranges}) — กด "สร้างซับด้วย AI" อีกครั้งเพื่อลองช่วงที่ขาด`,
+          );
         }
       } else {
-
-
-
         const wav = encodeWav16k(buffer);
         if (wav.size < 4096) throw new Error("ไฟล์เสียงสั้นเกินไป");
         const b64 = await blobToBase64(wav);
-        const res = await transcribe({ data: { audioBase64: b64, language: lang, glossary: parseGlossaryTerms(glossary) } });
+        const res = await transcribe({
+          data: { audioBase64: b64, language: lang, glossary: parseGlossaryTerms(glossary) },
+        });
         const text = (res.text ?? "").trim();
         if (text) {
           texts.push(text);
           for (const word of res.words ?? []) {
             const start = mapConcatTimeToTimeline(word.start, segs);
-            measured.push({ text: word.text, start, end: Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, segs)) });
+            measured.push({
+              text: word.text,
+              start,
+              end: Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, segs)),
+            });
           }
           allWords.push(
-            ...(alignTextToTimingOnTimeline(text, res.words ?? [], segs)
-              ?? forcedAlignWords(buffer!, segs, text, buffer!.duration)),
+            ...(alignTextToTimingOnTimeline(text, res.words ?? [], segs) ??
+              forcedAlignWords(buffer!, segs, text, buffer!.duration)),
           );
         }
       }
@@ -624,7 +718,9 @@ function Studio() {
       // งาน A: ใช้เวลาคำจริงขยายขอบช่วงพูด ไม่ให้ energy gate ตัดพยางค์ต้น/ท้ายขาด
 
       const timingForCuts = measured.length ? measured : allWords;
-      const reconciled = reconcileSegmentsWithWords(segs, timingForCuts, { duration: buffer.duration });
+      const reconciled = reconcileSegmentsWithWords(segs, timingForCuts, {
+        duration: buffer.duration,
+      });
       if (reconciled.length) setSegments(reconciled);
       const ruled = applyRulesToWords(allWords, lexRules);
       if (ruled.changed) setLexRules(ruled.rules);
@@ -648,38 +744,74 @@ function Studio() {
     video.currentTime = Math.max(0, start - 0.18);
     void video.play();
     setPlaying(true);
-    window.setTimeout(() => {
-      if (video.currentTime <= end + 0.5) {
-        video.pause();
-        setPlaying(false);
-      }
-    }, Math.max(650, (end - start + 0.7) * 1000));
+    window.setTimeout(
+      () => {
+        if (video.currentTime <= end + 0.5) {
+          video.pause();
+          setPlaying(false);
+        }
+      },
+      Math.max(650, (end - start + 0.7) * 1000),
+    );
   };
 
   const retrySyncIssues = async (issues: SyncIssue[]) => {
-    if (!file || !audioBufferRef.current) { toast.error("อัปโหลดคลิปก่อนตรวจซิงก์"); return; }
-    const lowConfidence = words.flatMap((word, index) => word.confidenceLabel === "low"
-      ? [{ index, start: word.start, end: word.end, reason: "ความมั่นใจต่ำ" }]
-      : []);
-    if (!issues.length && !lowConfidence.length) { toast.success("เวลาซับเรียงต่อเนื่องดี ไม่พบจุดผิดปกติ"); return; }
+    if (!file || !audioBufferRef.current) {
+      toast.error("อัปโหลดคลิปก่อนตรวจซิงก์");
+      return;
+    }
+    const lowConfidence = words.flatMap((word, index) =>
+      word.confidenceLabel === "low"
+        ? [{ index, start: word.start, end: word.end, reason: "ความมั่นใจต่ำ" }]
+        : [],
+    );
+    if (!issues.length && !lowConfidence.length) {
+      toast.success("เวลาซับเรียงต่อเนื่องดี ไม่พบจุดผิดปกติ");
+      return;
+    }
     setRetryingSync(true);
-    const id = toast.loading(`กำลังลองใหม่ ${new Set([...issues, ...lowConfidence].map((issue) => issue.index)).size} ช่วง…`);
+    const id = toast.loading(
+      `กำลังลองใหม่ ${new Set([...issues, ...lowConfidence].map((issue) => issue.index)).size} ช่วง…`,
+    );
     try {
       let next = [...words];
-      const queue = [...issues, ...lowConfidence].filter((issue, index, all) => all.findIndex((candidate) => candidate.index === issue.index) === index);
+      const queue = [...issues, ...lowConfidence].filter(
+        (issue, index, all) =>
+          all.findIndex((candidate) => candidate.index === issue.index) === index,
+      );
       for (const issue of queue.slice(0, 12)) {
         const old = next[issue.index];
         if (!old) continue;
-        const region = { start: Math.max(0, old.start - 0.45), end: Math.min(duration, old.end + 0.45) };
+        const region = {
+          start: Math.max(0, old.start - 0.45),
+          end: Math.min(duration, old.end + 0.45),
+        };
         const wav = encodeSegmentsWav16k(audioBufferRef.current, [region]);
         if (wav.size < 2048) continue;
-        const localContext = next.slice(Math.max(0, issue.index - 5), issue.index).map((word) => word.text).join(" ");
+        const localContext = next
+          .slice(Math.max(0, issue.index - 5), issue.index)
+          .map((word) => word.text)
+          .join(" ");
         const terms = parseGlossaryTerms(glossary);
-        const res = await transcribe({ data: { audioBase64: await blobToBase64(wav), language: languages[0] ?? "th", context: localContext, glossary: terms } });
+        const res = await transcribe({
+          data: {
+            audioBase64: await blobToBase64(wav),
+            language: languages[0] ?? "th",
+            context: localContext,
+            glossary: terms,
+          },
+        });
         const replacementText = res.text ?? old.text;
-        const replacements = alignTextToTimingOnTimeline(replacementText, res.words ?? [], [region])
-          ?? forcedAlignWords(audioBufferRef.current, [region], replacementText, region.end - region.start);
-        if (replacements.length) next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
+        const replacements =
+          alignTextToTimingOnTimeline(replacementText, res.words ?? [], [region]) ??
+          forcedAlignWords(
+            audioBufferRef.current,
+            [region],
+            replacementText,
+            region.end - region.start,
+          );
+        if (replacements.length)
+          next = [...next.slice(0, issue.index), ...replacements, ...next.slice(issue.index + 1)];
       }
       next.sort((a, b) => a.start - b.start);
       setWords(next);
@@ -695,17 +827,31 @@ function Studio() {
   /** ถอดเสียงใหม่เฉพาะช่วงเวลาที่เลือก แทนการถอดใหม่ทั้งไฟล์ */
   const retranscribeRange = async (start: number, end: number) => {
     const buffer = audioBufferRef.current;
-    if (!buffer) { toast.error("อัปโหลดคลิปก่อนถอดเสียงใหม่"); return; }
-    const region = { start: Math.max(0, start - 0.2), end: Math.min(duration || buffer.duration, end + 0.2) };
-    if (region.end - region.start < 0.25) { toast.error("ช่วงสั้นเกินไป"); return; }
+    if (!buffer) {
+      toast.error("อัปโหลดคลิปก่อนถอดเสียงใหม่");
+      return;
+    }
+    const region = {
+      start: Math.max(0, start - 0.2),
+      end: Math.min(duration || buffer.duration, end + 0.2),
+    };
+    if (region.end - region.start < 0.25) {
+      toast.error("ช่วงสั้นเกินไป");
+      return;
+    }
     setRetryingSync(true);
-    const id = toast.loading(`กำลังถอดเสียงใหม่ ${region.start.toFixed(1)}s – ${region.end.toFixed(1)}s…`);
+    const id = toast.loading(
+      `กำลังถอดเสียงใหม่ ${region.start.toFixed(1)}s – ${region.end.toFixed(1)}s…`,
+    );
     try {
       const wav = encodeSegmentsWav16k(buffer, [region], false);
       if (wav.size < 2048) throw new Error("เสียงในช่วงนี้น้อยเกินไป");
       const before = words.filter((word) => word.end <= region.start);
       const after = words.filter((word) => word.start >= region.end);
-      const context = before.slice(-8).map((word) => word.text).join(" ");
+      const context = before
+        .slice(-8)
+        .map((word) => word.text)
+        .join(" ");
       const res = await transcribe({
         data: {
           audioBase64: await blobToBase64(wav),
@@ -717,12 +863,26 @@ function Studio() {
       const text = (res.text ?? "").trim();
       if (!text) throw new Error("ไม่พบคำพูดในช่วงนี้");
       const timed = alignTextToTimingOnTimeline(text, res.words ?? [], [region]);
-      const aligned = (timed ?? forcedAlignWords(buffer, [region], text, region.end - region.start)).map((word) => {
+      const aligned = (
+        timed ?? forcedAlignWords(buffer, [region], text, region.end - region.start)
+      ).map((word) => {
         const acoustic = word.confidence ?? 0.5;
         const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
-        return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
+        return {
+          ...word,
+          confidence,
+          confidenceLabel:
+            confidence >= 0.78
+              ? ("high" as const)
+              : confidence >= 0.52
+                ? ("review" as const)
+                : ("low" as const),
+        };
       });
-      const ruled = applyRulesToWords([...before, ...aligned, ...after].sort((a, b) => a.start - b.start), lexRules);
+      const ruled = applyRulesToWords(
+        [...before, ...aligned, ...after].sort((a, b) => a.start - b.start),
+        lexRules,
+      );
       if (ruled.changed) setLexRules(ruled.rules);
       setWords(ruled.words);
       setTranscript(wordsToTranscript(ruled.words));
@@ -738,13 +898,19 @@ function Studio() {
   const retranscribeWeakSpots = async () => {
     const report = buildAccuracyReport(words, segments, duration, languages[0] ?? "th");
     const weak = report.spans.filter((span) => span.low > 0 || span.review > 1).slice(0, 8);
-    if (!weak.length) { toast.success("ไม่พบช่วงที่ต้องถอดใหม่"); return; }
+    if (!weak.length) {
+      toast.success("ไม่พบช่วงที่ต้องถอดใหม่");
+      return;
+    }
     for (const span of weak) await retranscribeRange(span.start, span.end);
     toast.success(`ถอดใหม่ ${weak.length} ช่วงที่อ่อนแล้ว`);
   };
 
   /** ตัวช่วยจัดการงานเรนเดอร์: มีสถานะ % และปุ่มยกเลิกจริง */
-  const runJob = async (label: string, work: (signal: AbortSignal, onProgress: (r: number) => void) => Promise<void>) => {
+  const runJob = async (
+    label: string,
+    work: (signal: AbortSignal, onProgress: (r: number) => void) => Promise<void>,
+  ) => {
     const controller = new AbortController();
     jobAbort.current = controller;
     setRendering(true);
@@ -753,7 +919,10 @@ function Studio() {
       await work(controller.signal, (r) => setJob({ label, ratio: Math.max(0, Math.min(1, r)) }));
       if (!controller.signal.aborted) play("success");
     } catch (error) {
-      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+      if (
+        controller.signal.aborted ||
+        (error instanceof DOMException && error.name === "AbortError")
+      ) {
         toast.message("ยกเลิกงานแล้ว");
       } else {
         toast.error(error instanceof Error ? error.message : "ทำงานไม่สำเร็จ");
@@ -784,7 +953,10 @@ function Studio() {
   const baseName = () => (file?.name ?? "clip").replace(/\.[^.]+$/, "");
 
   const exportTrimmedVideo = () => {
-    if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    if (!videoUrl || !keepSegments.length) {
+      toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน");
+      return;
+    }
     void runJob("ตัดช่วงเงียบและเรนเดอร์วิดีโอ", async (signal, onProgress) => {
       const blob = await exportTrimmedWebm(videoUrl, [...outputSegments], onProgress, {
         noiseReduction,
@@ -800,10 +972,15 @@ function Studio() {
 
   /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
   const exportFinalVideo = () => {
-    if (!videoUrl || !keepSegments.length) { toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน"); return; }
+    if (!videoUrl || !keepSegments.length) {
+      toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน");
+      return;
+    }
     const webCodecs = supportsWebCodecsExport();
     if (!webCodecs) {
-      toast.warning("เบราว์เซอร์นี้ไม่รองรับ WebCodecs กำลังใช้โหมดสำรอง (อาจกระตุก) แนะนำ Chrome หรือ Edge");
+      toast.warning(
+        "เบราว์เซอร์นี้ไม่รองรับ WebCodecs กำลังใช้โหมดสำรอง (อาจกระตุก) แนะนำ Chrome หรือ Edge",
+      );
     } else if (resolution === "4k") {
       toast.info("4K จะใช้เวลาเรนเดอร์นานกว่ามาก แต่ไฟล์ที่ได้จะเดินเฟรมครบ ไม่กระตุก");
     }
@@ -821,7 +998,14 @@ function Studio() {
       const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
 
       if (webCodecs) {
-        const result = await exportWebCodecsVideo(videoUrl, [...outputSegments], [...groups], style, onProgress, shared);
+        const result = await exportWebCodecsVideo(
+          videoUrl,
+          [...outputSegments],
+          [...groups],
+          style,
+          onProgress,
+          shared,
+        );
         if (signal.aborted) return;
         console.info("[export-webcodecs] completed", result);
         saveBlob(result.blob, `${baseName()}-final.${result.ext}`);
@@ -831,7 +1015,19 @@ function Studio() {
         return;
       }
 
-      const { blob, ext, width, height, fps, plannedFps, fpsAdapted, frames, chunks, expectedDuration, segments: exportDiagnostics } = await exportBurnedVideo(
+      const {
+        blob,
+        ext,
+        width,
+        height,
+        fps,
+        plannedFps,
+        fpsAdapted,
+        frames,
+        chunks,
+        expectedDuration,
+        segments: exportDiagnostics,
+      } = await exportBurnedVideo(
         videoUrl,
         [...outputSegments],
         [...groups],
@@ -848,29 +1044,42 @@ function Studio() {
         plannedFps,
         segments: exportDiagnostics,
       });
-      const durationDelta = Math.abs(exportDiagnostics.reduce((sum, segment) => sum + segment.played, 0) - expectedDuration);
+      const durationDelta = Math.abs(
+        exportDiagnostics.reduce((sum, segment) => sum + segment.played, 0) - expectedDuration,
+      );
       if (durationDelta > Math.max(0.12, 2 / fps)) {
-        throw new Error(`วิดีโอเล่นช่วงที่เลือกไม่ครบ (คลาดเคลื่อน ${durationDelta.toFixed(2)} วินาที)`);
+        throw new Error(
+          `วิดีโอเล่นช่วงที่เลือกไม่ครบ (คลาดเคลื่อน ${durationDelta.toFixed(2)} วินาที)`,
+        );
       }
       saveBlob(blob, `${baseName()}-final.${ext}`);
       const realFps = seconds > 0 ? frames / seconds : fps;
       toast.success(`ได้วิดีโอพร้อมโพสต์แล้ว ${width}x${height} · ~${realFps.toFixed(0)}fps`);
       if (fpsAdapted) {
-        toast.warning(`เครื่องนี้เรนเดอร์ ${width}x${height} ได้ไม่ถึง ${plannedFps}fps จึงปรับเป็น ${fps}fps อัตโนมัติ`);
+        toast.warning(
+          `เครื่องนี้เรนเดอร์ ${width}x${height} ได้ไม่ถึง ${plannedFps}fps จึงปรับเป็น ${fps}fps อัตโนมัติ`,
+        );
       }
     });
   };
 
-
   const exportCapCutPackage = () => {
-    if (!videoUrl || !keepSegments.length || !groups.length) { toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน"); return; }
+    if (!videoUrl || !keepSegments.length || !groups.length) {
+      toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน");
+      return;
+    }
     void runJob("สร้าง CapCut Package", async (signal, onProgress) => {
-      const video = await exportTrimmedWebm(videoUrl, [...outputSegments], (r) => onProgress(r * 0.9), {
-        noiseReduction,
-        noiseFloor: noiseFloorRef.current,
-        smoothCuts: true,
-        signal,
-      });
+      const video = await exportTrimmedWebm(
+        videoUrl,
+        [...outputSegments],
+        (r) => onProgress(r * 0.9),
+        {
+          noiseReduction,
+          noiseFloor: noiseFloorRef.current,
+          smoothCuts: true,
+          signal,
+        },
+      );
       if (signal.aborted) return;
       const bundle = await buildCapCutPackage({
         baseName: baseName(),
@@ -886,13 +1095,15 @@ function Studio() {
     });
   };
 
-
   const applyTranscriptEdit = () => {
-    if (!transcript.trim()) { toast.error("ยังไม่มีข้อความ"); return; }
+    if (!transcript.trim()) {
+      toast.error("ยังไม่มีข้อความ");
+      return;
+    }
     const timed = alignTextToTiming(transcript, measuredTimingRef.current);
     setWords(
-      timed
-        ?? (audioBufferRef.current
+      timed ??
+        (audioBufferRef.current
           ? forcedAlignWords(audioBufferRef.current, segments, transcript, duration)
           : alignWordsToSegments(transcript, segments, duration)),
     );
@@ -910,7 +1121,10 @@ function Studio() {
     const first = words.findIndex((w) => w === activeGroup.words[0]);
     if (first < 0) return;
     const last = first + activeGroup.words.length;
-    const rows = text.split("\n").map((r) => r.trim()).filter(Boolean);
+    const rows = text
+      .split("\n")
+      .map((r) => r.trim())
+      .filter(Boolean);
     if (!rows.length) return;
     const span = Math.max(0.12, activeGroup.end - activeGroup.start);
     let replacement: Word[];
@@ -922,17 +1136,23 @@ function Studio() {
       replacement = [];
       let cursor = activeGroup.start;
       rows.forEach((row, i) => {
-        const rowEnd = i === rows.length - 1 ? activeGroup.end : cursor + (row.length / totalChars) * span;
+        const rowEnd =
+          i === rows.length - 1 ? activeGroup.end : cursor + (row.length / totalChars) * span;
         if (i > 0) replacement.push({ text: LINE_BREAK, start: cursor, end: cursor });
-        replacement.push(...alignWordsToSegments(row, [{ start: cursor, end: rowEnd }], rowEnd - cursor));
+        replacement.push(
+          ...alignWordsToSegments(row, [{ start: cursor, end: rowEnd }], rowEnd - cursor),
+        );
         cursor = rowEnd;
       });
     }
     if (!replacement.length) return;
     updateWords([...words.slice(0, first), ...replacement, ...words.slice(last)]);
-    toast.success(autoResync && segments.length ? "แก้ข้อความและรีซิงก์เวลาให้ตรงเสียงพูดแล้ว" : "อัปเดตข้อความบนพรีวิวแล้ว");
+    toast.success(
+      autoResync && segments.length
+        ? "แก้ข้อความและรีซิงก์เวลาให้ตรงเสียงพูดแล้ว"
+        : "อัปเดตข้อความบนพรีวิวแล้ว",
+    );
   };
-
 
   const togglePlay = () => {
     const v = videoRef.current;
@@ -952,19 +1172,28 @@ function Studio() {
   );
 
   const exportSrt = () => {
-    if (!groups.length) { toast.error("ยังไม่มีซับไตเติล"); return; }
+    if (!groups.length) {
+      toast.error("ยังไม่มีซับไตเติล");
+      return;
+    }
     download(`${baseName()}-captions.srt`, buildSrt(groups, remap), "application/x-subrip");
     play("pop");
     toast.success("ดาวน์โหลด .srt แล้ว — ลากเข้า CapCut ได้เลย");
   };
   const exportEdl = () => {
-    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    if (!keepSegments.length) {
+      toast.error("ยังไม่ได้วิเคราะห์เสียง");
+      return;
+    }
     download(`${file?.name ?? "clip"}.edl`, buildEdl(outputSegments, file?.name ?? "clip"));
     play("pop");
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
   const exportJson = () => {
-    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    if (!keepSegments.length) {
+      toast.error("ยังไม่ได้วิเคราะห์เสียง");
+      return;
+    }
     download(
       `${file?.name ?? "clip"}.capcut.json`,
       buildCutListJson({
@@ -979,7 +1208,10 @@ function Studio() {
     toast.success("ดาวน์โหลดไฟล์ cut list แล้ว");
   };
   const exportXml = () => {
-    if (!keepSegments.length) { toast.error("ยังไม่ได้วิเคราะห์เสียง"); return; }
+    if (!keepSegments.length) {
+      toast.error("ยังไม่ได้วิเคราะห์เสียง");
+      return;
+    }
     const v = videoRef.current;
     download(
       `${baseName()}-timeline.xml`,
@@ -997,7 +1229,10 @@ function Studio() {
 
   const seekTo = (t: number) => {
     const v = videoRef.current;
-    if (v) { v.currentTime = Math.max(0, t); setTime(v.currentTime); }
+    if (v) {
+      v.currentTime = Math.max(0, t);
+      setTime(v.currentTime);
+    }
   };
 
   const saveNow = () => {
@@ -1007,7 +1242,11 @@ function Studio() {
   };
 
   const toggleSceneElement = (id: string) => {
-    setSceneElements((current) => current.map((element) => element.id === id ? { ...element, enabled: !element.enabled } : element));
+    setSceneElements((current) =>
+      current.map((element) =>
+        element.id === id ? { ...element, enabled: !element.enabled } : element,
+      ),
+    );
   };
 
   const updateElementText = (id: string, text: string) => {
@@ -1022,23 +1261,31 @@ function Studio() {
     setSceneElements((current) => updateSceneElementFormat(current, id, patch));
   };
 
-
   const addElement = (sceneId: string, kind: SceneElementKind) => {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
 
-
   return (
     <main className="studio-shell min-h-screen overflow-hidden bg-background text-foreground">
-      <div className="orbit-decoration pointer-events-none absolute -right-32 top-24 -z-10 h-72 w-[32rem] opacity-60" aria-hidden="true" />
+      <div
+        className="orbit-decoration pointer-events-none absolute -right-32 top-24 -z-10 h-72 w-[32rem] opacity-60"
+        aria-hidden="true"
+      />
       <header className="studio-header sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-4">
           <OneRunLogo className="shrink-0" />
           <div className="hidden h-8 w-px bg-border sm:block" />
           <div className="min-w-[140px] max-w-[280px] flex-1">
             <h1 className="sr-only">OneRunAI Short Video Editor</h1>
-            <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} aria-label="ชื่อโปรเจกต์" className="h-8 border-transparent bg-transparent px-1 text-sm font-semibold shadow-none focus-visible:border-input sm:text-base" />
-            <p className="hidden px-1 text-xs text-muted-foreground sm:block">AI short video workspace</p>
+            <Input
+              value={projectName}
+              onChange={(event) => setProjectName(event.target.value)}
+              aria-label="ชื่อโปรเจกต์"
+              className="h-8 border-transparent bg-transparent px-1 text-sm font-semibold shadow-none focus-visible:border-input sm:text-base"
+            />
+            <p className="hidden px-1 text-xs text-muted-foreground sm:block">
+              AI short video workspace
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1053,13 +1300,23 @@ function Studio() {
               }}
             />
           </span>
-          <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="hidden sm:inline-flex">
+          <Button
+            variant="secondary"
+            onClick={() => fileInputRef.current?.click()}
+            className="hidden sm:inline-flex"
+          >
             <Upload className="mr-2 h-4 w-4" /> อัปโหลดคลิป
           </Button>
           <Button variant="secondary" onClick={saveNow} className="hidden md:inline-flex">
             <Save className="mr-2 h-4 w-4" /> บันทึก
           </Button>
-          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label={darkMode ? "ใช้โหมดสว่าง" : "ใช้โหมดมืด"} title={darkMode ? "ใช้โหมดสว่าง" : "ใช้โหมดมืด"}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={darkMode ? "ใช้โหมดสว่าง" : "ใช้โหมดมืด"}
+            title={darkMode ? "ใช้โหมดสว่าง" : "ใช้โหมดมืด"}
+          >
             {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
           <Button onClick={() => setTab("export")}>
@@ -1078,7 +1335,10 @@ function Studio() {
                 <span>{Math.round((job.ratio ?? 0) * 100)}%</span>
               </div>
               <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                <div className="h-full bg-primary transition-all" style={{ width: `${(job.ratio ?? 0) * 100}%` }} />
+                <div
+                  className="h-full bg-primary transition-all"
+                  style={{ width: `${(job.ratio ?? 0) * 100}%` }}
+                />
               </div>
             </div>
             <Button size="sm" variant="ghost" onClick={cancelJob}>
@@ -1087,7 +1347,6 @@ function Studio() {
           </div>
         </div>
       )}
-
 
       <div className="mx-auto grid min-w-0 max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
         {/* Left: controls */}
@@ -1107,10 +1366,15 @@ function Studio() {
             ).map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => { setTab(key); play("hover"); }}
+                onClick={() => {
+                  setTab(key);
+                  play("hover");
+                }}
                 className={cn(
                   "flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  tab === key ? "bg-card text-foreground shadow-primary" : "text-muted-foreground hover:text-foreground",
+                  tab === key
+                    ? "bg-card text-foreground shadow-primary"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {label}
@@ -1126,7 +1390,9 @@ function Studio() {
                   onClick={() => setTab("tools")}
                   className="h-24 flex-col gap-2 border-primary/50 bg-primary/5 px-2 text-primary shadow-primary sm:h-28"
                 >
-                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/15"><Captions className="h-5 w-5" /></span>
+                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/15">
+                    <Captions className="h-5 w-5" />
+                  </span>
                   <span className="text-xs font-semibold text-foreground sm:text-sm">คำบรรยาย</span>
                 </Button>
                 <Button
@@ -1134,7 +1400,9 @@ function Studio() {
                   onClick={() => setTab("scenes")}
                   className="h-24 flex-col gap-2 border-border bg-card px-2 hover:border-primary/50 hover:bg-primary/5 sm:h-28"
                 >
-                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary"><Clapperboard className="h-5 w-5" /></span>
+                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <Clapperboard className="h-5 w-5" />
+                  </span>
                   <span className="text-xs font-semibold sm:text-sm">แก้ซีน</span>
                 </Button>
                 <Button
@@ -1142,41 +1410,72 @@ function Studio() {
                   onClick={() => setTab("export")}
                   className="h-24 flex-col gap-2 border-border bg-card px-2 hover:border-primary/50 hover:bg-primary/5 sm:h-28"
                 >
-                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary"><Scissors className="h-5 w-5" /></span>
+                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary">
+                    <Scissors className="h-5 w-5" />
+                  </span>
                   <span className="text-xs font-semibold sm:text-sm">ตัดวิดีโอ</span>
                 </Button>
               </nav>
 
               <section aria-labelledby="ai-tools-heading">
                 <div className="mb-1">
-                  <h2 id="ai-tools-heading" className="text-base font-bold text-foreground">เครื่องมือ AI</h2>
+                  <h2 id="ai-tools-heading" className="text-base font-bold text-foreground">
+                    เครื่องมือ AI
+                  </h2>
                 </div>
 
                 <div className="divide-y divide-border">
                   <div className="py-4">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
                       <div className="flex min-w-0 items-start gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Captions className="h-5 w-5" /></span>
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                          <Captions className="h-5 w-5" />
+                        </span>
                         <div className="min-w-0">
                           <p className="text-sm font-semibold">AI Captions</p>
-                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ</p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                            ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ
+                          </p>
                         </div>
                       </div>
                       <div className="col-span-2 row-start-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
-                        <Button size="sm" onClick={runTranscribe} disabled={transcribing || !file || analyzing}>
-                          {transcribing || analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                        <Button
+                          size="sm"
+                          onClick={runTranscribe}
+                          disabled={transcribing || !file || analyzing}
+                        >
+                          {transcribing || analyzing ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-4 w-4" />
+                          )}
                           สร้างซับด้วย AI
                         </Button>
-                        {analyzing ? <span className="text-xs text-muted-foreground">กำลังเตรียมไฟล์เสียง…</span> : null}
+                        {analyzing ? (
+                          <span className="text-xs text-muted-foreground">
+                            กำลังเตรียมไฟล์เสียง…
+                          </span>
+                        ) : null}
 
-                        <Button size="sm" variant="outline" onClick={() => setTab("styles")}>สไตล์</Button>
-                        <Button size="sm" variant="ghost" onClick={() => setTab("text")}>แก้ไข</Button>
+                        <Button size="sm" variant="outline" onClick={() => setTab("styles")}>
+                          สไตล์
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setTab("text")}>
+                          แก้ไข
+                        </Button>
                       </div>
-                      <Switch className="col-start-2 row-start-1 sm:col-start-3" checked={captionsOn} onCheckedChange={setCaptionsOn} aria-label="เปิดคำบรรยาย" />
+                      <Switch
+                        className="col-start-2 row-start-1 sm:col-start-3"
+                        checked={captionsOn}
+                        onCheckedChange={setCaptionsOn}
+                        aria-label="เปิดคำบรรยาย"
+                      />
                     </div>
 
                     <div className="mt-4 ml-0 border-l-2 border-primary/20 pl-3 sm:ml-12">
-                      <Label className="text-[11px] uppercase text-muted-foreground">ภาษาต้นฉบับในวิดีโอ</Label>
+                      <Label className="text-[11px] uppercase text-muted-foreground">
+                        ภาษาต้นฉบับในวิดีโอ
+                      </Label>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {LANGUAGES.map((language) => (
                           <Button
@@ -1184,7 +1483,10 @@ function Studio() {
                             size="sm"
                             variant={languages[0] === language.code ? "default" : "outline"}
                             onClick={() => {
-                              setLanguages((current) => [language.code, ...current.filter((code) => code !== language.code)]);
+                              setLanguages((current) => [
+                                language.code,
+                                ...current.filter((code) => code !== language.code),
+                              ]);
                               setStyle((current) => ({ ...current, fontFamily: language.font }));
                             }}
                           >
@@ -1200,8 +1502,15 @@ function Studio() {
                             </AccordionTrigger>
                             <AccordionContent>
                               <div className="max-w-xl space-y-1.5">
-                                <Label className="text-[11px] uppercase text-muted-foreground">ຄຳສັບ / ຊື່ເຉພາະພາສາລາວ</Label>
-                                <Textarea value={glossary} onChange={(event) => setGlossary(event.target.value)} rows={3} placeholder="ໃສ່ຊື່ຄົນ ສະຖານທີ່ ແບຣນ ໌ ຫຼືຄຳເຉພາະ ຄັ່ນດ້ວຍ comma ຫຼືຂຶ້ນບັນທັດໃຫມ່" />
+                                <Label className="text-[11px] uppercase text-muted-foreground">
+                                  ຄຳສັບ / ຊື່ເຉພາະພາສາລາວ
+                                </Label>
+                                <Textarea
+                                  value={glossary}
+                                  onChange={(event) => setGlossary(event.target.value)}
+                                  rows={3}
+                                  placeholder="ໃສ່ຊື່ຄົນ ສະຖານທີ່ ແບຣນ ໌ ຫຼືຄຳເຉພາະ ຄັ່ນດ້ວຍ comma ຫຼືຂຶ້ນບັນທັດໃຫມ່"
+                                />
                               </div>
                             </AccordionContent>
                           </AccordionItem>
@@ -1212,132 +1521,284 @@ function Studio() {
 
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
                     <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Type className="h-5 w-5" /></span>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                        <Type className="h-5 w-5" />
+                      </span>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold">Viral Text</p>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มข้อความดึงดูดสายตาในแต่ละซีน</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          เพิ่มข้อความดึงดูดสายตาในแต่ละซีน
+                        </p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>แก้ไข</Button>
+                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>
+                      แก้ไข
+                    </Button>
                   </div>
 
                   <div className="py-4">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3">
                       <div className="flex min-w-0 items-start gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><AudioLines className="h-5 w-5" /></span>
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                          <AudioLines className="h-5 w-5" />
+                        </span>
                         <div className="min-w-0">
                           <p className="text-sm font-semibold">เสียงประกอบ</p>
-                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มจังหวะเสียงให้ข้อความและการเปลี่ยนซีน</p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                            เพิ่มจังหวะเสียงให้ข้อความและการเปลี่ยนซีน
+                          </p>
                         </div>
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => setTab("audio")}>แก้ไข</Button>
-                      <Switch checked={sfx.enabled} onCheckedChange={(enabled) => setSfx((current) => ({ ...current, enabled }))} aria-label="เปิดเสียงประกอบ" />
+                      <Button size="sm" variant="outline" onClick={() => setTab("audio")}>
+                        แก้ไข
+                      </Button>
+                      <Switch
+                        checked={sfx.enabled}
+                        onCheckedChange={(enabled) =>
+                          setSfx((current) => ({ ...current, enabled }))
+                        }
+                        aria-label="เปิดเสียงประกอบ"
+                      />
                     </div>
                     <div className="mt-4 ml-0 space-y-2 border-l-2 border-primary/20 pl-3 sm:ml-12">
-                      <Label className="flex justify-between text-xs text-muted-foreground"><span>ระดับเสียงประกอบ</span><span className="font-mono text-foreground">{Math.round(sfx.volume * 100)}%</span></Label>
-                      <Slider value={[sfx.volume * 100]} min={0} max={100} step={5} onValueChange={([volume]) => setSfx((current) => ({ ...current, volume: (volume ?? 35) / 100 }))} />
+                      <Label className="flex justify-between text-xs text-muted-foreground">
+                        <span>ระดับเสียงประกอบ</span>
+                        <span className="font-mono text-foreground">
+                          {Math.round(sfx.volume * 100)}%
+                        </span>
+                      </Label>
+                      <Slider
+                        value={[sfx.volume * 100]}
+                        min={0}
+                        max={100}
+                        step={5}
+                        onValueChange={([volume]) =>
+                          setSfx((current) => ({ ...current, volume: (volume ?? 35) / 100 }))
+                        }
+                      />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
                     <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Zap className="h-5 w-5" /></span>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                        <Zap className="h-5 w-5" />
+                      </span>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold">Motion Graphic</p>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มองค์ประกอบเคลื่อนไหวให้ซีน</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          เพิ่มองค์ประกอบเคลื่อนไหวให้ซีน
+                        </p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>แก้ไข</Button>
+                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>
+                      แก้ไข
+                    </Button>
                   </div>
 
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
                     <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Clapperboard className="h-5 w-5" /></span>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                        <Clapperboard className="h-5 w-5" />
+                      </span>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold">B-roll</p>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มภาพประกอบให้แต่ละช่วงของวิดีโอ</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          เพิ่มภาพประกอบให้แต่ละช่วงของวิดีโอ
+                        </p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>แก้ไข</Button>
+                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>
+                      แก้ไข
+                    </Button>
                   </div>
                 </div>
               </section>
 
-              <section className="border-t border-border pt-6" aria-labelledby="video-tools-heading">
+              <section
+                className="border-t border-border pt-6"
+                aria-labelledby="video-tools-heading"
+              >
                 <div className="mb-1">
-                  <h2 id="video-tools-heading" className="text-base font-bold text-foreground">ปรับแต่งวิดีโอ</h2>
+                  <h2 id="video-tools-heading" className="text-base font-bold text-foreground">
+                    ปรับแต่งวิดีโอ
+                  </h2>
                 </div>
                 <div className="divide-y divide-border">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
                     <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Waves className="h-5 w-5" /></span>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                        <Waves className="h-5 w-5" />
+                      </span>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold">ลดเสียงรบกวน</p>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">กรองเสียงต่ำ เสียงฮัม และปรับระดับเสียงพูดให้นิ่งขึ้น</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          กรองเสียงต่ำ เสียงฮัม และปรับระดับเสียงพูดให้นิ่งขึ้น
+                        </p>
                       </div>
                     </div>
-                    <Switch checked={noiseReduction} onCheckedChange={setNoiseReduction} aria-label="ลดเสียงรบกวน" />
+                    <Switch
+                      checked={noiseReduction}
+                      onCheckedChange={setNoiseReduction}
+                      aria-label="ลดเสียงรบกวน"
+                    />
                   </div>
 
                   <div className="py-4">
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Scissors className="h-5 w-5" /></span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">ตัดช่วงเงียบ</p>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ลบ dead-air ออกจากวิดีโออัตโนมัติ</p>
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                          <Scissors className="h-5 w-5" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">ตัดช่วงเงียบ</p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                            ลบ dead-air ออกจากวิดีโออัตโนมัติ
+                          </p>
+                        </div>
                       </div>
+                      <Button
+                        className="col-span-2 row-start-2 justify-self-start sm:col-span-1 sm:col-start-2 sm:row-start-1"
+                        size="sm"
+                        variant="outline"
+                        disabled={!file || analyzing}
+                        onClick={() => file && void analyze(file, threshold, minSilence)}
+                      >
+                        {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ปรับค่า
+                      </Button>
+                      <Switch
+                        className="col-start-2 row-start-1 sm:col-start-3"
+                        checked={removeSilence}
+                        onCheckedChange={setRemoveSilence}
+                        aria-label="ตัดช่วงเงียบ"
+                      />
                     </div>
-                    <Button className="col-span-2 row-start-2 justify-self-start sm:col-span-1 sm:col-start-2 sm:row-start-1" size="sm" variant="outline" disabled={!file || analyzing} onClick={() => file && void analyze(file, threshold, minSilence)}>
-                      {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ปรับค่า
-                    </Button>
-                    <Switch className="col-start-2 row-start-1 sm:col-start-3" checked={removeSilence} onCheckedChange={setRemoveSilence} aria-label="ตัดช่วงเงียบ" />
-                  </div>
-                  <div className="mt-5 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-12">
-                    <div className="space-y-2">
-                      <Label className="flex justify-between text-xs text-muted-foreground"><span>ความไวเสียง</span><span className="font-mono text-foreground">{threshold} dB</span></Label>
-                      <Slider value={[threshold]} min={-60} max={-15} step={1} onValueChange={([v]) => setThreshold(v ?? -34)} onValueCommit={() => file && void analyze(file, threshold, minSilence)} />
+                    <div className="mt-5 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-12">
+                      <div className="space-y-2">
+                        <Label className="flex justify-between text-xs text-muted-foreground">
+                          <span>ความไวเสียง</span>
+                          <span className="font-mono text-foreground">{threshold} dB</span>
+                        </Label>
+                        <Slider
+                          value={[threshold]}
+                          min={-60}
+                          max={-15}
+                          step={1}
+                          onValueChange={([v]) => setThreshold(v ?? -34)}
+                          onValueCommit={() => file && void analyze(file, threshold, minSilence)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="flex justify-between text-xs text-muted-foreground">
+                          <span>ช่วงเงียบขั้นต่ำ</span>
+                          <span className="font-mono text-foreground">
+                            {minSilence.toFixed(2)}s
+                          </span>
+                        </Label>
+                        <Slider
+                          value={[minSilence]}
+                          min={0.1}
+                          max={1.5}
+                          step={0.05}
+                          onValueChange={([v]) => setMinSilence(v ?? 0.35)}
+                          onValueCommit={() => file && void analyze(file, threshold, minSilence)}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        ตัดออกได้ {savedSeconds.toFixed(1)}s · เหลือ{" "}
+                        {keptDuration(segments).toFixed(1)}s
+                      </p>
                     </div>
-                    <div className="space-y-2">
-                      <Label className="flex justify-between text-xs text-muted-foreground"><span>ช่วงเงียบขั้นต่ำ</span><span className="font-mono text-foreground">{minSilence.toFixed(2)}s</span></Label>
-                      <Slider value={[minSilence]} min={0.1} max={1.5} step={0.05} onValueChange={([v]) => setMinSilence(v ?? 0.35)} onValueCommit={() => file && void analyze(file, threshold, minSilence)} />
-                    </div>
-                    <p className="text-xs text-muted-foreground">ตัดออกได้ {savedSeconds.toFixed(1)}s · เหลือ {keptDuration(segments).toFixed(1)}s</p>
-                  </div>
                   </div>
                 </div>
               </section>
 
-              <section className="border-t border-border pt-6" aria-labelledby="caption-actions-heading">
-                <h2 id="caption-actions-heading" className="mb-4 text-sm font-semibold text-foreground">ภาษาและการแปล</h2>
+              <section
+                className="border-t border-border pt-6"
+                aria-labelledby="caption-actions-heading"
+              >
+                <h2
+                  id="caption-actions-heading"
+                  className="mb-4 text-sm font-semibold text-foreground"
+                >
+                  ภาษาและการแปล
+                </h2>
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Wand2 className="h-5 w-5" /></span>
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                      <Wand2 className="h-5 w-5" />
+                    </span>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold">แปลซับด้วย AI</p>
-                      <p className="mt-0.5 text-xs leading-5 text-muted-foreground">แปลข้อความโดยคงจังหวะเวลาเดิม</p>
+                      <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                        แปลข้อความโดยคงจังหวะเวลาเดิม
+                      </p>
                     </div>
                   </div>
                   <div className="col-span-2 flex flex-wrap gap-2">
-                    {words.length ? LANGUAGES.map((language) => (
-                      <Button key={language.code} aria-label={`แปลเป็น ${language.label}`} size="sm" variant="outline" disabled={translating || !words.length} onClick={() => void translateCaptions(language.code)}>
-                        {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : null} แปลเป็น {language.label}
-                      </Button>
-                    )) : <span className="text-xs text-muted-foreground">สร้างซับก่อนเลือกภาษาแปล</span>}
+                    {words.length ? (
+                      LANGUAGES.map((language) => (
+                        <Button
+                          key={language.code}
+                          aria-label={`แปลเป็น ${language.label}`}
+                          size="sm"
+                          variant="outline"
+                          disabled={translating || !words.length}
+                          onClick={() => void translateCaptions(language.code)}
+                        >
+                          {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{" "}
+                          แปลเป็น {language.label}
+                        </Button>
+                      ))
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        สร้างซับก่อนเลือกภาษาแปล
+                      </span>
+                    )}
                   </div>
                 </div>
               </section>
 
               <section className="border-t border-border pt-4" aria-labelledby="saved-work-heading">
                 <div className="flex items-start gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Save className="h-4 w-4" /></span>
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground">
+                    <Save className="h-4 w-4" />
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <h2 id="saved-work-heading" className="text-sm font-semibold">งานที่บันทึกไว้</h2>
-                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{savedInfo ? `บันทึกล่าสุด: ${savedInfo.fileName} · ${new Date(savedInfo.savedAt).toLocaleString()}` : "ระบบบันทึกช่วงที่ตัดและซับที่แก้ให้อัตโนมัติ"}</p>
+                    <h2 id="saved-work-heading" className="text-sm font-semibold">
+                      งานที่บันทึกไว้
+                    </h2>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                      {savedInfo
+                        ? `บันทึกล่าสุด: ${savedInfo.fileName} · ${new Date(savedInfo.savedAt).toLocaleString()}`
+                        : "ระบบบันทึกช่วงที่ตัดและซับที่แก้ให้อัตโนมัติ"}
+                    </p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button size="sm" variant="secondary" onClick={() => { saveProject(snapshot()); setSavedInfo(loadProject()); toast.success("บันทึกงานแล้ว"); }}>บันทึกตอนนี้</Button>
-                      <Button size="sm" variant="outline" onClick={restoreProject}>โหลดงานกลับ</Button>
-                      <Button size="sm" variant="ghost" onClick={() => { clearProject(); setSavedInfo(null); toast.success("ลบงานที่บันทึกแล้ว"); }}>ล้างงานที่บันทึก</Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          saveProject(snapshot());
+                          setSavedInfo(loadProject());
+                          toast.success("บันทึกงานแล้ว");
+                        }}
+                      >
+                        บันทึกตอนนี้
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={restoreProject}>
+                        โหลดงานกลับ
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          clearProject();
+                          setSavedInfo(null);
+                          toast.success("ลบงานที่บันทึกแล้ว");
+                        }}
+                      >
+                        ล้างงานที่บันทึก
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -1371,24 +1832,32 @@ function Studio() {
           {tab === "export" && (
             <div className="space-y-3">
               <div className="rounded-xl border border-border bg-secondary/40 p-3 text-xs">
-                พร้อมส่งออก: {keepSegments.length} ช่วง · ความยาวสุดท้าย {keptDuration(keepSegments).toFixed(1)}s ·
-                ตัดออก {savedSeconds.toFixed(1)}s · ซับ {groups.length} บล็อก
+                พร้อมส่งออก: {keepSegments.length} ช่วง · ความยาวสุดท้าย{" "}
+                {keptDuration(keepSegments).toFixed(1)}s · ตัดออก {savedSeconds.toFixed(1)}s · ซับ{" "}
+                {groups.length} บล็อก
               </div>
 
               <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
-                <p className="mb-1 text-sm font-medium">ส่งออกวิดีโอสำเร็จรูป (ไม่ต้องใช้ CapCut)</p>
+                <p className="mb-1 text-sm font-medium">
+                  ส่งออกวิดีโอสำเร็จรูป (ไม่ต้องใช้ CapCut)
+                </p>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  ตัดช่วงเงียบ + ซีนที่ปิดไว้ แล้วฝังซับลงในภาพตามสไตล์ปัจจุบัน โพสต์ลง TikTok / Reels ได้ทันที
+                  ตัดช่วงเงียบ + ซีนที่ปิดไว้ แล้วฝังซับลงในภาพตามสไตล์ปัจจุบัน โพสต์ลง TikTok /
+                  Reels ได้ทันที
                 </p>
                 <div className="mb-3 space-y-2">
-                  <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">ความละเอียดที่ส่งออก</Label>
+                  <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    ความละเอียดที่ส่งออก
+                  </Label>
                   <div className="flex flex-wrap gap-2">
-                    {([
-                      { id: "source", label: "ต้นฉบับ" },
-                      { id: "4k", label: "4K (ไม่แนะนำ)" },
-                      { id: "1080", label: "1080 (HD)" },
-                      { id: "720", label: "720" },
-                    ] as { id: ExportResolution; label: string }[]).map((option) => (
+                    {(
+                      [
+                        { id: "source", label: "ต้นฉบับ" },
+                        { id: "4k", label: "4K (ไม่แนะนำ)" },
+                        { id: "1080", label: "1080 (HD)" },
+                        { id: "720", label: "720" },
+                      ] as { id: ExportResolution; label: string }[]
+                    ).map((option) => (
                       <button
                         key={option.id}
                         type="button"
@@ -1398,7 +1867,9 @@ function Studio() {
                           if (v?.videoWidth) {
                             const t = targetSize(v.videoWidth, v.videoHeight, option.id);
                             if (t.upscaled) {
-                              toast.warning(`ต้นฉบับ ${v.videoWidth}x${v.videoHeight} เล็กกว่า ${t.width}x${t.height} — เป็นการขยายภาพ (upscale) ไม่ได้เพิ่มรายละเอียดจริง`);
+                              toast.warning(
+                                `ต้นฉบับ ${v.videoWidth}x${v.videoHeight} เล็กกว่า ${t.width}x${t.height} — เป็นการขยายภาพ (upscale) ไม่ได้เพิ่มรายละเอียดจริง`,
+                              );
                             }
                           }
                         }}
@@ -1414,17 +1885,27 @@ function Studio() {
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    ใช้ได้เฉพาะปุ่ม "เรนเดอร์วิดีโอพร้อมซับ" (เรนเดอร์ผ่าน canvas) — ไฟล์ .webm ตัดช่วงเงียบและ CapCut Package ยังใช้ความละเอียดต้นฉบับ
+                    ใช้ได้เฉพาะปุ่ม "เรนเดอร์วิดีโอพร้อมซับ" (เรนเดอร์ผ่าน canvas) — ไฟล์ .webm
+                    ตัดช่วงเงียบและ CapCut Package ยังใช้ความละเอียดต้นฉบับ
                   </p>
                   {resolution === "4k" ? (
                     <p className="text-[11px] text-amber-500">
-                      จากการทดสอบจริง เครื่องส่วนใหญ่เรนเดอร์ 4K ผ่านเบราว์เซอร์ได้เพียง ~6–12fps ระบบจะลด fps ให้อัตโนมัติเพื่อให้ภาพเดินสม่ำเสมอแทนที่จะเฟรมหลุดเป็นช่วง ๆ แนะนำให้ใช้ 1080 สำหรับงานจริง
+                      จากการทดสอบจริง เครื่องส่วนใหญ่เรนเดอร์ 4K ผ่านเบราว์เซอร์ได้เพียง ~6–12fps
+                      ระบบจะลด fps ให้อัตโนมัติเพื่อให้ภาพเดินสม่ำเสมอแทนที่จะเฟรมหลุดเป็นช่วง ๆ
+                      แนะนำให้ใช้ 1080 สำหรับงานจริง
                     </p>
                   ) : null}
-
                 </div>
-                <Button size="sm" onClick={exportFinalVideo} disabled={rendering || !keepSegments.length}>
-                  {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                <Button
+                  size="sm"
+                  onClick={exportFinalVideo}
+                  disabled={rendering || !keepSegments.length}
+                >
+                  {rendering ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
                   เรนเดอร์วิดีโอพร้อมซับ
                 </Button>
               </div>
@@ -1432,18 +1913,35 @@ function Studio() {
               <div className="rounded-xl border border-border p-4">
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut / โปรแกรมตัดต่อ</p>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว Import ทั้งสองไฟล์เข้า CapCut
+                  ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว
+                  Import ทั้งสองไฟล์เข้า CapCut
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={exportCapCutPackage} disabled={rendering || !keepSegments.length || !groups.length}>
-                    {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                  <Button
+                    size="sm"
+                    onClick={exportCapCutPackage}
+                    disabled={rendering || !keepSegments.length || !groups.length}
+                  >
+                    {rendering ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
                     CapCut Package .zip
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportSrt}>
                     <FileDown className="mr-2 h-4 w-4" /> .srt
                   </Button>
-                  <Button size="sm" onClick={exportTrimmedVideo} disabled={rendering || !keepSegments.length}>
-                    {rendering ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+                  <Button
+                    size="sm"
+                    onClick={exportTrimmedVideo}
+                    disabled={rendering || !keepSegments.length}
+                  >
+                    {rendering ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
                     วิดีโอตัดช่วงเงียบ .webm
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportXml}>
@@ -1477,7 +1975,7 @@ function Studio() {
               activeStyle={style}
               onSelect={(preset) => {
                 setStyle(preset);
-                  void play(preset.animation);
+                void play(preset.animation);
                 toast.success(`ใช้สไตล์ ${preset.name}`);
               }}
             />
@@ -1500,7 +1998,10 @@ function Studio() {
                           const next = on
                             ? languages.filter((c) => c !== l.code)
                             : [...languages, l.code];
-                          if (!next.length) { toast.error("ต้องเลือกอย่างน้อย 1 ภาษา"); return; }
+                          if (!next.length) {
+                            toast.error("ต้องเลือกอย่างน้อย 1 ภาษา");
+                            return;
+                          }
                           setLanguages(next);
                           if (!on) setStyle((s) => ({ ...s, fontFamily: l.font }));
                         }}
@@ -1543,23 +2044,23 @@ function Studio() {
                 retrying={retryingSync}
               />
               <div className="border-t border-border pt-5">
-              <Label className="text-xs text-muted-foreground">
-                แก้ทั้งข้อความ — การอัปเดตส่วนนี้จะคำนวณเวลาใหม่ทั้งคลิป
-              </Label>
-              <Textarea
-                value={transcript}
-                onChange={(e) => setTranscript(e.target.value)}
-                rows={12}
-                placeholder="กด “สร้างซับด้วย AI” หรือพิมพ์ข้อความเองที่นี่..."
-              />
-              <div className="flex gap-2">
-                <Button onClick={applyTranscriptEdit}>
-                  <Wand2 className="mr-2 h-4 w-4" /> อัปเดตซับ
-                </Button>
-                <span className="self-center text-xs text-muted-foreground">
-                  {words.length} คำ · {groups.length} บล็อก
-                </span>
-              </div>
+                <Label className="text-xs text-muted-foreground">
+                  แก้ทั้งข้อความ — การอัปเดตส่วนนี้จะคำนวณเวลาใหม่ทั้งคลิป
+                </Label>
+                <Textarea
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  rows={12}
+                  placeholder="กด “สร้างซับด้วย AI” หรือพิมพ์ข้อความเองที่นี่..."
+                />
+                <div className="flex gap-2">
+                  <Button onClick={applyTranscriptEdit}>
+                    <Wand2 className="mr-2 h-4 w-4" /> อัปเดตซับ
+                  </Button>
+                  <span className="self-center text-xs text-muted-foreground">
+                    {words.length} คำ · {groups.length} บล็อก
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -1587,7 +2088,9 @@ function Studio() {
                     setLexRules(ruled.rules);
                     setWords(ruled.words);
                     setTranscript(wordsToTranscript(ruled.words));
-                    toast.success(ruled.changed ? `แก้คำตามกฎ ${ruled.changed} จุด` : "ไม่พบคำที่ต้องแก้ตามกฎ");
+                    toast.success(
+                      ruled.changed ? `แก้คำตามกฎ ${ruled.changed} จุด` : "ไม่พบคำที่ต้องแก้ตามกฎ",
+                    );
                   }}
                 />
               </div>
@@ -1609,8 +2112,14 @@ function Studio() {
         <section className="order-1 min-w-0 lg:order-2 lg:sticky lg:top-4 lg:self-start">
           <div className="studio-panel rounded-xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-medium"><Smartphone className="h-4 w-4" /> TikTok Preview</div>
-              <Switch checked={tiktokPreview} onCheckedChange={setTiktokPreview} aria-label="เปิดพรีวิว TikTok" />
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Smartphone className="h-4 w-4" /> TikTok Preview
+              </div>
+              <Switch
+                checked={tiktokPreview}
+                onCheckedChange={setTiktokPreview}
+                aria-label="เปิดพรีวิว TikTok"
+              />
             </div>
             <div
               ref={frameRef}
@@ -1645,16 +2154,25 @@ function Studio() {
                   style={style}
                   height={frameHeight}
                   safeArea={tiktokPreview}
-                  onPositionChange={({ posX, posY }) => setStyle((current) => ({ ...current, posX, posY }))}
+                  onPositionChange={({ posX, posY }) =>
+                    setStyle((current) => ({ ...current, posX, posY }))
+                  }
                   onEditText={(text) => editActiveGroupText(text)}
                 />
               )}
-              <ViralTextOverlay scenes={scenes} sceneElements={sceneElements} time={time} height={frameHeight} />
+              <ViralTextOverlay
+                scenes={scenes}
+                sceneElements={sceneElements}
+                time={time}
+                height={frameHeight}
+              />
               {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
-            {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)</p>}
-
-
+            {videoUrl && (
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)
+              </p>
+            )}
 
             <div className="mt-4 space-y-3">
               <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
@@ -1687,17 +2205,35 @@ function Studio() {
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Button size="icon" variant="secondary" onClick={togglePlay} disabled={!videoUrl} aria-label={playing ? "หยุด" : "เล่น"}>
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    onClick={togglePlay}
+                    disabled={!videoUrl}
+                    aria-label={playing ? "หยุด" : "เล่น"}
+                  >
                     {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => {
-                    const next = !muted;
-                    setMuted(next);
-                    if (videoRef.current) videoRef.current.muted = next;
-                  }} disabled={!videoUrl} aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => {
+                      const next = !muted;
+                      setMuted(next);
+                      if (videoRef.current) videoRef.current.muted = next;
+                    }}
+                    disabled={!videoUrl}
+                    aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}
+                  >
                     {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => void frameRef.current?.requestFullscreen?.()} disabled={!videoUrl} aria-label="เต็มหน้าจอ">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => void frameRef.current?.requestFullscreen?.()}
+                    disabled={!videoUrl}
+                    aria-label="เต็มหน้าจอ"
+                  >
                     <Maximize2 className="h-4 w-4" />
                   </Button>
                 </div>
