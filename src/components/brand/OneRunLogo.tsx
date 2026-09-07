@@ -9,7 +9,7 @@ export function OneRunLogo({ className }: { className?: string }) {
         <img src={darkLogo} alt="" className="absolute inset-0 h-full w-full dark:block hidden" />
         <img src={lightLogo} alt="" className="absolute inset-0 h-full w-full dark:hidden" />
       </span>
-      <span className="font-display text-xl font-bold text-foreground">
+      <span className="font-['Bricolage_Grotesque'] text-xl font-bold text-foreground">
         OneRun<span className="text-primary">AI</span>
       </span>
     </div>
