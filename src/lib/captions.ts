@@ -87,15 +87,15 @@ export type LineStyle = {
   strokeColor?: string;
   fontWeight?: number;
   /** ตัวหนาสังเคราะห์ (override สไตล์หลัก) */
-  bold?: boolean;
+  bold?: boolean | undefined;
   /** ตัวเอียงสังเคราะห์ (override สไตล์หลัก) */
-  italic?: boolean;
+  italic?: boolean | undefined;
   /** ระยะห่างจากบรรทัดก่อนหน้า (เท่าของขนาดฟอนต์) */
   gap?: number;
 };
 
 /** ตัวหนา/ตัวเอียงสังเคราะห์ — ใช้ได้กับทุกฟอนต์แม้ไฟล์ฟอนต์มีน้ำหนักเดียว */
-export type TextEmphasis = { bold?: boolean; italic?: boolean };
+export type TextEmphasis = { bold?: boolean | undefined; italic?: boolean | undefined };
 
 /** องศาเอียง ~12.4° (ค่าลบ = เอนไปทางขวาแบบ italic ปกติ) */
 export const ITALIC_SKEW = -0.22;
@@ -112,9 +112,9 @@ export type CaptionStyle = {
   fontFamily: string;
   fontWeight: number;
   /** ตัวหนาสังเคราะห์ (ใช้ได้กับทุกฟอนต์) */
-  bold?: boolean;
+  bold?: boolean | undefined;
   /** ตัวเอียงสังเคราะห์ (ใช้ได้กับทุกฟอนต์) */
-  italic?: boolean;
+  italic?: boolean | undefined;
   uppercase: boolean;
 
   /** font size in % of video height */
