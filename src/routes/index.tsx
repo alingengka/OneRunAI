@@ -1498,18 +1498,18 @@ function Studio() {
                         <Accordion type="single" collapsible className="mt-3">
                           <AccordionItem value="glossary" className="border-0">
                             <AccordionTrigger className="text-xs text-muted-foreground hover:no-underline">
-                              ຕັ້ງຄ່າຂັ້ນສູງ
+                              ตั้งค่าขั้นสูง
                             </AccordionTrigger>
                             <AccordionContent>
                               <div className="max-w-xl space-y-1.5">
                                 <Label className="text-[11px] uppercase text-muted-foreground">
-                                  ຄຳສັບ / ຊື່ເຉພາະພາສາລາວ
+                                  คำศัพท์ / ชื่อเฉพาะภาษาลาว
                                 </Label>
                                 <Textarea
                                   value={glossary}
                                   onChange={(event) => setGlossary(event.target.value)}
                                   rows={3}
-                                  placeholder="ໃສ່ຊື່ຄົນ ສະຖານທີ່ ແບຣນ ໌ ຫຼືຄຳເຉພາະ ຄັ່ນດ້ວຍ comma ຫຼືຂຶ້ນບັນທັດໃຫມ່"
+                                  placeholder="ใส่ชื่อคน สถานที่ แบรนด์ หรือคำเฉพาะ คั่นด้วย comma หรือขึ้นบรรทัดใหม่"
                                 />
                               </div>
                             </AccordionContent>
