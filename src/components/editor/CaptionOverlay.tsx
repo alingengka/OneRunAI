@@ -15,6 +15,7 @@ type Props = {
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+const boldStroke = (fontSize: number) => `${Math.max(1, Math.round(fontSize * 0.035))}px currentColor`;
 
 export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText }: Props) {
   const [editing, setEditing] = useState(false);
