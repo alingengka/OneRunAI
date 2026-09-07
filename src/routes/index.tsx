@@ -1125,7 +1125,7 @@ function Studio() {
                           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ</p>
                         </div>
                       </div>
-                      <div className="col-span-2 flex flex-wrap gap-2 sm:col-span-1">
+                      <div className="col-span-2 row-start-2 flex flex-wrap gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
                         <Button size="sm" onClick={runTranscribe} disabled={transcribing || !file}>
                           {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                           สร้างซับด้วย AI
@@ -1133,7 +1133,7 @@ function Studio() {
                         <Button size="sm" variant="outline" onClick={() => setTab("styles")}>สไตล์</Button>
                         <Button size="sm" variant="ghost" onClick={() => setTab("text")}>แก้ไข</Button>
                       </div>
-                      <Switch checked={captionsOn} onCheckedChange={setCaptionsOn} aria-label="เปิดคำบรรยาย" />
+                      <Switch className="col-start-2 row-start-1 sm:col-start-3" checked={captionsOn} onCheckedChange={setCaptionsOn} aria-label="เปิดคำบรรยาย" />
                     </div>
 
                     <div className="mt-4 ml-0 border-l-2 border-primary/20 pl-3 sm:ml-12">
@@ -1208,10 +1208,10 @@ function Studio() {
                         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ลบ dead-air ออกจากวิดีโออัตโนมัติ</p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" disabled={!file || analyzing} onClick={() => file && void analyze(file, threshold, minSilence)}>
+                    <Button className="col-span-2 row-start-2 justify-self-start sm:col-span-1 sm:col-start-2 sm:row-start-1" size="sm" variant="outline" disabled={!file || analyzing} onClick={() => file && void analyze(file, threshold, minSilence)}>
                       {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ปรับค่า
                     </Button>
-                    <Switch checked={removeSilence} onCheckedChange={setRemoveSilence} aria-label="ตัดช่วงเงียบ" />
+                    <Switch className="col-start-2 row-start-1 sm:col-start-3" checked={removeSilence} onCheckedChange={setRemoveSilence} aria-label="ตัดช่วงเงียบ" />
                   </div>
                   <div className="mt-4 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-12 sm:grid-cols-2">
                     <div className="space-y-2">
