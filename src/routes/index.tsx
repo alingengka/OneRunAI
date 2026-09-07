@@ -940,6 +940,11 @@ function Studio() {
     setSceneElements((current) => updateSceneElementTiming(current, id, offset, durationSec));
   };
 
+  const updateElementFormat = (id: string, patch: { bold?: boolean; italic?: boolean }) => {
+    setSceneElements((current) => updateSceneElementFormat(current, id, patch));
+  };
+
+
   const addElement = (sceneId: string, kind: SceneElementKind) => {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
