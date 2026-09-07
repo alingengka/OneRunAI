@@ -45,6 +45,7 @@ export function ViralTextOverlay({ scenes, sceneElements, time, height }: Props)
           opacity,
           fontWeight: hit.bold ? 900 : 800,
           fontStyle: hit.italic ? "italic" : "normal",
+          WebkitTextStroke: hit.bold ? boldStroke(fontSize) : undefined,
           transform: `scale(${scale})`,
           transformOrigin: "center",
         }}
