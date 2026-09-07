@@ -174,13 +174,39 @@ async function checkIntegration(): Promise<void> {
   const context = await browser.newContext({ viewport: { width: 1400, height: 1800 } });
   const page = await context.newPage();
   await page.goto(APP, { waitUntil: "load" });
-  await page.waitForTimeout(2000);
+  // ต้องรอให้ React hydrate เสร็จก่อน มิฉะนั้น change event ของ input จะไม่มีตัวรับ
+  // (สาเหตุจริงที่ทำให้ปุ่ม "สร้างซับด้วย AI" ค้าง disabled ตอนทดสอบอัตโนมัติ)
+  await page.waitForFunction(() => !!(window as unknown as { __shortcutState?: unknown }).__shortcutState, undefined, {
+    timeout: 60_000,
+  });
 
-  // ช่องอัปโหลดถูกซ่อนไว้หลังปุ่ม จึงต้องเปิดให้มองเห็นก่อนป้อนไฟล์
-  await page.$eval('input[type="file"]', (el) => el.classList.remove("hidden"));
-  await page.setInputFiles('input[type="file"]', FIXTURE);
-  await page.getByRole("button", { name: "ລາວ", exact: true }).click();
-  await page.getByRole("button", { name: "สร้างซับด้วย AI", exact: true }).click();
+  const aiButton = page.getByRole("button", { name: "สร้างซับด้วย AI", exact: true });
+  await aiButton.waitFor({ state: "visible", timeout: 30_000 });
+
+  // ป้อนไฟล์แล้วยืนยันว่า state รับไฟล์จริง ถ้าไม่ติดให้ลองใหม่ (กัน hydration race)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await page.setInputFiles('input[type="file"]', FIXTURE);
+    try {
+      await page.waitForFunction(
+        () => {
+          const btns = [...document.querySelectorAll("button")].filter((b) =>
+            b.textContent?.includes("สร้างซับด้วย AI"),
+          );
+          return btns.length > 0 && btns.every((b) => !(b as HTMLButtonElement).disabled);
+        },
+        undefined,
+        { timeout: 20_000 },
+      );
+      break;
+    } catch (e) {
+      if (attempt === 3) throw new Error("อัปโหลดไฟล์แล้วปุ่ม 'สร้างซับด้วย AI' ยังถูก disable");
+      await page.setInputFiles('input[type="file"]', []);
+    }
+  }
+
+  await page.getByRole("button", { name: "ລາວ", exact: true }).first().click();
+  await aiButton.click();
+
 
   await page.waitForFunction(
     () => {
