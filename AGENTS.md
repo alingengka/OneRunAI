@@ -8,3 +8,20 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## กฎบังคับ: Lao subtitle regression guard
+
+ทุกงานที่แก้โค้ดในโปรเจกต์นี้ **ไม่ว่าจะเกี่ยวกับซับหรือไม่** (ฟอนต์, สี, UI, motion,
+sound, export ฯลฯ) ต้องรัน
+
+```sh
+bun run guard:lao        # = bun run scripts/lao-subtitle-guard.ts
+```
+
+**ก่อนตอบว่างานเสร็จเสมอ** ถ้าผลแย่ลงกว่า baseline (CER สูงขึ้น หรือมีคำหาย/หลุดกรอบ
+จาก layout ของซับ) **ห้ามส่งงานนั้น** ต้องแก้ให้ผ่านก่อน แม้จะเป็นผลข้างเคียงที่ไม่ได้ตั้งใจ
+
+- คลิปทดสอบคงที่: `tests/fixtures/lao-sample.wav`
+- baseline: `tests/fixtures/lao-sample.json` (อัปเดตได้ด้วย `--update-baseline` เฉพาะเมื่อผู้ใช้อนุมัติ)
+- ต้องมี dev server รันอยู่ที่ `http://localhost:8080` (ส่วนตรวจ layout ใช้เบราว์เซอร์จริง)
+- `--layout-only` ข้ามการเรียก STT จริง (ใช้เมื่อไม่มีคีย์ API)
