@@ -39,7 +39,7 @@ function TestBold() {
     <div className="fixed inset-0 z-50 overflow-y-auto bg-white p-6">
       <h1 className="mb-4 text-lg font-bold">Bold preview test</h1>
       {FONTS.map(([label, fontFamily, lang]) => {
-        const text = TEST_TEXTS[lang];
+        const text = TEST_TEXTS[lang]!;
         const group = makeGroup(text);
         return (
           <div key={label} className="relative mb-6 h-44 border border-dashed border-gray-300">
