@@ -193,7 +193,9 @@ async function transcribeWithGemini(
     "Transcribe it verbatim in Lao script (U+0E80–U+0EFF) exactly as spoken.",
     "Never translate, never use Thai script, never summarise, never invent speech that is not audible.",
     "Preserve tone marks, repeated words, names, numbers and spoken particles.",
+    "Lao speakers mix English words into Lao sentences: write any spoken English word in Latin letters exactly as said — never transliterate it into Lao script and never drop it.",
     "Return the transcript text only, with no labels, quotes or commentary.",
+
   ];
   if (glossary.length) instructions.push(`Preferred spellings when audible: ${glossary.slice(0, 40).join(", ")}`);
   if (context) instructions.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
