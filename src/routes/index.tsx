@@ -622,7 +622,10 @@ function Studio() {
 
       measuredTimingRef.current = measured.sort((a, b) => a.start - b.start);
       if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
+      // ปิดช่องว่างที่ยังมีเสียงพูดจริง (เกิดที่รอยต่อ chunk: คำครบแต่เวลาหดเข้าใน)
+      allWords.splice(0, allWords.length, ...closeSpeechGaps(allWords, segs));
       // งาน A: ใช้เวลาคำจริงขยายขอบช่วงพูด ไม่ให้ energy gate ตัดพยางค์ต้น/ท้ายขาด
+
       const timingForCuts = measured.length ? measured : allWords;
       const reconciled = reconcileSegmentsWithWords(segs, timingForCuts, { duration: buffer.duration });
       if (reconciled.length) setSegments(reconciled);
