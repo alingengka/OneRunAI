@@ -260,19 +260,6 @@ function Studio() {
     [time, scenes, sceneElements],
   );
   const activeGroupIndex = useMemo(() => groups.findIndex((g) => time >= g.start && time <= g.end), [groups, time]);
-  const accuracy = useMemo(() => syncAccuracy(words, segments, duration), [words, segments, duration]);
-  const confidenceSummary = useMemo(() => {
-    const timed = words.filter((word) => word.text !== LINE_BREAK);
-    const scored = timed.filter((word) => typeof word.confidence === "number");
-    if (!scored.length) return { score: null, high: 0, review: 0, low: 0 };
-    const score = scored.reduce((sum, word) => sum + (word.confidence ?? 0), 0) / scored.length;
-    return {
-      score,
-      high: scored.filter((word) => word.confidenceLabel === "high").length,
-      review: scored.filter((word) => word.confidenceLabel === "review").length,
-      low: scored.filter((word) => word.confidenceLabel === "low").length,
-    };
-  }, [words]);
   const previewLineCount = useMemo(() => {
     if (!activeGroup) return 3;
     const manual = activeGroup.words.filter((w) => w.text === LINE_BREAK).length;
