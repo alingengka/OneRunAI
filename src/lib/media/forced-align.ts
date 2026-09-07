@@ -362,6 +362,63 @@ export function mapConcatTimeToTimeline(time: number, segs: Segment[]): number {
   return last ? last.end : time;
 }
 
+/**
+ * ปิด "ช่องว่างซับ" ที่ยังมีเสียงพูดอยู่จริง
+ *
+ * ที่รอยต่อระหว่าง chunk เครื่องถอดเสียงมักไม่ให้เวลาคำกับเสียงส่วนหัว/ท้ายของ
+ * chunk (เพราะเป็นเสียงที่ถูกตัดกลางประโยค) ผลคือคำครบแต่เวลาหดเข้าหากลาง chunk
+ * เกิดเป็นช่วงที่ "ไม่มีซับขึ้นเลย" ทั้งที่ยังพูดอยู่ (เคสจริง ~19 วินาที)
+ *
+ * ฟังก์ชันนี้ดูช่องว่างระหว่างคำที่ติดกัน ตัดเฉพาะส่วนที่ทับกับช่วงพูดจริง (VAD)
+ * แล้วยืดคำก่อนหน้า/คำถัดไปให้คลุมเสียงพูดนั้น ช่วงเงียบจริงยังคงว่างไว้เหมือนเดิม
+ */
+export function closeSpeechGaps<T extends { start: number; end: number }>(
+  words: T[],
+  segs: Segment[],
+  opts: { maxGap?: number; minSpeech?: number } = {},
+): T[] {
+  const maxGap = opts.maxGap ?? 0.3;
+  const minSpeech = opts.minSpeech ?? 0.12;
+  if (words.length < 2 || !segs.length) return words;
+  const speech = [...segs].sort((a, b) => a.start - b.start);
+  const out = words.map((word) => ({ ...word }));
+
+  for (let i = 0; i < out.length - 1; i++) {
+    const left = out[i]!;
+    const right = out[i + 1]!;
+    const gapStart = left.end;
+    const gapEnd = right.start;
+    if (gapEnd - gapStart <= maxGap) continue;
+
+    // ส่วนของช่องว่างที่ยังมีเสียงพูดจริง
+    const runs: Segment[] = [];
+    for (const seg of speech) {
+      const start = Math.max(seg.start, gapStart);
+      const end = Math.min(seg.end, gapEnd);
+      if (end - start >= minSpeech) runs.push({ start, end });
+    }
+    if (!runs.length) continue;
+
+    const middle = (gapStart + gapEnd) / 2;
+    let leftEnd = left.end;
+    let rightStart = right.start;
+    for (const run of runs) {
+      // ช่วงพูดที่คร่อมกลางช่องว่างให้แบ่งกันคนละครึ่ง
+      if (run.start < middle && run.end > middle) {
+        leftEnd = Math.max(leftEnd, middle);
+        rightStart = Math.min(rightStart, middle);
+        continue;
+      }
+      if (run.end <= middle) leftEnd = Math.max(leftEnd, run.end);
+      else rightStart = Math.min(rightStart, run.start);
+    }
+    left.end = Math.min(rightStart, Math.max(left.end, leftEnd));
+    right.start = Math.max(left.end, Math.min(right.start, rightStart));
+  }
+  return out;
+}
+
+
 /** Same as alignTextToTiming but returned on the original clip timeline. */
 export function alignTextToTimingOnTimeline(
   text: string,
