@@ -144,3 +144,47 @@
     color: var(--color-foreground);
   }
 }
+
+/* ---- ฟอนต์ลาวที่ผู้ใช้เพิ่มเอง (public/fonts) ---- */
+@font-face {
+  font-family: "Lao Chalk";
+  src: url("/fonts/LaoChalk-Regular.otf") format("opentype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lao Handwriting 16";
+  src: url("/fonts/LaoHandwriting16-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PB Melon";
+  src: url("/fonts/PBMelon-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PB Champasak";
+  src: url("/fonts/PBChampasak-Regular.otf") format("opentype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Hinsiew";
+  src: url("/fonts/Hinsiew-Regular.otf") format("opentype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Tiktok Lao";
+  src: url("/fonts/TiktokLao-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Touk2";
+  src: url("/fonts/Touk2-Regular.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
