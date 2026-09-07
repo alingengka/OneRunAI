@@ -1132,11 +1132,13 @@ function Studio() {
                           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ</p>
                         </div>
                       </div>
-                      <div className="col-span-2 row-start-2 flex flex-wrap gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
-                        <Button size="sm" onClick={runTranscribe} disabled={transcribing || !file}>
-                          {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      <div className="col-span-2 row-start-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+                        <Button size="sm" onClick={runTranscribe} disabled={transcribing || !file || analyzing}>
+                          {transcribing || analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                           สร้างซับด้วย AI
                         </Button>
+                        {analyzing ? <span className="text-xs text-muted-foreground">กำลังเตรียมไฟล์เสียง…</span> : null}
+
                         <Button size="sm" variant="outline" onClick={() => setTab("styles")}>สไตล์</Button>
                         <Button size="sm" variant="ghost" onClick={() => setTab("text")}>แก้ไข</Button>
                       </div>
