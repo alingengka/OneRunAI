@@ -11,7 +11,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { sceneDuration, viralTextWindow, type Scene, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import {
+  sceneDuration,
+  viralTextWindow,
+  type Scene,
+  type SceneElement,
+  type SceneElementKind,
+} from "@/lib/scenes";
 import { motionKindForScene, type MotionKind } from "@/lib/media/motion";
 import {
   AudioLines,
@@ -45,7 +51,9 @@ const KIND_ICON: Record<SceneElementKind, typeof Type> = {
   viralText: Type,
 };
 
-const MEDIA_KINDS: { kind: SceneElementKind; label: string }[] = [{ kind: "broll", label: "B-roll" }];
+const MEDIA_KINDS: { kind: SceneElementKind; label: string }[] = [
+  { kind: "broll", label: "B-roll" },
+];
 const EFFECT_KINDS: { kind: SceneElementKind; label: string }[] = [
   { kind: "motion", label: "Motion" },
   { kind: "sound", label: "Sound" },
@@ -102,7 +110,9 @@ export function ScenesPanel({
       </p>
     );
   }
-  const keptTotal = scenes.filter((s) => !dropped.includes(s.id)).reduce((n, s) => n + sceneDuration(s), 0);
+  const keptTotal = scenes
+    .filter((s) => !dropped.includes(s.id))
+    .reduce((n, s) => n + sceneDuration(s), 0);
 
   return (
     <div className="space-y-4">
@@ -113,7 +123,9 @@ export function ScenesPanel({
             {scenes.length} ซีน · ความยาวที่ใช้จริง {keptTotal.toFixed(1)} วินาที
           </p>
         </div>
-        <span className="hidden text-right text-muted-foreground sm:block">ปิดสวิตช์เพื่อตัดซีนออก</span>
+        <span className="hidden text-right text-muted-foreground sm:block">
+          ปิดสวิตช์เพื่อตัดซีนออก
+        </span>
       </div>
 
       {scenes.map((scene) => {
@@ -152,11 +164,20 @@ export function ScenesPanel({
                   </span>
                 </span>
                 <span className="block text-sm font-medium leading-6 text-foreground">
-                  {scene.text || <span className="font-normal text-muted-foreground">— ยังไม่มีซับในซีนนี้ —</span>}
+                  {scene.text || (
+                    <span className="font-normal text-muted-foreground">
+                      — ยังไม่มีซับในซีนนี้ —
+                    </span>
+                  )}
                 </span>
               </Button>
               <div className="flex shrink-0 items-center gap-2">
-                <Button size="icon" variant="ghost" onClick={() => onPreview(scene.start, scene.end)} aria-label="เล่นซีนนี้">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => onPreview(scene.start, scene.end)}
+                  aria-label="เล่นซีนนี้"
+                >
                   <Play className="h-4 w-4" />
                 </Button>
                 <Switch
@@ -198,7 +219,9 @@ export function ScenesPanel({
                   </span>
                 );
               })}
-              {!enabledElements.length && <span className="text-xs text-muted-foreground">ยังไม่มีฟีเจอร์ในซีนนี้</span>}
+              {!enabledElements.length && (
+                <span className="text-xs text-muted-foreground">ยังไม่มีฟีเจอร์ในซีนนี้</span>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -217,11 +240,16 @@ export function ScenesPanel({
                   )}
                   {mediaLeft.length > 0 && (
                     <>
-                      <DropdownMenuLabel className="text-[11px] uppercase text-muted-foreground">Media</DropdownMenuLabel>
+                      <DropdownMenuLabel className="text-[11px] uppercase text-muted-foreground">
+                        Media
+                      </DropdownMenuLabel>
                       {mediaLeft.map(({ kind, label }) => {
                         const Icon = KIND_ICON[kind];
                         return (
-                          <DropdownMenuItem key={kind} onSelect={() => onAddElement(scene.id, kind)}>
+                          <DropdownMenuItem
+                            key={kind}
+                            onSelect={() => onAddElement(scene.id, kind)}
+                          >
                             <Icon /> {label}
                           </DropdownMenuItem>
                         );
@@ -231,11 +259,16 @@ export function ScenesPanel({
                   {mediaLeft.length > 0 && effectsLeft.length > 0 && <DropdownMenuSeparator />}
                   {effectsLeft.length > 0 && (
                     <>
-                      <DropdownMenuLabel className="text-[11px] uppercase text-muted-foreground">Effects</DropdownMenuLabel>
+                      <DropdownMenuLabel className="text-[11px] uppercase text-muted-foreground">
+                        Effects
+                      </DropdownMenuLabel>
                       {effectsLeft.map(({ kind, label }) => {
                         const Icon = KIND_ICON[kind];
                         return (
-                          <DropdownMenuItem key={kind} onSelect={() => onAddElement(scene.id, kind)}>
+                          <DropdownMenuItem
+                            key={kind}
+                            onSelect={() => onAddElement(scene.id, kind)}
+                          >
                             <Icon /> {label}
                           </DropdownMenuItem>
                         );
@@ -259,10 +292,14 @@ export function ScenesPanel({
                         key={kind}
                         className={cn(
                           "relative flex flex-col items-center gap-1.5 rounded-lg border bg-preview p-3 text-center",
-                          on ? "border-primary/70 ring-1 ring-primary/25" : "border-border opacity-60",
+                          on
+                            ? "border-primary/70 ring-1 ring-primary/25"
+                            : "border-border opacity-60",
                         )}
                       >
-                        <Icon className={cn("h-5 w-5", on ? "text-primary" : "text-muted-foreground")} />
+                        <Icon
+                          className={cn("h-5 w-5", on ? "text-primary" : "text-muted-foreground")}
+                        />
                         <span className="text-[11px] text-foreground">{label}</span>
                         {on && (
                           <span className="absolute right-1.5 top-1.5 rounded-full bg-primary/15 px-1.5 text-[9px] font-medium text-primary">
@@ -283,11 +320,20 @@ export function ScenesPanel({
               .filter((element) => element.kind === "viralText" && element.enabled)
               .map((element) => {
                 const sceneLen = Math.max(0.5, scene.end - scene.start);
-                const offset = Math.min(Math.max(0, element.offset ?? 0), Math.max(0, sceneLen - 0.5));
-                const dur = Math.min(Math.max(0.5, element.durationSec ?? 2.5), Math.max(0.5, sceneLen - offset));
+                const offset = Math.min(
+                  Math.max(0, element.offset ?? 0),
+                  Math.max(0, sceneLen - 0.5),
+                );
+                const dur = Math.min(
+                  Math.max(0.5, element.durationSec ?? 2.5),
+                  Math.max(0.5, sceneLen - offset),
+                );
                 const win = viralTextWindow(scene, element);
                 return (
-                  <div key={`${element.id}-editor`} className="space-y-4 border-t border-border px-4 py-4">
+                  <div
+                    key={`${element.id}-editor`}
+                    className="space-y-4 border-t border-border px-4 py-4"
+                  >
                     <div className="space-y-2">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         ข้อความไวรัล
@@ -305,7 +351,9 @@ export function ScenesPanel({
                             element.italic && "italic",
                           )}
                         >
-                          {element.text || <span className="text-muted-foreground">ตัวอย่างข้อความ</span>}
+                          {element.text || (
+                            <span className="text-muted-foreground">ตัวอย่างข้อความ</span>
+                          )}
                         </span>
                       </div>
                       <div className="flex gap-2">
@@ -323,7 +371,9 @@ export function ScenesPanel({
                           variant={element.italic ? "default" : "outline"}
                           className="h-7 w-9 italic"
                           aria-pressed={!!element.italic}
-                          onClick={() => onUpdateElementFormat(element.id, { italic: !element.italic })}
+                          onClick={() =>
+                            onUpdateElementFormat(element.id, { italic: !element.italic })
+                          }
                         >
                           I
                         </Button>
@@ -344,7 +394,9 @@ export function ScenesPanel({
                     </div>
 
                     <div className="space-y-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">จังหวะที่โชว์</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        จังหวะที่โชว์
+                      </p>
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                           <span>เริ่มที่ (วินาทีจากต้นซีน)</span>
@@ -390,7 +442,9 @@ export function ScenesPanel({
                           min={0.5}
                           max={Math.max(0.5, sceneLen - offset)}
                           step={0.1}
-                          onValueChange={([v]) => onUpdateElementTiming(element.id, offset, v ?? 0.5)}
+                          onValueChange={([v]) =>
+                            onUpdateElementTiming(element.id, offset, v ?? 0.5)
+                          }
                         />
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -401,7 +455,10 @@ export function ScenesPanel({
                           onClick={() =>
                             onUpdateElementTiming(
                               element.id,
-                              Math.min(Math.max(0, activeTime - scene.start), Math.max(0, sceneLen - 0.5)),
+                              Math.min(
+                                Math.max(0, activeTime - scene.start),
+                                Math.max(0, sceneLen - 0.5),
+                              ),
                               dur,
                             )
                           }
@@ -418,7 +475,8 @@ export function ScenesPanel({
                         </Button>
                       </div>
                       <p className="text-[11px] text-muted-foreground">
-                        โชว์ช่วง {clock(win.start)} – {clock(win.end)} ของคลิป (บันทึกให้อัตโนมัติทันทีที่ปรับ)
+                        โชว์ช่วง {clock(win.start)} – {clock(win.end)} ของคลิป
+                        (บันทึกให้อัตโนมัติทันทีที่ปรับ)
                       </p>
                     </div>
                   </div>
