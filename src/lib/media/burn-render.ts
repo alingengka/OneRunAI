@@ -282,9 +282,10 @@ export function createBurnRenderer(
 
       const left =
         style.textAlign === "left"
-          ? centerX - (width * 0.72) / 2
+          ? centerX - maxTextWidth / 2
           : style.textAlign === "right"
-            ? centerX + (width * 0.72) / 2 - m.total
+            ? centerX + maxTextWidth / 2 - m.total
+
             : centerX - m.total / 2;
 
       if (style.plate) {
