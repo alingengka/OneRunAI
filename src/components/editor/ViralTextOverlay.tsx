@@ -9,6 +9,7 @@ type Props = {
 
 const POP = 0.3;
 const FADE = 0.3;
+const boldStroke = (fontSize: number) => `${Math.max(1, Math.round(fontSize * 0.035))}px currentColor`;
 
 /** ข้อความไวรัลเด้งช่วงต้นซีน (แยกจากซับพูดปกติ) */
 export function ViralTextOverlay({ scenes, sceneElements, time, height }: Props) {
@@ -44,6 +45,7 @@ export function ViralTextOverlay({ scenes, sceneElements, time, height }: Props)
           opacity,
           fontWeight: hit.bold ? 900 : 800,
           fontStyle: hit.italic ? "italic" : "normal",
+          WebkitTextStroke: hit.bold ? boldStroke(fontSize) : undefined,
           transform: `scale(${scale})`,
           transformOrigin: "center",
         }}

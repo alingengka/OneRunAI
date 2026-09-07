@@ -15,6 +15,7 @@ type Props = {
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+const boldStroke = (fontSize: number) => `${Math.max(1, Math.round(fontSize * 0.035))}px currentColor`;
 
 export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText }: Props) {
   const [editing, setEditing] = useState(false);
@@ -236,6 +237,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                 wordTransform = "translateY(-3%)";
               }
 
+              const effectiveBold = ls.bold ?? style.bold;
+
               return (
                 <span
                   key={`${word.start}-${i}`}
@@ -253,6 +256,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                     transform: wordTransform,
                     transition:
                       anim === "none" ? undefined : `color ${Math.round(80 / speed)}ms linear`,
+                    WebkitTextStroke: effectiveBold ? boldStroke(fontSize) : undefined,
                   }}
                 >
                   {word.text}
