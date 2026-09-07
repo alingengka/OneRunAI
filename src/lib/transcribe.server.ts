@@ -307,15 +307,17 @@ export async function transcribeAudioServer(input: {
     if (lastError) throw lastError;
     return { text: "", alternatives: [], agreement: 0, words: scribeTiming, wordSource: scribeTiming.length ? "scribe" : null };
   }
+  const bestLatin = Math.max(0, ...alternatives.map((text) => latinWords(text).length));
   const ranked = alternatives
     .map((text) => ({
       text,
       // Thai->Lao transliteration (Scribe) is lossy, so such a candidate only
       // wins when it is clearly better than a natively Lao-script candidate.
-      score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language)
+      score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language, bestLatin)
         - (transliterated.has(text) ? 0.03 : 0),
     }))
     .sort((a, b) => b.score - a.score);
+
 
   return {
     text: ranked[0]?.text ?? "",
