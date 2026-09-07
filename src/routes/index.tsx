@@ -27,6 +27,8 @@ import {
   Clapperboard,
   Type,
   Zap,
+  ArrowLeft,
+  SlidersHorizontal,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -1969,10 +1971,62 @@ function Studio() {
             </div>
           )}
 
+          {(tab === "styles" || tab === "customize") && (
+            <div className="mb-5 flex items-center gap-2 border-b border-border">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setTab("tools")}
+                aria-label="กลับไปหน้าคำบรรยาย"
+                title="กลับไปหน้าคำบรรยาย"
+                className="mb-1 shrink-0"
+              >
+                <ArrowLeft />
+              </Button>
+              <div className="grid min-w-0 flex-1 grid-cols-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setTab("styles")}
+                  className={cn(
+                    "relative h-12 rounded-none px-2 text-sm text-muted-foreground shadow-none",
+                    tab === "styles" &&
+                      "text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary",
+                  )}
+                >
+                  เลือกสไตล์
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setTab("customize")}
+                  className={cn(
+                    "relative h-12 rounded-none px-2 text-sm text-muted-foreground shadow-none",
+                    tab === "customize" &&
+                      "text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-primary",
+                  )}
+                >
+                  แก้คำบรรยาย
+                </Button>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => setTab("customize")}
+                className="mb-1 hidden shrink-0 sm:inline-flex"
+              >
+                <SlidersHorizontal /> ปรับแต่ง Ani
+              </Button>
+            </div>
+          )}
+
           {tab === "styles" && (
             <StylePicker
               activeId={style.id}
               activeStyle={style}
+              onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
               onSelect={(preset) => {
                 setStyle(preset);
                 void play(preset.animation);
