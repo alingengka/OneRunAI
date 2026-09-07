@@ -11,6 +11,7 @@ import {
   LINE_BREAK,
   emphasizedWeight,
   isKeyword,
+  splitEmphasis,
   shadowBlur,
   strokeWidth,
   type CaptionGroup,
@@ -87,7 +88,9 @@ export async function ensureCaptionFonts(style: CaptionStyle): Promise<void> {
   const jobs: Promise<unknown>[] = [];
   for (const family of families) {
     for (const weight of weights) {
-      jobs.push(fonts.load(`${weight} 64px ${family}`, "ສະບາຍດີ ABC ก").catch(() => undefined));
+      for (const style_ of ["", "italic "]) {
+        jobs.push(fonts.load(`${style_}${weight} 64px ${family}`, "ສະບາຍດີ ABC ก").catch(() => undefined));
+      }
     }
   }
   await Promise.all(jobs);
@@ -198,7 +201,10 @@ export function createBurnRenderer(
     family: string;
     ls: LineStyle;
     gap: number;
+    /** ส่วนที่ต้องวาดสังเคราะห์ (เฉพาะฟอนต์ที่ไม่มีไฟล์จริง) */
     em: TextEmphasis;
+    /** font string สำหรับ canvas (รวม italic จริงถ้ามีไฟล์) */
+    font: string;
   };
   type GroupLayout = { lines: StaticLine[]; metrics: LineMetric[]; blockHeight: number };
   const layoutCache = new Map<CaptionGroup, GroupLayout>();
@@ -212,15 +218,17 @@ export function createBurnRenderer(
     const lines = layoutGroupStatic(group, style);
     const metrics: LineMetric[] = lines.map((line, i) => {
       const ls = lineStyleAt(style, i);
-      const em: TextEmphasis = { bold: ls.bold ?? style.bold, italic: ls.italic ?? style.italic };
-      const weight = emphasizedWeight(ls.fontWeight ?? style.fontWeight, em.bold);
+      const wanted: TextEmphasis = { bold: ls.bold ?? style.bold, italic: ls.italic ?? style.italic };
       const family = ls.fontFamily ?? style.fontFamily;
-      ctx.font = `${weight} ${fontSize}px ${family}`;
+      const { native, synthetic } = splitEmphasis(family, wanted);
+      const weight = emphasizedWeight(ls.fontWeight ?? style.fontWeight, native.bold);
+      const font = `${native.italic ? "italic " : ""}${weight} ${fontSize}px ${family}`;
+      ctx.font = font;
       const space = ctx.measureText(" ").width;
-      const pad = emphasisPad(fontSize, em);
+      const pad = emphasisPad(fontSize, synthetic);
       const widths = line.words.map((w) => ctx.measureText(w.text).width + pad);
       const total = widths.reduce((n, w) => n + w, 0) + space * Math.max(0, line.words.length - 1);
-      return { widths, space, total, weight, family, ls, gap: (ls.gap ?? 0) * fontSize, em };
+      return { widths, space, total, weight, family, ls, gap: (ls.gap ?? 0) * fontSize, em: synthetic, font };
     });
     const blockHeight = metrics.reduce((n, m, i) => n + lineHeight + (i ? baseGap + m.gap : 0), 0);
     const layout: GroupLayout = { lines, metrics, blockHeight };
@@ -258,7 +266,7 @@ export function createBurnRenderer(
       }
 
       let x = left;
-      ctx.font = `${m.weight} ${fontSize}px ${m.family}`;
+      ctx.font = m.font;
       line.words.forEach((word, wi) => {
         const w = m.widths[wi]!;
         const highlighted = time >= word.start - 0.01 && time <= word.end + 0.01;
@@ -357,16 +365,17 @@ export function createBurnRenderer(
     ctx.globalAlpha = alpha;
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
-    ctx.font = `900 ${viralFontSize}px ${style.fontFamily}`;
+    const vsplit = splitEmphasis(style.fontFamily, hit.em);
+    ctx.font = `${vsplit.native.italic ? "italic " : ""}900 ${viralFontSize}px ${style.fontFamily}`;
     ctx.translate(width / 2, y);
     ctx.scale(pop, pop);
     ctx.lineJoin = "round";
     ctx.miterLimit = 2;
     ctx.lineWidth = Math.max(4, viralFontSize * 0.14) + (hit.em.bold ? viralFontSize * 0.02 : 0);
     ctx.strokeStyle = "#000000";
-    paintEmphasized(ctx, hit.text, 0, 0, viralFontSize, hit.em, "stroke");
+    paintEmphasized(ctx, hit.text, 0, 0, viralFontSize, vsplit.synthetic, "stroke");
     ctx.fillStyle = "#ffffff";
-    paintEmphasized(ctx, hit.text, 0, 0, viralFontSize, hit.em, "fill");
+    paintEmphasized(ctx, hit.text, 0, 0, viralFontSize, vsplit.synthetic, "fill");
 
     ctx.restore();
     ctx.textAlign = "left";
