@@ -64,7 +64,7 @@ import {
   smoothSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
-import { alignTextToTiming, alignTextToTimingOnTimeline, forcedAlignWords, mapConcatTimeToTimeline, mergeAlignedChunks } from "@/lib/media/forced-align";
+import { alignTextToTiming, alignTextToTimingOnTimeline, closeSpeechGaps, forcedAlignWords, mapConcatTimeToTimeline, mergeAlignedChunks } from "@/lib/media/forced-align";
 import type { TimedWord } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo, targetSize, type ExportResolution } from "@/lib/media/export-burned";
