@@ -97,7 +97,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Archivo+Black&family=Anton&family=Bebas+Neue&family=Bricolage+Grotesque:wght@700&family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=Playfair+Display:wght@700;900&family=Kanit:wght@400;600;700;900&family=Mitr:wght@400;600;700&family=Prompt:wght@400;600;700;800&family=Bai+Jamjuree:wght@400;600;700&family=Noto+Sans+Thai:wght@400;600;700;900&family=Noto+Serif+Thai:wght@400;700&family=Noto+Sans+Lao:wght@400;600;700;900&family=Noto+Sans+Lao+Looped:wght@400;600;700;900&family=Noto+Serif+Lao:wght@400;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Archivo+Black&family=Anton&family=Bebas+Neue&family=Bricolage+Grotesque:wght@700&family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=Playfair+Display:wght@700;900&family=Kanit:wght@400;600;700;900&family=Mitr:wght@400;600;700&family=Prompt:wght@400;600;700;800&family=Bai+Jamjuree:wght@400;600;700&family=Noto+Sans+Thai:wght@400;500;600;700;900&family=Noto+Serif+Thai:wght@400;700&family=Noto+Sans+Lao:wght@400;600;700;900&family=Noto+Sans+Lao+Looped:wght@400;600;700;900&family=Noto+Serif+Lao:wght@400;700&display=swap",
       },
 
     ],
