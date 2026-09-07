@@ -198,6 +198,7 @@ export function createBurnRenderer(
     family: string;
     ls: LineStyle;
     gap: number;
+    em: TextEmphasis;
   };
   type GroupLayout = { lines: StaticLine[]; metrics: LineMetric[]; blockHeight: number };
   const layoutCache = new Map<CaptionGroup, GroupLayout>();
@@ -211,13 +212,15 @@ export function createBurnRenderer(
     const lines = layoutGroupStatic(group, style);
     const metrics: LineMetric[] = lines.map((line, i) => {
       const ls = lineStyleAt(style, i);
-      const weight = ls.fontWeight ?? style.fontWeight;
+      const em: TextEmphasis = { bold: ls.bold ?? style.bold, italic: ls.italic ?? style.italic };
+      const weight = emphasizedWeight(ls.fontWeight ?? style.fontWeight, em.bold);
       const family = ls.fontFamily ?? style.fontFamily;
       ctx.font = `${weight} ${fontSize}px ${family}`;
       const space = ctx.measureText(" ").width;
-      const widths = line.words.map((w) => ctx.measureText(w.text).width);
+      const pad = emphasisPad(fontSize, em);
+      const widths = line.words.map((w) => ctx.measureText(w.text).width + pad);
       const total = widths.reduce((n, w) => n + w, 0) + space * Math.max(0, line.words.length - 1);
-      return { widths, space, total, weight, family, ls, gap: (ls.gap ?? 0) * fontSize };
+      return { widths, space, total, weight, family, ls, gap: (ls.gap ?? 0) * fontSize, em };
     });
     const blockHeight = metrics.reduce((n, m, i) => n + lineHeight + (i ? baseGap + m.gap : 0), 0);
     const layout: GroupLayout = { lines, metrics, blockHeight };
@@ -276,9 +279,9 @@ export function createBurnRenderer(
         if (strokePx > 0) {
           ctx.lineJoin = "round";
           ctx.miterLimit = 2;
-          ctx.lineWidth = strokePx * 2;
+          ctx.lineWidth = strokePx * 2 + (m.em.bold ? fontSize * 0.02 : 0);
           ctx.strokeStyle = m.ls.strokeColor ?? style.strokeColor;
-          ctx.strokeText(word.text, x, y);
+          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "stroke");
         }
 
         const blur = shadowBlur[style.shadow] * (fontSize / 64);
@@ -293,12 +296,13 @@ export function createBurnRenderer(
               ? style.highlightColor
               : (m.ls.color ?? style.color)
           : (m.ls.color ?? style.color);
-        ctx.fillText(word.text, x, y);
+        paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
         ctx.shadowColor = "transparent";
         x += w + m.space;
       });
+
 
       y += lineHeight;
     });
