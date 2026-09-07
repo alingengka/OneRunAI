@@ -2037,44 +2037,6 @@ function Studio() {
 
           {tab === "customize" && (
             <div className="space-y-5">
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  ภาษา (เลือกเพิ่ม/เอาออกได้)
-                </Label>
-                <div className="flex flex-wrap gap-2">
-                  {LANGUAGES.map((l) => {
-                    const on = languages.includes(l.code);
-                    return (
-                      <button
-                        key={l.code}
-                        type="button"
-                        onClick={() => {
-                          const next = on
-                            ? languages.filter((c) => c !== l.code)
-                            : [...languages, l.code];
-                          if (!next.length) {
-                            toast.error("ต้องเลือกอย่างน้อย 1 ภาษา");
-                            return;
-                          }
-                          setLanguages(next);
-                          if (!on) setStyle((s) => ({ ...s, fontFamily: l.font }));
-                        }}
-                        className={cn(
-                          "rounded-full border px-3 py-1.5 text-sm transition",
-                          on
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-secondary text-muted-foreground",
-                        )}
-                      >
-                        {l.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  ภาษาแรกที่เลือกจะใช้ถอดเสียง และรายชื่อฟอนต์จะกรองตามภาษาที่เลือก
-                </p>
-              </div>
               <StyleControls
                 style={style}
                 onChange={(p) => {
@@ -2084,6 +2046,45 @@ function Studio() {
                 scripts={languages.map((c) => (c === "en" ? "latin" : c))}
                 lineCount={Math.max(2, previewLineCount)}
               />
+              <Accordion type="single" collapsible className="border-t border-border">
+                <AccordionItem value="caption-languages" className="border-b-0">
+                  <AccordionTrigger className="hover:no-underline">ภาษาและฟอนต์</AccordionTrigger>
+                  <AccordionContent className="space-y-2">
+                    <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      ภาษา (เลือกเพิ่ม/เอาออกได้)
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {LANGUAGES.map((l) => {
+                        const on = languages.includes(l.code);
+                        return (
+                          <Button
+                            key={l.code}
+                            type="button"
+                            size="sm"
+                            variant={on ? "default" : "secondary"}
+                            onClick={() => {
+                              const next = on
+                                ? languages.filter((c) => c !== l.code)
+                                : [...languages, l.code];
+                              if (!next.length) {
+                                toast.error("ต้องเลือกอย่างน้อย 1 ภาษา");
+                                return;
+                              }
+                              setLanguages(next);
+                              if (!on) setStyle((s) => ({ ...s, fontFamily: l.font }));
+                            }}
+                          >
+                            {l.label}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      ภาษาแรกที่เลือกจะใช้ถอดเสียง และรายชื่อฟอนต์จะกรองตามภาษาที่เลือก
+                    </p>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
           )}
 
