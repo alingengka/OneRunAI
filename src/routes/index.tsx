@@ -367,6 +367,10 @@ function Studio() {
 
   const onPickFile = async (f: File) => {
     audioBufferRef.current = null;
+    // ไฟล์ใหม่ต้องไม่ใช้ผลวิเคราะห์ของไฟล์เก่า ไม่งั้นการกดถอดเสียงทันที
+    // จะได้ช่วงพูดของคลิปก่อนหน้า → ซับออกมาไม่ครบ
+    analysisSegmentsRef.current = [];
+    measuredTimingRef.current = [];
     setFile(f);
     setVideoUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -383,9 +387,14 @@ function Studio() {
       setProjectName(f.name.replace(/\.[^.]+$/, ""));
     }
     setTime(0);
-    const r = preserveRestored ? undefined : await analyze(f, threshold, minSilence).catch(() => undefined);
+    if (preserveRestored) { analysisPromiseRef.current = null; return; }
+    const pending = analyze(f, threshold, minSilence).catch(() => undefined);
+    analysisPromiseRef.current = pending;
+    const r = await pending;
+    if (analysisPromiseRef.current === pending) analysisPromiseRef.current = null;
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
+
 
   // ── บันทึกงานอัตโนมัติ (ช่วงที่ตัด + ซับที่แก้แล้ว) ก่อนปิดหน้า ──────────
   useEffect(() => {
