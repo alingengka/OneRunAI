@@ -153,6 +153,8 @@ function Studio() {
    *  ถ้าปนกัน การกด "สร้างซับด้วย AI" ซ้ำจะสร้าง chunk จากช่วงที่ถูกขยาย/รวมไปแล้ว
    *  ทำให้บริบทที่ส่งเข้าโมเดลเพี้ยนและความแม่นยำตก */
   const analysisSegmentsRef = useRef<Segment[]>([]);
+  /** งานวิเคราะห์เสียงที่กำลังทำอยู่ของไฟล์ล่าสุด — ปุ่มถอดเสียงต้องรอให้เสร็จก่อน */
+  const analysisPromiseRef = useRef<Promise<unknown> | null>(null);
   /** ระดับเสียงรบกวนพื้นหลังของคลิป ใช้เป็น threshold ของ noise gate ตอน export */
   const noiseFloorRef = useRef(0);
 
