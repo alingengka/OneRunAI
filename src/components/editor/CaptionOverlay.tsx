@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type CaptionGroup, type CaptionStyle, LINE_BREAK, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
+import { type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
 
 type Props = {
   group: CaptionGroup | null;
@@ -167,7 +167,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         textAlign: style.textAlign ?? "center",
         lineHeight: 1.15,
         fontFamily: style.fontFamily,
-        fontWeight: style.fontWeight,
+        fontWeight: emphasizedWeight(style.fontWeight, style.bold),
+        fontStyle: style.italic ? "italic" : "normal",
         fontSize,
         color: style.color,
         textShadow,
@@ -196,7 +197,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
           style={{
             display: "block",
             fontFamily: ls.fontFamily ?? style.fontFamily,
-            fontWeight: ls.fontWeight ?? style.fontWeight,
+            fontWeight: emphasizedWeight(ls.fontWeight ?? style.fontWeight, ls.bold ?? style.bold),
+            fontStyle: (ls.italic ?? style.italic) ? "italic" : "normal",
             color: ls.color ?? style.color,
             textShadow: lineTextShadow,
           }}
