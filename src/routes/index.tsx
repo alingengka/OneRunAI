@@ -91,7 +91,7 @@ import {
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { translateLines } from "@/lib/translate.functions";
 import { clearProject, loadProject, saveProject } from "@/lib/project-store";
-import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "@/lib/caption-editing";
+import { wordsToTranscript, buildRowWords, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt } from "@/lib/media/motion";
