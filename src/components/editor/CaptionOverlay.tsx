@@ -237,6 +237,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                 wordTransform = "translateY(-3%)";
               }
 
+              const effectiveBold = ls.bold ?? style.bold;
+
               return (
                 <span
                   key={`${word.start}-${i}`}
@@ -254,6 +256,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                     transform: wordTransform,
                     transition:
                       anim === "none" ? undefined : `color ${Math.round(80 / speed)}ms linear`,
+                    WebkitTextStroke: effectiveBold ? boldStroke(fontSize) : undefined,
                   }}
                 >
                   {word.text}
