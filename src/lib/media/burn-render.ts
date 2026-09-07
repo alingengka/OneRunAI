@@ -212,11 +212,17 @@ export function createBurnRenderer(
   const baseGap = (style.lineGap ?? 0.08) * fontSize;
   const lineHeight = fontSize * 1.18;
 
+  /** ความกว้างสูงสุดของข้อความ (ให้ตรงกับพรีวิวที่กว้าง 88% ของเฟรม) */
+  const maxTextWidth = width * 0.88;
+
   const layoutFor = (group: CaptionGroup): GroupLayout => {
     const cached = layoutCache.get(group);
     if (cached) return cached;
-    const lines = layoutGroupStatic(group, style);
-    const metrics: LineMetric[] = lines.map((line, i) => {
+    const sourceLines = layoutGroupStatic(group, style);
+    const lines: StaticLine[] = [];
+    const metrics: LineMetric[] = [];
+
+    sourceLines.forEach((line, i) => {
       const ls = lineStyleAt(style, i);
       const wanted: TextEmphasis = { bold: ls.bold ?? style.bold, italic: ls.italic ?? style.italic };
       const family = ls.fontFamily ?? style.fontFamily;
@@ -226,15 +232,38 @@ export function createBurnRenderer(
       ctx.font = font;
       const space = ctx.measureText(" ").width;
       const pad = emphasisPad(fontSize, synthetic);
-      const widths = line.words.map((w) => ctx.measureText(w.text).width + pad);
-      const total = widths.reduce((n, w) => n + w, 0) + space * Math.max(0, line.words.length - 1);
-      return { widths, space, total, weight, family, ls, gap: (ls.gap ?? 0) * fontSize, em: synthetic, font };
+      const gap = (ls.gap ?? 0) * fontSize;
+      const wordWidths = line.words.map((w) => ctx.measureText(w.text).width + pad);
+
+      // ตัดบรรทัดตามความกว้างจริง เพื่อไม่ให้คำล้นออกนอกเฟรม (คำหายจากภาพ)
+      let chunk: StaticWord[] = [];
+      let chunkWidths: number[] = [];
+      let chunkTotal = 0;
+      const flush = () => {
+        if (!chunk.length) return;
+        lines.push({ words: chunk });
+        metrics.push({ widths: chunkWidths, space, total: chunkTotal, weight, family, ls, gap, em: synthetic, font });
+        chunk = [];
+        chunkWidths = [];
+        chunkTotal = 0;
+      };
+      line.words.forEach((word, wi) => {
+        const w = wordWidths[wi]!;
+        const next = chunkTotal + (chunk.length ? space : 0) + w;
+        if (chunk.length && next > maxTextWidth) flush();
+        chunkTotal += (chunk.length ? space : 0) + w;
+        chunk.push(word);
+        chunkWidths.push(w);
+      });
+      flush();
     });
+
     const blockHeight = metrics.reduce((n, m, i) => n + lineHeight + (i ? baseGap + m.gap : 0), 0);
     const layout: GroupLayout = { lines, metrics, blockHeight };
     layoutCache.set(group, layout);
     return layout;
   };
+
 
   const drawCaption = (time: number) => {
     if (options.captions === false || !sortedGroups.length) return;
