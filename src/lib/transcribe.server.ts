@@ -24,13 +24,23 @@ function laoPrompt(context: string, glossary: string[], strict: boolean): string
     "The speaker is speaking Lao, not Thai. Transcribe verbatim in Lao script exactly as spoken.",
     "Never translate, never use Thai script, never summarise, and never invent missing speech.",
     "Use standard Vientiane/Central Lao spelling. Preserve tone marks, repeated words, names, numbers and spoken particles.",
+    // Lao speakers code-switch constantly; spelling English words out in Lao
+    // letters loses the real wording, so keep them in Latin script.
+    "Lao speakers often mix English words into a Lao sentence. Write any English word that is actually spoken in Latin letters exactly as said (e.g. appreciate, the best thing, edit, video, viral) — never transliterate it into Lao script and never drop it.",
     "Return transcript text only without labels or commentary.",
   ];
-  if (strict) base.push("Use only Lao characters (U+0E80–U+0EFF), digits, spaces and spoken punctuation.");
+  if (strict) base.push("Apart from spoken English words, use only Lao characters (U+0E80–U+0EFF), digits, spaces and spoken punctuation.");
   if (glossary.length) base.push(`Preferred spellings when audible: ${glossary.slice(0, 40).join(", ")}`);
   if (context && !strict) base.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
   if (strict) base.push("Listen independently from prior context and prefer only words clearly audible in this recording.");
   return base.join(" ");
+}
+
+const LATIN_WORD = /[A-Za-z][A-Za-z'’-]*/g;
+
+/** Latin-script words in a candidate — spoken English kept as English. */
+function latinWords(text: string): string[] {
+  return (text.match(LATIN_WORD) ?? []).map((word) => word.toLowerCase());
 }
 
 function cleanup(text: string, language?: string): string {
@@ -40,10 +50,13 @@ function cleanup(text: string, language?: string): string {
   if (language === "lo" && out) {
     const lao = (out.match(/[\u0e80-\u0eff]/g) ?? []).length;
     const thai = (out.match(/[\u0e00-\u0e7f]/g) ?? []).length;
-    if (!lao || thai > Math.max(1, lao * 0.08)) return "";
+    // Code-switched speech can be entirely English in a short chunk, so Latin
+    // text counts as valid output; only Thai script means a wrong rendering.
+    if ((!lao && !latinWords(out).length) || thai > Math.max(1, lao * 0.08)) return "";
   }
   return out;
 }
+
 
 function chars(text: string): string[] {
   return [...text.normalize("NFC").replace(/[\s.,!?]/g, "")];
