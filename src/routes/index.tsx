@@ -25,6 +25,10 @@ import {
   VolumeX,
   Moon,
   Sun,
+  AudioLines,
+  Clapperboard,
+  Type,
+  Zap,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -1100,7 +1104,7 @@ function Studio() {
           <div className="mb-5 flex gap-1 overflow-x-auto rounded-lg bg-secondary p-1">
             {(
               [
-                ["tools", "AI Tools"],
+                ["tools", "คำบรรยาย"],
                 ["scenes", "Scenes"],
                 ["styles", "Caption Style"],
                 ["customize", "Customize"],
@@ -1124,17 +1128,44 @@ function Studio() {
           </div>
 
           {tab === "tools" && (
-            <div className="space-y-7">
+            <div className="space-y-8">
+              <nav className="grid grid-cols-3 gap-2 sm:gap-3" aria-label="ทางลัดเครื่องมือตัดต่อ">
+                <Button
+                  variant="outline"
+                  onClick={() => setTab("tools")}
+                  className="h-24 flex-col gap-2 border-primary/50 bg-primary/5 px-2 text-primary shadow-primary sm:h-28"
+                >
+                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/15"><Captions className="h-5 w-5" /></span>
+                  <span className="text-xs font-semibold text-foreground sm:text-sm">คำบรรยาย</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setTab("scenes")}
+                  className="h-24 flex-col gap-2 border-border bg-card px-2 hover:border-primary/50 hover:bg-primary/5 sm:h-28"
+                >
+                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary"><Clapperboard className="h-5 w-5" /></span>
+                  <span className="text-xs font-semibold sm:text-sm">แก้ซีน</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setTab("export")}
+                  className="h-24 flex-col gap-2 border-border bg-card px-2 hover:border-primary/50 hover:bg-primary/5 sm:h-28"
+                >
+                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary"><Scissors className="h-5 w-5" /></span>
+                  <span className="text-xs font-semibold sm:text-sm">ตัดวิดีโอ</span>
+                </Button>
+              </nav>
+
               <section aria-labelledby="ai-tools-heading">
-                <div className="mb-2 border-b border-border pb-2">
-                  <h2 id="ai-tools-heading" className="text-xs font-semibold uppercase text-muted-foreground">เครื่องมือ AI</h2>
+                <div className="mb-1">
+                  <h2 id="ai-tools-heading" className="text-base font-bold text-foreground">เครื่องมือ AI</h2>
                 </div>
 
                 <div className="divide-y divide-border">
                   <div className="py-4">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
                       <div className="flex min-w-0 items-start gap-3">
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Captions className="h-4 w-4" /></span>
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Captions className="h-5 w-5" /></span>
                         <div className="min-w-0">
                           <p className="text-sm font-semibold">AI Captions</p>
                           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ</p>
@@ -1179,47 +1210,79 @@ function Studio() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
                     <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Waves className="h-4 w-4" /></span>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Type className="h-5 w-5" /></span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">Viral Text</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มข้อความดึงดูดสายตาในแต่ละซีน</p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>แก้ไข</Button>
+                  </div>
+
+                  <div className="py-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><AudioLines className="h-5 w-5" /></span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">เสียงประกอบ</p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มจังหวะเสียงให้ข้อความและการเปลี่ยนซีน</p>
+                        </div>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => setTab("audio")}>แก้ไข</Button>
+                      <Switch checked={sfx.enabled} onCheckedChange={(enabled) => setSfx((current) => ({ ...current, enabled }))} aria-label="เปิดเสียงประกอบ" />
+                    </div>
+                    <div className="mt-4 ml-0 space-y-2 border-l-2 border-primary/20 pl-3 sm:ml-12">
+                      <Label className="flex justify-between text-xs text-muted-foreground"><span>ระดับเสียงประกอบ</span><span className="font-mono text-foreground">{Math.round(sfx.volume * 100)}%</span></Label>
+                      <Slider value={[sfx.volume * 100]} min={0} max={100} step={5} onValueChange={([volume]) => setSfx((current) => ({ ...current, volume: (volume ?? 35) / 100 }))} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Zap className="h-5 w-5" /></span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">Motion Graphic</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มองค์ประกอบเคลื่อนไหวให้ซีน</p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>แก้ไข</Button>
+                  </div>
+
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Clapperboard className="h-5 w-5" /></span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">B-roll</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มภาพประกอบให้แต่ละช่วงของวิดีโอ</p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>แก้ไข</Button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="border-t border-border pt-6" aria-labelledby="video-tools-heading">
+                <div className="mb-1">
+                  <h2 id="video-tools-heading" className="text-base font-bold text-foreground">ปรับแต่งวิดีโอ</h2>
+                </div>
+                <div className="divide-y divide-border">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Waves className="h-5 w-5" /></span>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold">ลดเสียงรบกวน</p>
                         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">กรองเสียงต่ำ เสียงฮัม และปรับระดับเสียงพูดให้นิ่งขึ้น</p>
                       </div>
                     </div>
-                    <span className="hidden text-xs text-muted-foreground sm:block">อัตโนมัติ</span>
                     <Switch checked={noiseReduction} onCheckedChange={setNoiseReduction} aria-label="ลดเสียงรบกวน" />
                   </div>
 
                   <div className="py-4">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Wand2 className="h-4 w-4" /></span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">แปลซับด้วย AI</p>
-                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">แปลข้อความโดยคงจังหวะเวลาเดิม</p>
-                        </div>
-                      </div>
-                      <div className="col-span-2 flex flex-wrap gap-2 sm:col-span-1 sm:col-start-2">
-                        {words.length ? LANGUAGES.map((language) => (
-                          <Button key={language.code} aria-label={`แปลเป็น ${language.label}`} size="sm" variant="outline" disabled={translating || !words.length} onClick={() => void translateCaptions(language.code)}>
-                            {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : null} แปลเป็น {language.label}
-                          </Button>
-                        )) : <span className="text-xs text-muted-foreground">สร้างซับก่อนเลือกภาษาแปล</span>}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section aria-labelledby="video-tools-heading">
-                <div className="mb-2 border-b border-border pb-2">
-                  <h2 id="video-tools-heading" className="text-xs font-semibold uppercase text-muted-foreground">ปรับแต่งวิดีโอ</h2>
-                </div>
-                <div className="py-4">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
                     <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Scissors className="h-4 w-4" /></span>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Scissors className="h-5 w-5" /></span>
                       <div className="min-w-0">
                         <p className="text-sm font-semibold">ตัดช่วงเงียบ</p>
                         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ลบ dead-air ออกจากวิดีโออัตโนมัติ</p>
@@ -1230,16 +1293,37 @@ function Studio() {
                     </Button>
                     <Switch className="col-start-2 row-start-1 sm:col-start-3" checked={removeSilence} onCheckedChange={setRemoveSilence} aria-label="ตัดช่วงเงียบ" />
                   </div>
-                  <div className="mt-4 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-12 sm:grid-cols-2">
+                  <div className="mt-5 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-12">
                     <div className="space-y-2">
-                      <Label className="flex justify-between text-[11px] uppercase text-muted-foreground"><span>ความไวเสียง</span><span>{threshold} dB</span></Label>
+                      <Label className="flex justify-between text-xs text-muted-foreground"><span>ความไวเสียง</span><span className="font-mono text-foreground">{threshold} dB</span></Label>
                       <Slider value={[threshold]} min={-60} max={-15} step={1} onValueChange={([v]) => setThreshold(v ?? -34)} onValueCommit={() => file && void analyze(file, threshold, minSilence)} />
                     </div>
                     <div className="space-y-2">
-                      <Label className="flex justify-between text-[11px] uppercase text-muted-foreground"><span>ช่วงเงียบขั้นต่ำ</span><span>{minSilence.toFixed(2)}s</span></Label>
+                      <Label className="flex justify-between text-xs text-muted-foreground"><span>ช่วงเงียบขั้นต่ำ</span><span className="font-mono text-foreground">{minSilence.toFixed(2)}s</span></Label>
                       <Slider value={[minSilence]} min={0.1} max={1.5} step={0.05} onValueChange={([v]) => setMinSilence(v ?? 0.35)} onValueCommit={() => file && void analyze(file, threshold, minSilence)} />
                     </div>
-                    <p className="text-xs text-muted-foreground sm:col-span-2">ตัดออกได้ {savedSeconds.toFixed(1)}s · เหลือ {keptDuration(segments).toFixed(1)}s</p>
+                    <p className="text-xs text-muted-foreground">ตัดออกได้ {savedSeconds.toFixed(1)}s · เหลือ {keptDuration(segments).toFixed(1)}s</p>
+                  </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="border-t border-border pt-6" aria-labelledby="caption-actions-heading">
+                <h2 id="caption-actions-heading" className="mb-4 text-sm font-semibold text-foreground">ภาษาและการแปล</h2>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Wand2 className="h-5 w-5" /></span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">แปลซับด้วย AI</p>
+                      <p className="mt-0.5 text-xs leading-5 text-muted-foreground">แปลข้อความโดยคงจังหวะเวลาเดิม</p>
+                    </div>
+                  </div>
+                  <div className="col-span-2 flex flex-wrap gap-2">
+                    {words.length ? LANGUAGES.map((language) => (
+                      <Button key={language.code} aria-label={`แปลเป็น ${language.label}`} size="sm" variant="outline" disabled={translating || !words.length} onClick={() => void translateCaptions(language.code)}>
+                        {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : null} แปลเป็น {language.label}
+                      </Button>
+                    )) : <span className="text-xs text-muted-foreground">สร้างซับก่อนเลือกภาษาแปล</span>}
                   </div>
                 </div>
               </section>
