@@ -23,6 +23,8 @@ import {
   Save,
   Volume2,
   VolumeX,
+  Moon,
+  Sun,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -93,18 +95,19 @@ import { AccuracyPanel } from "@/components/editor/AccuracyPanel";
 import { GlossaryManager } from "@/components/editor/GlossaryManager";
 import { applyRulesToWords, parseGlossaryTerms, type LexRule } from "@/lib/lao-glossary";
 import { buildAccuracyReport } from "@/lib/accuracy-report";
+import { OneRunLogo } from "@/components/brand/OneRunLogo";
 
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "ShortCut Studio — ตัดคลิปเป็น Short Video สไตล์ไวรัล" },
+      { title: "OneRunAI — AI Short Video Editor" },
       {
         name: "description",
         content:
-          "อัปโหลดคลิป สร้างซับไตเติลอัตโนมัติแบบทีละคำ ตัดช่วงเงียบ และส่งออก SRT / EDL เข้า CapCut ได้ทันที",
+          "ตัดคลิปสั้น สร้างซับไตเติลอัตโนมัติแบบทีละคำ ตัดช่วงเงียบ และส่งออกวิดีโอพร้อมโพสต์ด้วย OneRunAI",
       },
-      { property: "og:title", content: "ShortCut Studio — ตัดคลิปเป็น Short Video สไตล์ไวรัล" },
+      { property: "og:title", content: "OneRunAI — AI Short Video Editor" },
       {
         property: "og:description",
         content: "ซับอัตโนมัติ ตัด dead-air และส่งออกไฟล์เข้า CapCut ในเครื่องมือเดียว",
@@ -186,8 +189,23 @@ function Studio() {
   const [projectName, setProjectName] = useState("Untitled short");
   const [sceneElements, setSceneElements] = useState<SceneElement[]>([]);
   const [muted, setMuted] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
   const restoredProjectRef = useRef(false);
   const lastSoundGroupRef = useRef<number>(-1);
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem("onerunai-theme");
+    const useDark = storedTheme !== "light";
+    setDarkMode(useDark);
+    document.documentElement.classList.toggle("dark", useDark);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    document.documentElement.classList.toggle("dark", next);
+    window.localStorage.setItem("onerunai-theme", next ? "dark" : "light");
+  };
 
   const [dropped, setDropped] = useState<string[]>([]);
   const [job, setJob] = useState<{ label: string; ratio: number | null } | null>(null);
@@ -1001,16 +1019,16 @@ function Studio() {
   ];
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Scissors className="h-4 w-4" />
-          </div>
-          <div className="min-w-[180px]">
-            <h1 className="sr-only">ShortCut Studio</h1>
-            <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} aria-label="ชื่อโปรเจกต์" className="h-8 border-transparent px-1 text-base font-semibold shadow-none focus-visible:border-input" />
-            <p className="px-1 text-xs text-muted-foreground">ShortCut Studio · Short video editor</p>
+    <main className="studio-shell min-h-screen overflow-hidden bg-background text-foreground">
+      <div className="orbit-decoration pointer-events-none absolute -right-32 top-24 -z-10 h-72 w-[32rem] opacity-60" aria-hidden="true" />
+      <header className="studio-header sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-4">
+          <OneRunLogo className="shrink-0" />
+          <div className="hidden h-8 w-px bg-border sm:block" />
+          <div className="min-w-[140px] max-w-[280px] flex-1">
+            <h1 className="sr-only">OneRunAI Short Video Editor</h1>
+            <Input value={projectName} onChange={(event) => setProjectName(event.target.value)} aria-label="ชื่อโปรเจกต์" className="h-8 border-transparent bg-transparent px-1 text-sm font-semibold shadow-none focus-visible:border-input sm:text-base" />
+            <p className="hidden px-1 text-xs text-muted-foreground sm:block">AI short video workspace</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1024,11 +1042,14 @@ function Studio() {
               if (f) void onPickFile(f);
             }}
           />
-          <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
+          <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="hidden sm:inline-flex">
             <Upload className="mr-2 h-4 w-4" /> อัปโหลดคลิป
           </Button>
-          <Button variant="secondary" onClick={saveNow}>
+          <Button variant="secondary" onClick={saveNow} className="hidden md:inline-flex">
             <Save className="mr-2 h-4 w-4" /> บันทึก
+          </Button>
+          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label={darkMode ? "ใช้โหมดสว่าง" : "ใช้โหมดมืด"} title={darkMode ? "ใช้โหมดสว่าง" : "ใช้โหมดมืด"}>
+            {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
           <Button onClick={() => setTab("export")}>
             <Download className="mr-2 h-4 w-4" /> ส่งออก
@@ -1058,9 +1079,9 @@ function Studio() {
         )}
       </div>
 
-      <div className="mx-auto grid max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
+      <div className="mx-auto grid min-w-0 max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
         {/* Left: controls */}
-        <section className="order-2 rounded-lg border border-border bg-card p-4 sm:p-5 lg:order-1">
+        <section className="studio-panel order-2 min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5 lg:order-1">
           <div className="mb-5 flex gap-1 overflow-x-auto rounded-lg bg-secondary p-1">
             {(
               [
@@ -1079,7 +1100,7 @@ function Studio() {
                 onClick={() => { setTab(key); play("hover"); }}
                 className={cn(
                   "flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  tab === key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
+                  tab === key ? "bg-card text-foreground shadow-primary" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {label}
@@ -1525,15 +1546,15 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start">
-          <div className="rounded-lg border border-border bg-card p-4">
+        <section className="order-1 min-w-0 lg:order-2 lg:sticky lg:top-4 lg:self-start">
+          <div className="studio-panel rounded-xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium"><Smartphone className="h-4 w-4" /> TikTok Preview</div>
               <Switch checked={tiktokPreview} onCheckedChange={setTiktokPreview} aria-label="เปิดพรีวิว TikTok" />
             </div>
             <div
               ref={frameRef}
-              className={`relative mx-auto w-full overflow-hidden rounded-xl bg-black ${tiktokPreview ? "aspect-[886/1920] max-w-[314px]" : "aspect-[9/16] max-w-[340px]"}`}
+              className={`relative mx-auto w-full overflow-hidden rounded-xl bg-preview shadow-primary-lg ring-1 ring-primary/20 ${tiktokPreview ? "aspect-[886/1920] max-w-[314px]" : "aspect-[9/16] max-w-[340px]"}`}
             >
               {videoUrl ? (
                 <video

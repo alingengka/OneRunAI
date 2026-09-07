@@ -19,9 +19,9 @@ export function StepBar({ steps, onSelect }: { steps: Step[]; onSelect: (key: st
             type="button"
             onClick={() => onSelect(step.key)}
             className={cn(
-              "w-full rounded-xl border px-3 py-2 text-left transition",
+              "w-full rounded-xl border px-3 py-2 text-left transition-[border-color,background-color,box-shadow]",
               step.state === "done" && "border-primary/40 bg-primary/10",
-              step.state === "active" && "border-primary bg-card shadow-sm",
+              step.state === "active" && "border-primary bg-card shadow-primary",
               step.state === "busy" && "border-primary bg-primary/5",
               step.state === "todo" && "border-border bg-secondary/40",
             )}
