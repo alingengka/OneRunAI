@@ -7,16 +7,67 @@ import type { Segment } from "./audio";
 import { motionTransform, NO_MOTION, type MotionElement, type MotionScene } from "./motion";
 import { viralTextWindow } from "../scenes";
 import {
+  ITALIC_SKEW,
   LINE_BREAK,
+  emphasizedWeight,
   isKeyword,
   shadowBlur,
   strokeWidth,
   type CaptionGroup,
   type CaptionStyle,
   type LineStyle,
+  type TextEmphasis,
 } from "../captions";
 
 export type ExportResolution = "source" | "4k" | "1080" | "720";
+
+/**
+ * วาดข้อความพร้อมตัวหนา/ตัวเอียง "สังเคราะห์"
+ * - เอียง: skew บนแกน x รอบเส้น baseline (สระ/วรรณยุกต์ลาวเลื่อนตามตัวอักษร ไม่หลุดตำแหน่ง)
+ * - หนา: วาดซ้อนหลายรอบด้วย offset เล็ก ๆ เพราะ canvas ไม่สังเคราะห์ตัวหนาให้ฟอนต์ custom
+ */
+export function paintEmphasized(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  em: TextEmphasis,
+  mode: "fill" | "stroke",
+): void {
+  const draw = (dx: number, dy: number) =>
+    mode === "stroke" ? ctx.strokeText(text, dx, dy) : ctx.fillText(text, dx, dy);
+  ctx.save();
+  ctx.translate(x, y);
+  if (em.italic) ctx.transform(1, 0, ITALIC_SKEW, 1, 0, 0);
+  if (em.bold) {
+    const d = Math.max(0.6, fontSize * 0.018);
+    const o = d * 0.72;
+    for (const [dx, dy] of [
+      [0, 0],
+      [d, 0],
+      [-d, 0],
+      [0, d],
+      [0, -d],
+      [o, o],
+      [-o, -o],
+      [o, -o],
+      [-o, o],
+    ] as const) {
+      draw(dx, dy);
+    }
+  } else {
+    draw(0, 0);
+  }
+  ctx.restore();
+}
+
+/** ความกว้างที่เพิ่มขึ้นจากการหนา/เอียงสังเคราะห์ (ใช้กัน layout ชนกัน) */
+export function emphasisPad(fontSize: number, em: TextEmphasis): number {
+  return (em.bold ? fontSize * 0.036 : 0) + (em.italic ? fontSize * 0.05 : 0);
+}
+
+
 
 /**
  * บังคับให้ฟอนต์ทุกตัวที่ซับใช้ (รวม override รายบรรทัด) โหลดเสร็จก่อนวาดลง canvas
@@ -147,6 +198,7 @@ export function createBurnRenderer(
     family: string;
     ls: LineStyle;
     gap: number;
+    em: TextEmphasis;
   };
   type GroupLayout = { lines: StaticLine[]; metrics: LineMetric[]; blockHeight: number };
   const layoutCache = new Map<CaptionGroup, GroupLayout>();
@@ -160,13 +212,15 @@ export function createBurnRenderer(
     const lines = layoutGroupStatic(group, style);
     const metrics: LineMetric[] = lines.map((line, i) => {
       const ls = lineStyleAt(style, i);
-      const weight = ls.fontWeight ?? style.fontWeight;
+      const em: TextEmphasis = { bold: ls.bold ?? style.bold, italic: ls.italic ?? style.italic };
+      const weight = emphasizedWeight(ls.fontWeight ?? style.fontWeight, em.bold);
       const family = ls.fontFamily ?? style.fontFamily;
       ctx.font = `${weight} ${fontSize}px ${family}`;
       const space = ctx.measureText(" ").width;
-      const widths = line.words.map((w) => ctx.measureText(w.text).width);
+      const pad = emphasisPad(fontSize, em);
+      const widths = line.words.map((w) => ctx.measureText(w.text).width + pad);
       const total = widths.reduce((n, w) => n + w, 0) + space * Math.max(0, line.words.length - 1);
-      return { widths, space, total, weight, family, ls, gap: (ls.gap ?? 0) * fontSize };
+      return { widths, space, total, weight, family, ls, gap: (ls.gap ?? 0) * fontSize, em };
     });
     const blockHeight = metrics.reduce((n, m, i) => n + lineHeight + (i ? baseGap + m.gap : 0), 0);
     const layout: GroupLayout = { lines, metrics, blockHeight };
@@ -225,9 +279,9 @@ export function createBurnRenderer(
         if (strokePx > 0) {
           ctx.lineJoin = "round";
           ctx.miterLimit = 2;
-          ctx.lineWidth = strokePx * 2;
+          ctx.lineWidth = strokePx * 2 + (m.em.bold ? fontSize * 0.02 : 0);
           ctx.strokeStyle = m.ls.strokeColor ?? style.strokeColor;
-          ctx.strokeText(word.text, x, y);
+          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "stroke");
         }
 
         const blur = shadowBlur[style.shadow] * (fontSize / 64);
@@ -242,12 +296,13 @@ export function createBurnRenderer(
               ? style.highlightColor
               : (m.ls.color ?? style.color)
           : (m.ls.color ?? style.color);
-        ctx.fillText(word.text, x, y);
+        paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
         ctx.shadowColor = "transparent";
         x += w + m.space;
       });
+
 
       y += lineHeight;
     });
@@ -276,13 +331,13 @@ export function createBurnRenderer(
         end: win.end,
         text: element.text.trim().toUpperCase(),
         position: element.position ?? "top",
+        em: { bold: element.bold, italic: element.italic } as TextEmphasis,
       };
     })
     .filter((w): w is NonNullable<typeof w> => !!w)
     .sort((a, b) => a.start - b.start);
 
   const viralFontSize = height * 0.075;
-  const viralFont = `900 ${viralFontSize}px ${style.fontFamily}`;
 
   const drawViralText = (time: number) => {
     if (!viralWindows.length) return;
@@ -302,16 +357,17 @@ export function createBurnRenderer(
     ctx.globalAlpha = alpha;
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
-    ctx.font = viralFont;
+    ctx.font = `900 ${viralFontSize}px ${style.fontFamily}`;
     ctx.translate(width / 2, y);
     ctx.scale(pop, pop);
     ctx.lineJoin = "round";
     ctx.miterLimit = 2;
-    ctx.lineWidth = Math.max(4, viralFontSize * 0.14);
+    ctx.lineWidth = Math.max(4, viralFontSize * 0.14) + (hit.em.bold ? viralFontSize * 0.02 : 0);
     ctx.strokeStyle = "#000000";
-    ctx.strokeText(hit.text, 0, 0);
+    paintEmphasized(ctx, hit.text, 0, 0, viralFontSize, hit.em, "stroke");
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(hit.text, 0, 0);
+    paintEmphasized(ctx, hit.text, 0, 0, viralFontSize, hit.em, "fill");
+
     ctx.restore();
     ctx.textAlign = "left";
   };

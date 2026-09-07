@@ -87,6 +87,32 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3 }: Props
             ))}
           </select>
         </Row>
+        <Row label="ตัวหนา / ตัวเอียง">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              aria-pressed={!!style.bold}
+              onClick={() => onChange({ bold: !style.bold })}
+              className={cn(
+                "h-9 flex-1 rounded-lg border text-sm font-bold transition-colors",
+                style.bold ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary",
+              )}
+            >
+              B
+            </button>
+            <button
+              type="button"
+              aria-pressed={!!style.italic}
+              onClick={() => onChange({ italic: !style.italic })}
+              className={cn(
+                "h-9 flex-1 rounded-lg border text-sm italic transition-colors",
+                style.italic ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary",
+              )}
+            >
+              I
+            </button>
+          </div>
+        </Row>
         <Row label="Uppercase">
           <Segmented
             value={style.uppercase ? "yes" : "no"}
@@ -389,6 +415,32 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3 }: Props
                 </option>
               ))}
             </select>
+          </Row>
+          <Row label="ตัวหนา / ตัวเอียง บรรทัดนี้">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                aria-pressed={!!(line.bold ?? style.bold)}
+                onClick={() => patchLine({ bold: (line.bold ?? style.bold) ? undefined : true })}
+                className={cn(
+                  "h-9 flex-1 rounded-lg border text-sm font-bold transition-colors",
+                  (line.bold ?? style.bold) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary",
+                )}
+              >
+                B
+              </button>
+              <button
+                type="button"
+                aria-pressed={!!(line.italic ?? style.italic)}
+                onClick={() => patchLine({ italic: (line.italic ?? style.italic) ? undefined : true })}
+                className={cn(
+                  "h-9 flex-1 rounded-lg border text-sm italic transition-colors",
+                  (line.italic ?? style.italic) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary",
+                )}
+              >
+                I
+              </button>
+            </div>
           </Row>
           <Row label="สีตัวอักษร">
             <Input

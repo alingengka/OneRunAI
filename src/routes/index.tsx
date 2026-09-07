@@ -85,7 +85,7 @@ import { wordsToTranscript, buildRowWords, syncAccuracy, type SyncIssue } from "
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt } from "@/lib/media/motion";
-import { addSceneElement, buildScenes, updateSceneElementText, updateSceneElementTiming, type SceneElement, type SceneElementKind } from "@/lib/scenes";
+import { addSceneElement, buildScenes, updateSceneElementFormat, updateSceneElementText, updateSceneElementTiming, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { ViralTextOverlay } from "@/components/editor/ViralTextOverlay";
 import { StepBar, type Step } from "@/components/editor/StepBar";
@@ -940,6 +940,11 @@ function Studio() {
     setSceneElements((current) => updateSceneElementTiming(current, id, offset, durationSec));
   };
 
+  const updateElementFormat = (id: string, patch: { bold?: boolean; italic?: boolean }) => {
+    setSceneElements((current) => updateSceneElementFormat(current, id, patch));
+  };
+
+
   const addElement = (sceneId: string, kind: SceneElementKind) => {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
@@ -1266,6 +1271,7 @@ function Studio() {
               onToggleElement={toggleSceneElement}
               onUpdateElementText={updateElementText}
               onUpdateElementTiming={updateElementTiming}
+              onUpdateElementFormat={updateElementFormat}
             />
           )}
 
