@@ -60,7 +60,24 @@ export const fontOptions: FontOption[] = [
     value: "'Noto Sans Thai', 'Noto Sans Lao', 'Inter', sans-serif",
     scripts: ["th", "lo", "latin"],
   },
+  // ฟอนต์ลาวที่เพิ่มเข้ามาเอง (ไฟล์อยู่ใน public/fonts)
+  { label: "Lao Chalk (ລາວ)", value: "'Lao Chalk', 'Noto Sans Lao', sans-serif", scripts: ["lo"] },
+  {
+    label: "Lao Handwriting 16 (ລາວ)",
+    value: "'Lao Handwriting 16', 'Noto Sans Lao', sans-serif",
+    scripts: ["lo"],
+  },
+  { label: "PB Melon (ລາວ)", value: "'PB Melon', 'Noto Sans Lao', sans-serif", scripts: ["lo"] },
+  {
+    label: "PB Champasak (ລາວ)",
+    value: "'PB Champasak', 'Noto Sans Lao', sans-serif",
+    scripts: ["lo"],
+  },
+  { label: "Hinsiew (ລາວ)", value: "'Hinsiew', 'Noto Sans Lao', sans-serif", scripts: ["lo"] },
+  { label: "Tiktok Lao (ລາວ)", value: "'Tiktok Lao', 'Noto Sans Lao', sans-serif", scripts: ["lo"] },
+  { label: "Touk2 (ລາວ)", value: "'Touk2', 'Noto Sans Lao', sans-serif", scripts: ["lo"] },
 ];
+
 
 /** สไตล์เฉพาะรายบรรทัด (override สไตล์หลัก) */
 export type LineStyle = {
