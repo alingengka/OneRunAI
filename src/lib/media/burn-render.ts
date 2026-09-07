@@ -156,16 +156,43 @@ function lineStyleAt(style: CaptionStyle, index: number): LineStyle {
   return style.lineStyles?.[index] ?? {};
 }
 
-/** ค้นหาช่วงเวลาแบบ binary search (ช่วงเรียงตาม start และไม่ซ้อนกัน) */
+/** ความยาวช่วงที่มากที่สุดในลิสต์ (cache ต่อลิสต์ เพื่อไม่ต้องวนใหม่ทุกเฟรม) */
+const maxSpanCache = new WeakMap<object, number>();
+
+function maxSpanOf(list: { start: number; end: number }[]): number {
+  const cached = maxSpanCache.get(list);
+  if (cached !== undefined) return cached;
+  let max = 0;
+  for (const item of list) max = Math.max(max, item.end - item.start);
+  maxSpanCache.set(list, max);
+  return max;
+}
+
+/**
+ * ค้นหาช่วงเวลาแบบ binary search (ลิสต์เรียงตาม start)
+ *
+ * สำคัญ: เวลาคำจากการถอดเสียงจริงทำให้ "กลุ่มซับซ้อนเวลากันได้" (คำจาก chunk ที่
+ * overlap กัน) การ binary search แบบเดิมที่สมมติว่าช่วงไม่ซ้อนกันจะคืน null
+ * ทั้งที่มีกลุ่มครอบเวลานั้นอยู่ → ซับหายทั้งกลุ่ม จึงหา index สุดท้ายที่
+ * start <= time แล้วไล่ย้อนหลังเท่าความยาวช่วงที่มากที่สุด
+ */
 export function findWindow<T extends { start: number; end: number }>(list: T[], time: number, pad = 0): T | null {
+  if (!list.length) return null;
   let lo = 0;
   let hi = list.length - 1;
+  let idx = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    const item = list[mid]!;
-    if (time < item.start - pad) hi = mid - 1;
-    else if (time > item.end + pad) lo = mid + 1;
-    else return item;
+    if (list[mid]!.start - pad <= time) {
+      idx = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  const span = maxSpanOf(list);
+  for (let i = idx; i >= 0; i--) {
+    const item = list[i]!;
+    if (time - item.start > span + pad) break;
+    if (time >= item.start - pad && time <= item.end + pad) return item;
   }
   return null;
 }

@@ -258,6 +258,18 @@ function Studio() {
     [silences],
   );
 
+  // สถานะจริงของหน้าตัดต่อ ให้ชุดทดสอบ regression (guard:lao) อ่านผ่านเบราว์เซอร์ได้
+  useEffect(() => {
+    (window as unknown as { __shortcutState?: unknown }).__shortcutState = {
+      words: visibleWords,
+      groups,
+      style,
+      duration,
+      transcribing,
+    };
+  }, [visibleWords, groups, style, duration, transcribing]);
+
+
   // measure preview frame for font scaling
   useEffect(() => {
     const el = frameRef.current;

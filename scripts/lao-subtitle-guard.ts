@@ -161,8 +161,163 @@ async function checkCompleteness(): Promise<void> {
   console.log(`(ข) layout/burn: ตรวจ ${rows.length} กรณี (ฟอนต์ × B/I) — ผ่าน ${rows.length - bad}, ไม่ผ่าน ${bad}`);
 }
 
+/* ---------- (ค) integration ผ่าน UI จริง: อัปโหลด → สร้างซับด้วย AI → เรนเดอร์ ---------- */
+type IntegrationRow = { font: string; bold: boolean; italic: boolean; expected: number; drawn: number; outside: number; groupsMissed: number };
+
+async function checkIntegration(): Promise<void> {
+  if (SKIP_STT) {
+    console.log("(ค) ข้าม integration ผ่าน UI (--layout-only)");
+    return;
+  }
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ viewport: { width: 1400, height: 1800 } });
+  const page = await context.newPage();
+  await page.goto(APP, { waitUntil: "load" });
+  await page.waitForTimeout(2000);
+
+  // ช่องอัปโหลดถูกซ่อนไว้หลังปุ่ม จึงต้องเปิดให้มองเห็นก่อนป้อนไฟล์
+  await page.$eval('input[type="file"]', (el) => el.classList.remove("hidden"));
+  await page.setInputFiles('input[type="file"]', FIXTURE);
+  await page.getByRole("button", { name: "ລາວ", exact: true }).click();
+  await page.getByRole("button", { name: "สร้างซับด้วย AI", exact: true }).click();
+
+  await page.waitForFunction(
+    () => {
+      const s = (window as unknown as { __shortcutState?: { words?: unknown[]; transcribing?: boolean } }).__shortcutState;
+      return !!s && !s.transcribing && !!s.words?.length;
+    },
+    undefined,
+    { timeout: 180_000 },
+  );
+
+  const rows = (await page.evaluate(async () => {
+    const state = (window as unknown as {
+      __shortcutState: {
+        words: import("../src/lib/captions").Word[];
+        groups: import("../src/lib/captions").CaptionGroup[];
+        style: import("../src/lib/captions").CaptionStyle;
+        duration: number;
+      };
+    }).__shortcutState;
+    const captions = (await import("/src/lib/captions.ts")) as typeof import("../src/lib/captions");
+    const burn = (await import("/src/lib/media/burn-render.ts")) as typeof import("../src/lib/media/burn-render");
+
+    const width = 1080;
+    const height = 1920;
+    const source = document.createElement("canvas");
+    source.width = width;
+    source.height = height;
+
+    const out: {
+      font: string;
+      bold: boolean;
+      italic: boolean;
+      expected: number;
+      drawn: number;
+      outside: number;
+      groupsMissed: number;
+    }[] = [];
+
+    for (const option of captions.fontOptions) {
+      for (const [bold, italic] of [
+        [false, false],
+        [true, false],
+        [false, true],
+        [true, true],
+      ] as const) {
+        const style = { ...state.style, fontFamily: option.value, bold, italic };
+        const groups = captions.groupWords(state.words, style.wordsPerGroup);
+        const expectedWords = new Set(
+          state.words.map((w) => (style.uppercase ? w.text.toUpperCase() : w.text)).filter((t) => t !== captions.LINE_BREAK),
+        );
+        await burn.ensureCaptionFonts(style);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d")!;
+        const painted = new Map<string, { minX: number; maxX: number }>();
+        const originalFill = ctx.fillText.bind(ctx);
+        ctx.fillText = ((text: string, x: number, y: number) => {
+          const w = ctx.measureText(text).width;
+          const t = ctx.getTransform();
+          const x0 = t.a * x + t.e;
+          const x1 = t.a * (x + w) + t.e;
+          const prev = painted.get(text);
+          painted.set(text, { minX: Math.min(prev?.minX ?? x0, x0), maxX: Math.max(prev?.maxX ?? x1, x1) });
+          return originalFill(text, x, y);
+        }) as typeof ctx.fillText;
+
+        const renderer = burn.createBurnRenderer(ctx, width, height, groups, style, {});
+        const end = Math.max(state.duration || 0, ...groups.map((g) => g.end)) + 0.2;
+        // เดินไล่ทุกเฟรม 30fps เหมือนตอน export จริง
+        for (let t = 0; t <= end; t += 1 / 30) renderer.paint(source, t, { start: 0, end } as never);
+
+        // ทุกกลุ่มต้องปรากฏอย่างน้อยหนึ่งเฟรมตรงกลางช่วงของมัน
+        let groupsMissed = 0;
+        for (const g of groups) {
+          const before = painted.size;
+          renderer.paint(source, (g.start + g.end) / 2, { start: 0, end } as never);
+          const visible = g.words.filter((w) => w.text !== captions.LINE_BREAK);
+          const shown = visible.every((w) => painted.has(style.uppercase ? w.text.toUpperCase() : w.text));
+          if (!shown && painted.size === before) groupsMissed++;
+        }
+
+        const drawn = [...expectedWords].filter((t) => painted.has(t)).length;
+        const outside = [...expectedWords].filter((t) => {
+          const box = painted.get(t);
+          return !!box && (box.minX < 0 || box.maxX > width);
+        }).length;
+        out.push({ font: option.label, bold, italic, expected: expectedWords.size, drawn, outside, groupsMissed });
+      }
+    }
+    return out;
+  })) as IntegrationRow[];
+
+  await browser.close();
+
+  let bad = 0;
+  for (const row of rows) {
+    const label = `${row.font} [${row.bold ? "B" : "-"}${row.italic ? "I" : "-"}]`;
+    if (row.drawn !== row.expected || row.outside > 0 || row.groupsMissed > 0) {
+      bad++;
+      failures.push(`UI ${label}: วาด ${row.drawn}/${row.expected} คำ, หลุดกรอบ ${row.outside}, กลุ่มที่ไม่ขึ้นเลย ${row.groupsMissed}`);
+      console.log(`    ✗ ${label}: ${row.drawn}/${row.expected}, หลุดกรอบ ${row.outside}, กลุ่มหาย ${row.groupsMissed}`);
+    }
+  }
+  console.log(`(ค) integration ผ่าน UI จริง: ตรวจ ${rows.length} กรณี — ผ่าน ${rows.length - bad}, ไม่ผ่าน ${bad}`);
+}
+
+/* ---- (ง) กันซับหายจากกลุ่มเวลาที่ซ้อนกัน (เกิดจริงเมื่อคำมาจาก chunk ที่ overlap) ---- */
+async function checkOverlapWindows(): Promise<void> {
+  const { findWindow } = await import("../src/lib/media/burn-render");
+  let misses = 0;
+  let samples = 0;
+  for (let trial = 0; trial < 500; trial++) {
+    const list: { start: number; end: number }[] = [];
+    let cursor = 0;
+    for (let i = 0; i < 14; i++) {
+      const start = Math.max(0, cursor - (Math.random() < 0.4 ? Math.random() * 0.6 : 0));
+      const end = start + 0.3 + Math.random() * 1.5;
+      list.push({ start, end });
+      cursor = end + Math.random() * 0.3;
+    }
+    list.sort((a, b) => a.start - b.start);
+    for (let t = 0; t < cursor; t += 0.05) {
+      samples++;
+      const linear = list.find((g) => t >= g.start - 0.02 && t <= g.end + 0.02) ?? null;
+      if (linear && !findWindow(list, t, 0.02)) misses++;
+    }
+  }
+  console.log(`(ง) ช่วงซับที่ซ้อนกัน: สุ่ม ${samples} จุดเวลา — ซับหาย ${misses} จุด`);
+  if (misses) failures.push(`findWindow ทำซับหาย ${misses} จุดเมื่อกลุ่มเวลาซ้อนกัน`);
+}
+
 await checkAccuracy();
 await checkCompleteness();
+await checkOverlapWindows();
+await checkIntegration();
+
 
 if (failures.length) {
   console.error(`\n❌ LAO SUBTITLE GUARD FAILED (${failures.length})`);
