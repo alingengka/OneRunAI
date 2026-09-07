@@ -231,3 +231,14 @@ Ground truth: `ສະບາຍດີ ພາສາ ລາວ ວຽງຈັນ �
 
 ข้อจำกัดที่ยังเหลือ: `createNoiseGate` ยังใช้ `ScriptProcessorNode` (deprecated, รันบน main thread)
 ที่ 4K อาจแย่งเวลาเรนเดอร์จนเฟรมตก — ควรย้ายไป AudioWorklet ในรอบถัดไป
+
+## ตรวจสอบรายงาน "ซับลาวแม่นน้อยลงหลังงาน Sound" (2026-09-07)
+
+ผลตรวจจริง:
+- งาน Sound ถูกย้อนกลับทั้งหมดแล้วในคอมมิต `ddcc2ff` (revert → `bacc2c3`) โค้ดเสียงเอฟเฟกต์ (`src/lib/media/sfx.ts`, `sceneSoundCues`, props เสียงใน `ScenesPanel`) ไม่เหลืออยู่ในโปรเจกต์
+- diff `0f9a248 → HEAD` ของ `transcribe.server.ts`, `media/audio.ts`, `captions.ts`, `lao-glossary.ts`, `media/forced-align.ts` = ไม่มีการเปลี่ยนแปลงแม้แต่บรรทัดเดียว; `routes/index.tsx` เปลี่ยนเฉพาะการถอด props/effect ของเสียง (-32/+1) ไม่แตะ `runTranscribe`
+- `runTranscribe` ยังคง flow เดิม: raw `analysisSegmentsRef` → `refineSpeechSegments(12s)` → `buildAsrChunks(4.5–18s, gap 0.8, pad 0.25)` → `addChunkOverlap(0.38)` → Scribe timing → `reconcileSegmentsWithWords`
+- สคริปต์ตรวจผ่านทั้งหมด: `lao-script`, `scenes`, `transcript-metrics`, `audio reconcile`, `forced-align`; `tsgo --noEmit` ผ่าน
+- ทดสอบ ElevenLabs live: `scribe_v1` และ `scribe_v2` ตอบ HTTP 200 พร้อม `language_code=lao` — ผู้ให้บริการยังปกติ, คีย์ยังใช้งานได้
+
+สรุป: ไม่พบ regression ในโค้ด งาน Sound ไม่ใช่สาเหตุเพราะถูกย้อนไปก่อนแล้ว หากยังพบซับลาวเพี้ยน ให้เก็บคลิปตัวอย่าง + ข้อความที่ควรได้ เพื่อวัด CER เทียบ baseline ต่อ
