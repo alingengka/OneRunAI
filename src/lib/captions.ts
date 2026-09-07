@@ -86,9 +86,25 @@ export type LineStyle = {
   stroke?: StrokeSize;
   strokeColor?: string;
   fontWeight?: number;
+  /** ตัวหนาสังเคราะห์ (override สไตล์หลัก) */
+  bold?: boolean;
+  /** ตัวเอียงสังเคราะห์ (override สไตล์หลัก) */
+  italic?: boolean;
   /** ระยะห่างจากบรรทัดก่อนหน้า (เท่าของขนาดฟอนต์) */
   gap?: number;
 };
+
+/** ตัวหนา/ตัวเอียงสังเคราะห์ — ใช้ได้กับทุกฟอนต์แม้ไฟล์ฟอนต์มีน้ำหนักเดียว */
+export type TextEmphasis = { bold?: boolean; italic?: boolean };
+
+/** องศาเอียง ~12.4° (ค่าลบ = เอนไปทางขวาแบบ italic ปกติ) */
+export const ITALIC_SKEW = -0.22;
+
+/** น้ำหนักฟอนต์ที่ใช้จริงเมื่อเปิดตัวหนา */
+export function emphasizedWeight(weight: number, bold?: boolean): number {
+  return bold ? Math.min(900, Math.max(700, weight + 200)) : weight;
+}
+
 
 export type CaptionStyle = {
   id: string;
