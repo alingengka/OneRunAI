@@ -21,6 +21,7 @@ const BASELINE = "tests/fixtures/lao-sample.json";
 const APP = process.env["GUARD_APP_URL"] ?? "http://localhost:8080";
 const UPDATE = process.argv.includes("--update-baseline");
 const SKIP_STT = process.argv.includes("--layout-only");
+const ONLY_INTEGRATION = process.argv.includes("--integration-only");
 
 const failures: string[] = [];
 
@@ -313,8 +314,10 @@ async function checkOverlapWindows(): Promise<void> {
   if (misses) failures.push(`findWindow ทำซับหาย ${misses} จุดเมื่อกลุ่มเวลาซ้อนกัน`);
 }
 
-await checkAccuracy();
-await checkCompleteness();
+if (!ONLY_INTEGRATION) {
+  await checkAccuracy();
+  await checkCompleteness();
+}
 await checkOverlapWindows();
 await checkIntegration();
 
