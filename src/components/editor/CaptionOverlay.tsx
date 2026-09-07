@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
+import { type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
 
 type Props = {
   group: CaptionGroup | null;
@@ -238,6 +238,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
               }
 
               const effectiveBold = ls.bold ?? style.bold;
+              const lineFamily = ls.fontFamily ?? style.fontFamily;
+              const syntheticBold = effectiveBold && !fontRealFaces(lineFamily).bold;
 
               return (
                 <span
@@ -256,7 +258,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                     transform: wordTransform,
                     transition:
                       anim === "none" ? undefined : `color ${Math.round(80 / speed)}ms linear`,
-                    WebkitTextStroke: effectiveBold ? boldStroke(fontSize) : undefined,
+                    WebkitTextStroke: syntheticBold ? boldStroke(fontSize) : undefined,
                   }}
                 >
                   {word.text}

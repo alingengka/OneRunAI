@@ -1,4 +1,5 @@
 import { viralTextAt, type Scene, type SceneElement } from "@/lib/scenes";
+import { fontRealFaces } from "@/lib/captions";
 
 type Props = {
   scenes: Scene[];
