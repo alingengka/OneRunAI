@@ -1109,182 +1109,141 @@ function Studio() {
           </div>
 
           {tab === "tools" && (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-border p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex gap-3">
-                    <Captions className="mt-0.5 h-5 w-5 text-primary" />
-                    <div>
-                      <p className="text-sm font-medium">AI Captions</p>
-                      <p className="text-xs text-muted-foreground">
-                        ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ
-                      </p>
+            <div className="space-y-7">
+              <section aria-labelledby="ai-tools-heading">
+                <div className="mb-2 border-b border-border pb-2">
+                  <h2 id="ai-tools-heading" className="text-xs font-semibold uppercase text-muted-foreground">เครื่องมือ AI</h2>
+                </div>
+
+                <div className="divide-y divide-border">
+                  <div className="py-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Captions className="h-4 w-4" /></span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">AI Captions</p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ</p>
+                        </div>
+                      </div>
+                      <div className="col-span-2 flex flex-wrap gap-2 sm:col-span-1">
+                        <Button size="sm" onClick={runTranscribe} disabled={transcribing || !file}>
+                          {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                          สร้างซับด้วย AI
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setTab("styles")}>สไตล์</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setTab("text")}>แก้ไข</Button>
+                      </div>
+                      <Switch checked={captionsOn} onCheckedChange={setCaptionsOn} aria-label="เปิดคำบรรยาย" />
+                    </div>
+
+                    <div className="mt-4 ml-0 border-l-2 border-primary/20 pl-3 sm:ml-12">
+                      <Label className="text-[11px] uppercase text-muted-foreground">ภาษาต้นฉบับในวิดีโอ</Label>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {LANGUAGES.map((language) => (
+                          <Button
+                            key={language.code}
+                            size="sm"
+                            variant={languages[0] === language.code ? "default" : "outline"}
+                            onClick={() => {
+                              setLanguages((current) => [language.code, ...current.filter((code) => code !== language.code)]);
+                              setStyle((current) => ({ ...current, fontFamily: language.font }));
+                            }}
+                          >
+                            {language.label}
+                          </Button>
+                        ))}
+                      </div>
+                      {languages[0] === "lo" && (
+                        <div className="mt-3 max-w-xl space-y-1.5">
+                          <Label className="text-[11px] uppercase text-muted-foreground">ຄຳສັບ / ชื่อเฉพาะภาษาลาว</Label>
+                          <Textarea value={glossary} onChange={(event) => setGlossary(event.target.value)} rows={3} placeholder="ใส่ชื่อคน สถานที่ แบรนด์ หรือคำเฉพาะ คั่นด้วย comma หรือขึ้นบรรทัดใหม่" />
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <Switch checked={captionsOn} onCheckedChange={setCaptionsOn} />
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <Button size="sm" onClick={runTranscribe} disabled={transcribing || !file}>
-                    {transcribing ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="mr-2 h-4 w-4" />
-                    )}
-                    สร้างซับด้วย AI
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setTab("styles")}>
-                    Style
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setTab("text")}>
-                    Edit
-                  </Button>
-                </div>
-                <div className="mt-4">
-                  <Label className="text-[11px] uppercase text-muted-foreground">ภาษาต้นฉบับในวิดีโอ</Label>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {LANGUAGES.map((language) => (
-                      <Button
-                        key={language.code}
-                        size="sm"
-                        variant={languages[0] === language.code ? "default" : "outline"}
-                        onClick={() => {
-                          setLanguages((current) => [language.code, ...current.filter((code) => code !== language.code)]);
-                          setStyle((current) => ({ ...current, fontFamily: language.font }));
-                        }}
-                      >
-                        {language.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                {languages[0] === "lo" && (
-                  <div className="mt-4 space-y-1.5">
-                    <Label className="text-[11px] uppercase text-muted-foreground">ຄຳສັບ / ชื่อเฉพาะภาษาลาว</Label>
-                    <Textarea
-                      value={glossary}
-                      onChange={(event) => setGlossary(event.target.value)}
-                      rows={3}
-                      placeholder="ใส่ชื่อคน สถานที่ แบรนด์ หรือคำเฉพาะ คั่นด้วย comma หรือขึ้นบรรทัดใหม่"
-                    />
-                  </div>
-                )}
-              </div>
 
-              <div className="rounded-xl border border-border p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex gap-3">
-                    <Waves className="mt-0.5 h-5 w-5 text-primary" />
-                    <div>
-                      <p className="text-sm font-medium">ลดเสียงรบกวน</p>
-                      <p className="text-xs text-muted-foreground">กรองเสียงต่ำ เสียงฮัม และปรับระดับเสียงพูดให้นิ่งขึ้นตอนถอดเสียงและส่งออก</p>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Waves className="h-4 w-4" /></span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">ลดเสียงรบกวน</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">กรองเสียงต่ำ เสียงฮัม และปรับระดับเสียงพูดให้นิ่งขึ้น</p>
+                      </div>
+                    </div>
+                    <span className="hidden text-xs text-muted-foreground sm:block">อัตโนมัติ</span>
+                    <Switch checked={noiseReduction} onCheckedChange={setNoiseReduction} aria-label="ลดเสียงรบกวน" />
+                  </div>
+
+                  <div className="py-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Wand2 className="h-4 w-4" /></span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">แปลซับด้วย AI</p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">แปลข้อความโดยคงจังหวะเวลาเดิม</p>
+                        </div>
+                      </div>
+                      <div className="col-span-2 flex flex-wrap gap-2 sm:col-span-1 sm:col-start-2">
+                        {LANGUAGES.map((language) => (
+                          <Button key={language.code} size="sm" variant="outline" disabled={translating || !words.length} onClick={() => void translateCaptions(language.code)}>
+                            {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {language.label}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <Switch checked={noiseReduction} onCheckedChange={setNoiseReduction} />
                 </div>
-              </div>
+              </section>
 
-              <div className="rounded-xl border border-border p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex gap-3">
-                    <Scissors className="mt-0.5 h-5 w-5 text-primary" />
-                    <div>
-                      <p className="text-sm font-medium">Remove Silences</p>
-                      <p className="text-xs text-muted-foreground">
-                        ตัดช่วงเงียบ / dead-air ออกอัตโนมัติ
-                      </p>
+              <section aria-labelledby="video-tools-heading">
+                <div className="mb-2 border-b border-border pb-2">
+                  <h2 id="video-tools-heading" className="text-xs font-semibold uppercase text-muted-foreground">ปรับแต่งวิดีโอ</h2>
+                </div>
+                <div className="py-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"><Scissors className="h-4 w-4" /></span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">ตัดช่วงเงียบ</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ลบ dead-air ออกจากวิดีโออัตโนมัติ</p>
+                      </div>
                     </div>
-                  </div>
-                  <Switch checked={removeSilence} onCheckedChange={setRemoveSilence} />
-                </div>
-
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] uppercase text-muted-foreground">
-                      ความไวเสียง — {threshold} dB
-                    </Label>
-                    <Slider
-                      value={[threshold]}
-                      min={-60}
-                      max={-15}
-                      step={1}
-                      onValueChange={([v]) => setThreshold(v ?? -34)}
-                      onValueCommit={() => file && void analyze(file, threshold, minSilence)}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-[11px] uppercase text-muted-foreground">
-                      ช่วงเงียบขั้นต่ำ — {minSilence.toFixed(2)}s
-                    </Label>
-                    <Slider
-                      value={[minSilence]}
-                      min={0.1}
-                      max={1.5}
-                      step={0.05}
-                      onValueChange={([v]) => setMinSilence(v ?? 0.35)}
-                      onValueCommit={() => file && void analyze(file, threshold, minSilence)}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>
-                    ตัดออกได้ {savedSeconds.toFixed(1)}s · เหลือ {keptDuration(segments).toFixed(1)}s
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={!file || analyzing}
-                    onClick={() => file && void analyze(file, threshold, minSilence)}
-                  >
-                    {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : "วิเคราะห์ใหม่"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border p-4">
-
-                <p className="mb-1 text-sm font-medium">แปลซับด้วย AI</p>
-                <p className="mb-3 text-xs text-muted-foreground">
-                  แปลข้อความซับเป็นภาษาอื่นโดยคงจังหวะเวลาเดิม
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {LANGUAGES.map((l) => (
-                    <Button
-                      key={l.code}
-                      size="sm"
-                      variant="secondary"
-                      disabled={translating || !words.length}
-                      onClick={() => void translateCaptions(l.code)}
-                    >
-                      {translating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      แปลเป็น {l.label}
+                    <Button size="sm" variant="outline" disabled={!file || analyzing} onClick={() => file && void analyze(file, threshold, minSilence)}>
+                      {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ปรับค่า
                     </Button>
-                  ))}
+                    <Switch checked={removeSilence} onCheckedChange={setRemoveSilence} aria-label="ตัดช่วงเงียบ" />
+                  </div>
+                  <div className="mt-4 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-12 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="flex justify-between text-[11px] uppercase text-muted-foreground"><span>ความไวเสียง</span><span>{threshold} dB</span></Label>
+                      <Slider value={[threshold]} min={-60} max={-15} step={1} onValueChange={([v]) => setThreshold(v ?? -34)} onValueCommit={() => file && void analyze(file, threshold, minSilence)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="flex justify-between text-[11px] uppercase text-muted-foreground"><span>ช่วงเงียบขั้นต่ำ</span><span>{minSilence.toFixed(2)}s</span></Label>
+                      <Slider value={[minSilence]} min={0.1} max={1.5} step={0.05} onValueChange={([v]) => setMinSilence(v ?? 0.35)} onValueCommit={() => file && void analyze(file, threshold, minSilence)} />
+                    </div>
+                    <p className="text-xs text-muted-foreground sm:col-span-2">ตัดออกได้ {savedSeconds.toFixed(1)}s · เหลือ {keptDuration(segments).toFixed(1)}s</p>
+                  </div>
                 </div>
-              </div>
+              </section>
 
-              <div className="rounded-xl border border-border p-4">
-                <p className="mb-1 text-sm font-medium">งานที่บันทึกไว้</p>
-                <p className="mb-3 text-xs text-muted-foreground">
-                  {savedInfo
-                    ? `บันทึกล่าสุด: ${savedInfo.fileName} · ${new Date(savedInfo.savedAt).toLocaleString()}`
-                    : "ระบบจะบันทึกช่วงที่ตัดและซับที่แก้ไว้อัตโนมัติก่อนปิดหน้า"}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => { saveProject(snapshot()); setSavedInfo(loadProject()); toast.success("บันทึกงานแล้ว"); }}>
-                    บันทึกตอนนี้
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={restoreProject}>
-                    โหลดงานกลับ
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => { clearProject(); setSavedInfo(null); toast.success("ลบงานที่บันทึกแล้ว"); }}>
-                    ล้างงานที่บันทึก
-                  </Button>
+              <section className="border-t border-border pt-4" aria-labelledby="saved-work-heading">
+                <div className="flex items-start gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Save className="h-4 w-4" /></span>
+                  <div className="min-w-0 flex-1">
+                    <h2 id="saved-work-heading" className="text-sm font-semibold">งานที่บันทึกไว้</h2>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{savedInfo ? `บันทึกล่าสุด: ${savedInfo.fileName} · ${new Date(savedInfo.savedAt).toLocaleString()}` : "ระบบบันทึกช่วงที่ตัดและซับที่แก้ให้อัตโนมัติ"}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => { saveProject(snapshot()); setSavedInfo(loadProject()); toast.success("บันทึกงานแล้ว"); }}>บันทึกตอนนี้</Button>
+                      <Button size="sm" variant="outline" onClick={restoreProject}>โหลดงานกลับ</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { clearProject(); setSavedInfo(null); toast.success("ลบงานที่บันทึกแล้ว"); }}>ล้างงานที่บันทึก</Button>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </section>
 
               <Button variant="secondary" className="w-full" onClick={() => setTab("export")}>
-                <Download className="mr-2 h-4 w-4" /> ไปที่หน้า Export
+                <Download className="h-4 w-4" /> ไปที่หน้า Export
               </Button>
             </div>
           )}
