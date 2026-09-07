@@ -158,22 +158,77 @@
   font-weight: 100 900;
   font-display: swap;
 }
+/* PB Melon — มีไฟล์ตัวหนาจริง (ไม่มีเอียงจริง) */
 @font-face {
   font-family: "PB Melon";
   src: url("/fonts/PBMelon-Regular.ttf") format("truetype");
-  font-weight: 100 900;
+  font-weight: 100 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PB Melon";
+  src: url("/fonts/PBMelon-Bold.otf") format("opentype");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
+/* PB Champasak — มีไฟล์ตัวหนาจริงและตัวเอียงจริง */
+@font-face {
+  font-family: "PB Champasak";
+  src: url("/fonts/PBChampasak-Regular.otf") format("opentype");
+  font-weight: 100 600;
+  font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "PB Champasak";
-  src: url("/fonts/PBChampasak-Regular.otf") format("opentype");
-  font-weight: 100 900;
+  src: url("/fonts/PBChampasak-Bold.otf") format("opentype");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PB Champasak";
+  src: url("/fonts/PBChampasak-RegularItalic.otf") format("opentype");
+  font-weight: 100 600;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PB Champasak";
+  src: url("/fonts/PBChampasak-BoldItalic.otf") format("opentype");
+  font-weight: 700 900;
+  font-style: italic;
+  font-display: swap;
+}
+/* Hinsiew — มีไฟล์ตัวหนาจริงและตัวเอียงจริง */
+@font-face {
+  font-family: "Hinsiew";
+  src: url("/fonts/Hinsiew-Regular.otf") format("opentype");
+  font-weight: 100 600;
+  font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: "Hinsiew";
-  src: url("/fonts/Hinsiew-Regular.otf") format("opentype");
-  font-weight: 100 900;
+  src: url("/fonts/Hinsiew-Bold.otf") format("opentype");
+  font-weight: 700 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Hinsiew";
+  src: url("/fonts/Hinsiew-RegularItalic.otf") format("opentype");
+  font-weight: 100 600;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Hinsiew";
+  src: url("/fonts/Hinsiew-BoldItalic.otf") format("opentype");
+  font-weight: 700 900;
+  font-style: italic;
   font-display: swap;
 }
 @font-face {
