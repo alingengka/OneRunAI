@@ -355,12 +355,88 @@ async function checkOverlapWindows(): Promise<void> {
   if (misses) failures.push(`findWindow ทำซับหาย ${misses} จุดเมื่อกลุ่มเวลาซ้อนกัน`);
 }
 
+/* ---- (จ) คลิปยาวข้ามรอยต่อ chunk: ทุกช่วงที่ "พูดจริง" ต้องมีซับขึ้น ---- */
+const LONG_FIXTURE = "tests/fixtures/lao-long.wav";
+
+async function checkLongClip(): Promise<void> {
+  if (SKIP_STT) {
+    console.log("(จ) ข้ามคลิปยาว (--layout-only)");
+    return;
+  }
+  if (!existsSync(LONG_FIXTURE)) throw new Error(`ไม่พบคลิปยาวทดสอบ ${LONG_FIXTURE}`);
+  const browser = await chromium.launch({ headless: true });
+  const page = await (await browser.newContext({ viewport: { width: 1400, height: 1800 } })).newPage();
+  await page.goto(APP, { waitUntil: "load" });
+  await page.waitForFunction(() => !!(window as unknown as { __shortcutState?: unknown }).__shortcutState, undefined, { timeout: 60_000 });
+  await page.getByRole("button", { name: "ລາວ", exact: true }).first().click();
+  await page.setInputFiles('input[type="file"]', LONG_FIXTURE);
+  await page.waitForFunction(
+    () => {
+      const btns = [...document.querySelectorAll("button")].filter((b) => b.textContent?.includes("สร้างซับด้วย AI"));
+      return btns.length > 0 && btns.every((b) => !(b as HTMLButtonElement).disabled);
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+  await page.getByRole("button", { name: "สร้างซับด้วย AI", exact: true }).click();
+  await page.waitForFunction(
+    () => {
+      const s = (window as unknown as { __shortcutState?: { words?: unknown[]; transcribing?: boolean } }).__shortcutState;
+      return !!s && !s.transcribing && !!s.words?.length;
+    },
+    undefined,
+    { timeout: 300_000 },
+  );
+  const state = (await page.evaluate(() => {
+    const st = (window as unknown as {
+      __shortcutState: {
+        words: { start: number; end: number }[];
+        speechSegments: { start: number; end: number }[];
+        duration: number;
+      };
+    }).__shortcutState;
+    return {
+      words: st.words.map((w) => ({ start: w.start, end: w.end })),
+      speech: (st.speechSegments ?? []).map((s2) => ({ start: s2.start, end: s2.end })),
+      duration: st.duration,
+    };
+  })) as { words: { start: number; end: number }[]; speech: { start: number; end: number }[]; duration: number };
+  await browser.close();
+
+  if (state.duration < 20) failures.push(`(จ) คลิปทดสอบสั้นเกินไป (${state.duration.toFixed(1)} วิ) ต้องยาวข้ามรอยต่อ chunk`);
+
+  // ทุกช่วงที่ VAD บอกว่ามีเสียงพูด ต้องมีคำซับคลุมอยู่
+  const uncovered: { start: number; end: number }[] = [];
+  for (const seg of state.speech) {
+    let cursor = seg.start;
+    for (const word of state.words) {
+      if (word.end <= cursor || word.start >= seg.end) continue;
+      if (word.start > cursor) uncovered.push({ start: cursor, end: Math.min(word.start, seg.end) });
+      cursor = Math.max(cursor, word.end);
+    }
+    if (cursor < seg.end) uncovered.push({ start: cursor, end: seg.end });
+  }
+  const total = uncovered.reduce((n, u) => n + (u.end - u.start), 0);
+  const worst = uncovered.reduce((n, u) => Math.max(n, u.end - u.start), 0);
+  const holes = uncovered.filter((u) => u.end - u.start > 0.4);
+  console.log(
+    `(จ) คลิปยาว ${state.duration.toFixed(1)} วิ, ${state.words.length} คำ — ช่วงพูดที่ไม่มีซับรวม ${total.toFixed(2)} วิ (ยาวสุด ${worst.toFixed(2)} วิ)`,
+  );
+  if (holes.length) {
+    failures.push(
+      `(จ) มีช่วงที่พูดอยู่แต่ซับไม่ขึ้น ${holes.length} จุด: ${holes.map((h) => `${h.start.toFixed(2)}–${h.end.toFixed(2)} วิ`).join(", ")}`,
+    );
+  }
+  if (total > 1.2) failures.push(`(จ) รวมช่วงพูดที่ไม่มีซับ ${total.toFixed(2)} วิ เกินเกณฑ์ 1.2 วิ`);
+}
+
 if (!ONLY_INTEGRATION) {
   await checkAccuracy();
   await checkCompleteness();
 }
 await checkOverlapWindows();
 await checkIntegration();
+await checkLongClip();
 
 
 if (failures.length) {

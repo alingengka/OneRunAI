@@ -61,3 +61,45 @@ assert((variant?.[0]?.start ?? -1) === 1, "Spelling variant was not matched to i
 
 assert(alignTextToTiming("ສະບາຍດີ ຂອບໃຈ ຫຼາຍ", timing) === null, "Unrelated text should fall back to forced alignment");
 console.log("forced-align tests passed");
+
+// --- closeSpeechGaps: รอยต่อ chunk ต้องไม่เหลือช่วง "ไม่มีซับ" ทั้งที่ยังพูดอยู่ ---
+import { closeSpeechGaps } from "./forced-align";
+
+// เคสจริงจากคลิป 35 วินาที: chunk 0 จบเร็วไป 0.6 วิ, chunk 1 เริ่มช้าไป 0.6 วิ
+const seam = closeSpeechGaps(
+  [
+    { text: "ເດີນທາງ", start: 16.85, end: 17.55 },
+    { text: "ຢ່າ", start: 19.17, end: 19.47 },
+  ],
+  [{ start: 11.9, end: 18.12 }, { start: 18.54, end: 23.4 }],
+);
+assert((seam[0]?.end ?? 0) >= 18.11, `คำก่อนรอยต่อไม่ถูกยืดคลุมเสียงพูด: ${seam[0]?.end}`);
+assert((seam[1]?.start ?? 9) <= 18.55, `คำหลังรอยต่อไม่ถูกดึงกลับมาที่เสียงพูด: ${seam[1]?.start}`);
+assert((seam[1]?.start ?? 0) >= (seam[0]?.end ?? 0), "คำสองคำเวลาซ้อนผิดลำดับ");
+
+// ช่วงเงียบจริง (ไม่มีเสียงพูด) ต้องไม่ถูกยืดคลุม
+const silent = closeSpeechGaps(
+  [
+    { text: "a", start: 1, end: 1.4 },
+    { text: "b", start: 4, end: 4.4 },
+  ],
+  [{ start: 0.9, end: 1.45 }, { start: 3.95, end: 4.5 }],
+);
+assert((silent[0]?.end ?? 0) < 1.6 && (silent[1]?.start ?? 0) > 3.8, "ช่วงเงียบจริงถูกยืดคลุมโดยไม่ควร");
+
+// คลิปยาวจำลอง 30 วินาที: หลังปิดช่องว่าง ต้องไม่มีช่วงพูดไหนที่ไม่มีซับเกิน 0.6 วิ
+const longWords: { text: string; start: number; end: number }[] = [];
+for (let i = 0; i < 40; i++) {
+  const start = 0.5 + i * 0.7;
+  if (start > 17.2 && start < 19.4) continue; // จำลองรอยต่อ chunk ที่เวลาหด
+  longWords.push({ text: `w${i}`, start, end: start + 0.5 });
+}
+const longSpeech = [{ start: 0.4, end: 29.5 }];
+const filled = closeSpeechGaps(longWords, longSpeech);
+let holes = 0;
+for (let i = 0; i < filled.length - 1; i++) {
+  if ((filled[i + 1]!.start - filled[i]!.end) > 0.6) holes++;
+}
+assert(holes === 0, `คลิปยาวยังมีช่วงไม่มีซับ ${holes} จุด`);
+assert(filled.length === longWords.length, "closeSpeechGaps ทำคำหาย");
+console.log("closeSpeechGaps tests passed");

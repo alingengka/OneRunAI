@@ -64,7 +64,7 @@ import {
   smoothSpeechSegments,
   type Segment,
 } from "@/lib/media/audio";
-import { alignTextToTiming, alignTextToTimingOnTimeline, forcedAlignWords, mapConcatTimeToTimeline, mergeAlignedChunks } from "@/lib/media/forced-align";
+import { alignTextToTiming, alignTextToTimingOnTimeline, closeSpeechGaps, forcedAlignWords, mapConcatTimeToTimeline, mergeAlignedChunks } from "@/lib/media/forced-align";
 import type { TimedWord } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo, targetSize, type ExportResolution } from "@/lib/media/export-burned";
@@ -288,8 +288,10 @@ function Studio() {
       transcribing,
       analyzing,
       segmentCount: segments.length,
+      segments,
+      speechSegments: analysisSegmentsRef.current,
     };
-  }, [visibleWords, groups, style, duration, transcribing, analyzing, segments.length]);
+  }, [visibleWords, groups, style, duration, transcribing, analyzing, segments]);
 
 
   // measure preview frame for font scaling
@@ -576,6 +578,7 @@ function Studio() {
           texts.push(out.text);
           const merged = mergeAlignedChunks(allWords, out.aligned);
           allWords.splice(0, allWords.length, ...merged);
+
           setTranscript(texts.join(" "));
           setWords([...allWords]);
         }
@@ -621,7 +624,10 @@ function Studio() {
 
       measuredTimingRef.current = measured.sort((a, b) => a.start - b.start);
       if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
+      // ปิดช่องว่างที่ยังมีเสียงพูดจริง (เกิดที่รอยต่อ chunk: คำครบแต่เวลาหดเข้าใน)
+      allWords.splice(0, allWords.length, ...closeSpeechGaps(allWords, segs));
       // งาน A: ใช้เวลาคำจริงขยายขอบช่วงพูด ไม่ให้ energy gate ตัดพยางค์ต้น/ท้ายขาด
+
       const timingForCuts = measured.length ? measured : allWords;
       const reconciled = reconcileSegmentsWithWords(segs, timingForCuts, { duration: buffer.duration });
       if (reconciled.length) setSegments(reconciled);
