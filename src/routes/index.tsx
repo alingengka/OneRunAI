@@ -1221,16 +1221,22 @@ function Studio() {
                     <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>แก้ไข</Button>
                   </div>
 
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-4">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><AudioLines className="h-5 w-5" /></span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">เสียงประกอบ</p>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มจังหวะเสียงให้ข้อความและการเปลี่ยนซีน</p>
+                  <div className="py-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><AudioLines className="h-5 w-5" /></span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold">เสียงประกอบ</p>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">เพิ่มจังหวะเสียงให้ข้อความและการเปลี่ยนซีน</p>
+                        </div>
                       </div>
+                      <Button size="sm" variant="outline" onClick={() => setTab("audio")}>แก้ไข</Button>
+                      <Switch checked={sfx.enabled} onCheckedChange={(enabled) => setSfx((current) => ({ ...current, enabled }))} aria-label="เปิดเสียงประกอบ" />
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => setTab("audio")}>แก้ไข</Button>
-                    <Switch checked={sfx.enabled} onCheckedChange={(enabled) => setSfx((current) => ({ ...current, enabled }))} aria-label="เปิดเสียงประกอบ" />
+                    <div className="mt-4 ml-0 space-y-2 border-l-2 border-primary/20 pl-3 sm:ml-12">
+                      <Label className="flex justify-between text-xs text-muted-foreground"><span>ระดับเสียงประกอบ</span><span className="font-mono text-foreground">{Math.round(sfx.volume * 100)}%</span></Label>
+                      <Slider value={[sfx.volume * 100]} min={0} max={100} step={5} onValueChange={([volume]) => setSfx((current) => ({ ...current, volume: (volume ?? 35) / 100 }))} />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
