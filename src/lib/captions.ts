@@ -151,7 +151,10 @@ export const baseStyle: CaptionStyle = {
   name: "Kelly",
   fontFamily: "'Archivo Black', system-ui, sans-serif",
   fontWeight: 900,
+  bold: false,
+  italic: false,
   uppercase: false,
+
   size: 6.4,
   color: "#ffffff",
   stroke: "none",
