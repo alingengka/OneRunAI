@@ -183,6 +183,9 @@ async function checkIntegration(): Promise<void> {
   const aiButton = page.getByRole("button", { name: "สร้างซับด้วย AI", exact: true });
   await aiButton.waitFor({ state: "visible", timeout: 30_000 });
 
+  // เลือกภาษาลาวก่อนอัปโหลด เพื่อให้การกดปุ่มหลังอัปโหลดเป็นการกด "ทันที" จริง ๆ
+  await page.getByRole("button", { name: "ລາວ", exact: true }).first().click();
+
   // ป้อนไฟล์แล้วยืนยันว่า state รับไฟล์จริง ถ้าไม่ติดให้ลองใหม่ (กัน hydration race)
   for (let attempt = 1; attempt <= 3; attempt++) {
     await page.setInputFiles('input[type="file"]', FIXTURE);
@@ -204,8 +207,20 @@ async function checkIntegration(): Promise<void> {
     }
   }
 
-  await page.getByRole("button", { name: "ລາວ", exact: true }).first().click();
+  // (ค1) race guard ถาวร: วินาทีที่ปุ่มเปิดให้กด ไฟล์ต้องวิเคราะห์เสร็จแล้วจริง
+  const readiness = await page.evaluate(() => {
+    const s = (window as unknown as { __shortcutState?: { analyzing?: boolean; segmentCount?: number } }).__shortcutState;
+    return { analyzing: s?.analyzing ?? true, segmentCount: s?.segmentCount ?? 0 };
+  });
+  if (readiness.analyzing || readiness.segmentCount < 1) {
+    throw new Error(
+      `(ค1) ปุ่มเปิดให้กดทั้งที่ยังเตรียมไฟล์ไม่เสร็จ (analyzing=${readiness.analyzing}, segments=${readiness.segmentCount})`,
+    );
+  }
+  // กดทันทีที่กดได้ ไม่รอเพิ่ม — จำลองพฤติกรรมผู้ใช้จริง
   await aiButton.click();
+  console.log(`(ค1) กดทันทีที่ปุ่มเปิดใช้งาน — ช่วงพูดพร้อมแล้ว ${readiness.segmentCount} ช่วง`);
+
 
 
   await page.waitForFunction(

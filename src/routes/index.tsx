@@ -153,6 +153,8 @@ function Studio() {
    *  ถ้าปนกัน การกด "สร้างซับด้วย AI" ซ้ำจะสร้าง chunk จากช่วงที่ถูกขยาย/รวมไปแล้ว
    *  ทำให้บริบทที่ส่งเข้าโมเดลเพี้ยนและความแม่นยำตก */
   const analysisSegmentsRef = useRef<Segment[]>([]);
+  /** งานวิเคราะห์เสียงที่กำลังทำอยู่ของไฟล์ล่าสุด — ปุ่มถอดเสียงต้องรอให้เสร็จก่อน */
+  const analysisPromiseRef = useRef<Promise<unknown> | null>(null);
   /** ระดับเสียงรบกวนพื้นหลังของคลิป ใช้เป็น threshold ของ noise gate ตอน export */
   const noiseFloorRef = useRef(0);
 
@@ -284,8 +286,10 @@ function Studio() {
       style,
       duration,
       transcribing,
+      analyzing,
+      segmentCount: segments.length,
     };
-  }, [visibleWords, groups, style, duration, transcribing]);
+  }, [visibleWords, groups, style, duration, transcribing, analyzing, segments.length]);
 
 
   // measure preview frame for font scaling
@@ -367,6 +371,10 @@ function Studio() {
 
   const onPickFile = async (f: File) => {
     audioBufferRef.current = null;
+    // ไฟล์ใหม่ต้องไม่ใช้ผลวิเคราะห์ของไฟล์เก่า ไม่งั้นการกดถอดเสียงทันที
+    // จะได้ช่วงพูดของคลิปก่อนหน้า → ซับออกมาไม่ครบ
+    analysisSegmentsRef.current = [];
+    measuredTimingRef.current = [];
     setFile(f);
     setVideoUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -383,9 +391,14 @@ function Studio() {
       setProjectName(f.name.replace(/\.[^.]+$/, ""));
     }
     setTime(0);
-    const r = preserveRestored ? undefined : await analyze(f, threshold, minSilence).catch(() => undefined);
+    if (preserveRestored) { analysisPromiseRef.current = null; return; }
+    const pending = analyze(f, threshold, minSilence).catch(() => undefined);
+    analysisPromiseRef.current = pending;
+    const r = await pending;
+    if (analysisPromiseRef.current === pending) analysisPromiseRef.current = null;
     if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
+
 
   // ── บันทึกงานอัตโนมัติ (ช่วงที่ตัด + ซับที่แก้แล้ว) ก่อนปิดหน้า ──────────
   useEffect(() => {
@@ -491,9 +504,12 @@ function Studio() {
     if (!file) { toast.error("อัปโหลดคลิปก่อน"); return; }
     setTranscribing(true);
     try {
+      // ถ้าไฟล์ยังวิเคราะห์ไม่เสร็จ ต้องรอให้เสร็จก่อน ไม่งั้นจะถอดเสียงจาก
+      // ช่วงพูดที่ยังไม่ครบ (หรือของไฟล์ก่อนหน้า) แล้วซับออกมาไม่ครบ
+      if (analysisPromiseRef.current) await analysisPromiseRef.current.catch(() => undefined);
       let buffer = audioBufferRef.current;
       // ใช้ช่วงพูดดิบเสมอ ไม่ใช่ช่วงที่ reconcile แล้ว เพื่อไม่ให้การถอดเสียงรอบถัดไปเพี้ยน
-      let segs = analysisSegmentsRef.current.length ? analysisSegmentsRef.current : segments;
+      let segs = analysisSegmentsRef.current.length ? analysisSegmentsRef.current : [];
       if (!buffer || !segs.length) {
         const r = await analyze(file, threshold, minSilence);
         buffer = r.buffer;
@@ -517,41 +533,72 @@ function Studio() {
       // เก็บเวลาคำที่วัดได้จริง (Scribe) บนไทม์ไลน์ต้นฉบับ ไว้ใช้ตอนแก้ข้อความ
       const measured: TimedWord[] = [];
 
+      /** ถอดเสียงหนึ่ง chunk พร้อมลองซ้ำอัตโนมัติ (ห้ามปล่อยให้ช่วงไหนหายเงียบ ๆ) */
+      const transcribeChunk = async (chunkSegs: Segment[], attempts: number) => {
+        const wav = encodeSegmentsWav16k(buffer!, chunkSegs, false);
+        if (wav.size < 4096) return { skipped: true as const };
+        const b64 = await blobToBase64(wav);
+        const terms = parseGlossaryTerms(glossary);
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          try {
+            const res = await transcribe({
+              data: { audioBase64: b64, language: lang, context: texts.join(" ").slice(-600), glossary: terms },
+            });
+            const text = (res.text ?? "").trim();
+            if (!text) { lastError = new Error("empty"); continue; }
+            const chunkDur = chunkSegs.reduce((n, s) => n + (s.end - s.start), 0);
+            for (const word of res.words ?? []) {
+              const start = mapConcatTimeToTimeline(word.start, chunkSegs);
+              measured.push({ text: word.text, start, end: Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, chunkSegs)) });
+            }
+            const timed = alignTextToTimingOnTimeline(text, res.words ?? [], chunkSegs);
+            const aligned = (timed ?? forcedAlignWords(buffer!, chunkSegs, text, chunkDur)).map((word) => {
+              const acoustic = word.confidence ?? 0.5;
+              const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
+              return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
+            });
+            return { skipped: false as const, text, aligned };
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        return { failed: true as const, error: lastError };
+      };
 
       if (chunks.length) {
+        const missing: Segment[][] = [];
         for (let i = 0; i < chunks.length; i++) {
           const chunkSegs = chunks[i]!;
-          // Send clean, undistorted audio to the model: the noise-gate is for
-          // the exported mix, not for recognition.
-          const wav = encodeSegmentsWav16k(buffer, chunkSegs, false);
-          if (wav.size < 4096) continue;
-          const b64 = await blobToBase64(wav);
-          const terms = parseGlossaryTerms(glossary);
-          const res = await transcribe({
-            data: { audioBase64: b64, language: lang, context: texts.join(" ").slice(-600), glossary: terms },
-          });
-          const text = (res.text ?? "").trim();
-          if (!text) continue;
-          texts.push(text);
-          const chunkDur = chunkSegs.reduce((n, s) => n + (s.end - s.start), 0);
-          // Prefer the recogniser's measured word timings (ElevenLabs Scribe);
-          // fall back to energy-envelope alignment when they cannot be matched.
-          for (const word of res.words ?? []) {
-            const start = mapConcatTimeToTimeline(word.start, chunkSegs);
-            measured.push({ text: word.text, start, end: Math.max(start + 0.06, mapConcatTimeToTimeline(word.end, chunkSegs)) });
-          }
-          const timed = alignTextToTimingOnTimeline(text, res.words ?? [], chunkSegs);
-          const aligned = (timed ?? forcedAlignWords(buffer, chunkSegs, text, chunkDur)).map((word) => {
-            const acoustic = word.confidence ?? 0.5;
-            const confidence = Math.max(0.15, Math.min(0.99, acoustic * 0.62 + res.agreement * 0.38));
-            return { ...word, confidence, confidenceLabel: confidence >= 0.78 ? "high" as const : confidence >= 0.52 ? "review" as const : "low" as const };
-          });
-          const merged = mergeAlignedChunks(allWords, aligned);
+          const out = await transcribeChunk(chunkSegs, 2);
+          if ("skipped" in out && out.skipped) continue;
+          if ("failed" in out) { missing.push(chunkSegs); continue; }
+          texts.push(out.text);
+          const merged = mergeAlignedChunks(allWords, out.aligned);
           allWords.splice(0, allWords.length, ...merged);
           setTranscript(texts.join(" "));
           setWords([...allWords]);
         }
+
+        // ด่านสุดท้าย: ช่วงไหนยังไม่มีคำ ให้ลองใหม่อีกครั้งก่อนแสดงผล
+        const stillMissing: Segment[][] = [];
+        for (const chunkSegs of missing) {
+          const out = await transcribeChunk(chunkSegs, 1);
+          if ("skipped" in out && out.skipped) continue;
+          if ("failed" in out) { stillMissing.push(chunkSegs); continue; }
+          texts.push(out.text);
+          allWords.push(...out.aligned);
+          allWords.sort((a, b) => a.start - b.start);
+          setWords([...allWords]);
+        }
+        if (stillMissing.length) {
+          const ranges = stillMissing
+            .map((segs2) => `${(segs2[0]?.start ?? 0).toFixed(1)}–${(segs2[segs2.length - 1]?.end ?? 0).toFixed(1)} วิ`)
+            .join(", ");
+          toast.error(`ถอดเสียงไม่สำเร็จ ${stillMissing.length} ช่วง (${ranges}) — กด "สร้างซับด้วย AI" อีกครั้งเพื่อลองช่วงที่ขาด`);
+        }
       } else {
+
 
 
         const wav = encodeWav16k(buffer);
@@ -1087,11 +1134,13 @@ function Studio() {
                           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ</p>
                         </div>
                       </div>
-                      <div className="col-span-2 row-start-2 flex flex-wrap gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
-                        <Button size="sm" onClick={runTranscribe} disabled={transcribing || !file}>
-                          {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      <div className="col-span-2 row-start-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+                        <Button size="sm" onClick={runTranscribe} disabled={transcribing || !file || analyzing}>
+                          {transcribing || analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                           สร้างซับด้วย AI
                         </Button>
+                        {analyzing ? <span className="text-xs text-muted-foreground">กำลังเตรียมไฟล์เสียง…</span> : null}
+
                         <Button size="sm" variant="outline" onClick={() => setTab("styles")}>สไตล์</Button>
                         <Button size="sm" variant="ghost" onClick={() => setTab("text")}>แก้ไข</Button>
                       </div>
