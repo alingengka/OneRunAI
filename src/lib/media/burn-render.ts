@@ -331,13 +331,13 @@ export function createBurnRenderer(
         end: win.end,
         text: element.text.trim().toUpperCase(),
         position: element.position ?? "top",
+        em: { bold: element.bold, italic: element.italic } as TextEmphasis,
       };
     })
     .filter((w): w is NonNullable<typeof w> => !!w)
     .sort((a, b) => a.start - b.start);
 
   const viralFontSize = height * 0.075;
-  const viralFont = `900 ${viralFontSize}px ${style.fontFamily}`;
 
   const drawViralText = (time: number) => {
     if (!viralWindows.length) return;
@@ -357,16 +357,17 @@ export function createBurnRenderer(
     ctx.globalAlpha = alpha;
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
-    ctx.font = viralFont;
+    ctx.font = `900 ${viralFontSize}px ${style.fontFamily}`;
     ctx.translate(width / 2, y);
     ctx.scale(pop, pop);
     ctx.lineJoin = "round";
     ctx.miterLimit = 2;
-    ctx.lineWidth = Math.max(4, viralFontSize * 0.14);
+    ctx.lineWidth = Math.max(4, viralFontSize * 0.14) + (hit.em.bold ? viralFontSize * 0.02 : 0);
     ctx.strokeStyle = "#000000";
-    ctx.strokeText(hit.text, 0, 0);
+    paintEmphasized(ctx, hit.text, 0, 0, viralFontSize, hit.em, "stroke");
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(hit.text, 0, 0);
+    paintEmphasized(ctx, hit.text, 0, 0, viralFontSize, hit.em, "fill");
+
     ctx.restore();
     ctx.textAlign = "left";
   };
