@@ -500,14 +500,6 @@ function Studio() {
 
 
 
-  const pushDbg = (key: string, value: unknown) => {
-    try {
-      const raw = JSON.parse(localStorage.getItem("__dbg") ?? "[]") as unknown[];
-      raw.push({ key, value });
-      localStorage.setItem("__dbg", JSON.stringify(raw));
-    } catch { /* debug only */ }
-  };
-
   const runTranscribe = async () => {
     if (!file) { toast.error("อัปโหลดคลิปก่อน"); return; }
     setTranscribing(true);
@@ -582,9 +574,7 @@ function Studio() {
           if ("skipped" in out && out.skipped) continue;
           if ("failed" in out) { missing.push(chunkSegs); continue; }
           texts.push(out.text);
-          pushDbg("chunk", { i, range: [chunkSegs[0]!.start, chunkSegs[chunkSegs.length-1]!.end], segs: chunkSegs.map((s2) => [s2.start, s2.end]), aligned: out.aligned.map((w) => [w.text, +w.start.toFixed(2), +w.end.toFixed(2)]) });
           const merged = mergeAlignedChunks(allWords, out.aligned);
-          pushDbg("merge", merged.map((w) => [w.text, +w.start.toFixed(2)]));
           allWords.splice(0, allWords.length, ...merged);
 
           setTranscript(texts.join(" "));
