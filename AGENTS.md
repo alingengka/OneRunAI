@@ -27,8 +27,10 @@ bun run guard:lao        # = bun run scripts/lao-subtitle-guard.ts
 - `--layout-only` ข้ามการเรียก STT จริง (ใช้เมื่อไม่มีคีย์ API)
 - `--integration-only` รันเฉพาะ (ค)+(ง)
 
-guard ตรวจ 5 ด้าน: (ก) CER การถอดเสียง (ข) layout/burn 84 กรณี
+guard ตรวจ 6 ด้าน: (ก) CER การถอดเสียง (ข) layout/burn 84 กรณี
 (ค) integration ผ่าน UI จริง — อัปโหลดคลิป กด "สร้างซับด้วย AI" แล้วเรนเดอร์จาก state จริง
 (ง) กลุ่มซับที่ "ซ้อนเวลากัน" ต้องไม่หายจาก `findWindow`
 (จ) คลิปยาวข้ามรอยต่อ chunk (`tests/fixtures/lao-long.wav`) — ทุกช่วงที่พูดจริงต้องมีซับคลุม
+(ฉ) ประโยคลาวปนอังกฤษ (`tests/fixtures/lao-codeswitch.wav`) — คำอังกฤษที่พูดจริงต้องไม่ถูกกรองทิ้ง
+    และต้องไม่ถูกทับศัพท์เป็นอักษรลาว
 ห้ามลดขอบเขตข้อใดข้อหนึ่งเพื่อให้ผ่าน
