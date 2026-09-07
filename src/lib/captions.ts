@@ -105,6 +105,38 @@ export function emphasizedWeight(weight: number, bold?: boolean): number {
   return bold ? Math.min(900, Math.max(700, weight + 200)) : weight;
 }
 
+/**
+ * ฟอนต์ที่มี "ไฟล์" ตัวหนา/ตัวเอียงจริง (ไม่ต้องสังเคราะห์)
+ * key = ชื่อ family ตัวแรกใน CSS font stack
+ */
+const REAL_FACES: Record<string, { bold: boolean; italic: boolean }> = {
+  "PB Melon": { bold: true, italic: false },
+  "PB Champasak": { bold: true, italic: true },
+  Hinsiew: { bold: true, italic: true },
+};
+
+/** อ่านชื่อ family ตัวแรกจาก CSS font stack เช่น "'PB Melon', sans-serif" → PB Melon */
+export function primaryFamily(fontFamily: string): string {
+  return (fontFamily.split(",")[0] ?? "").trim().replace(/^["']|["']$/g, "");
+}
+
+/** ฟอนต์นี้มีไฟล์ตัวหนา/เอียงจริงไหม (ถ้ามี ให้ใช้ไฟล์จริงแทนการสังเคราะห์) */
+export function fontRealFaces(fontFamily: string): { bold: boolean; italic: boolean } {
+  return REAL_FACES[primaryFamily(fontFamily)] ?? { bold: false, italic: false };
+}
+
+/** แยกเป็น "ส่วนที่ฟอนต์จริงทำได้" กับ "ส่วนที่ต้องสังเคราะห์" */
+export function splitEmphasis(
+  fontFamily: string,
+  em: TextEmphasis,
+): { native: TextEmphasis; synthetic: TextEmphasis } {
+  const real = fontRealFaces(fontFamily);
+  return {
+    native: { bold: !!em.bold && real.bold, italic: !!em.italic && real.italic },
+    synthetic: { bold: !!em.bold && !real.bold, italic: !!em.italic && !real.italic },
+  };
+}
+
 
 export type CaptionStyle = {
   id: string;
