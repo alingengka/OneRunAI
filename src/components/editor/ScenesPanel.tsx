@@ -20,6 +20,7 @@ type Props = {
   onToggleElement: (id: string) => void;
   onUpdateElementText: (id: string, text: string) => void;
   onUpdateElementTiming: (id: string, offset: number, durationSec: number) => void;
+  onUpdateElementFormat: (id: string, patch: { bold?: boolean; italic?: boolean }) => void;
 };
 
 
@@ -29,7 +30,7 @@ function clock(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement, onUpdateElementText, onUpdateElementTiming }: Props) {
+export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, onSeek, elements, onAddElement, onToggleElement, onUpdateElementText, onUpdateElementTiming, onUpdateElementFormat }: Props) {
   if (!scenes.length) {
     return (
       <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
@@ -121,6 +122,26 @@ export function ScenesPanel({ scenes, dropped, activeTime, onToggle, onPreview, 
                     placeholder="พิมพ์ข้อความไวรัล เช่น ห้ามพลาด!!"
                     onChange={(e) => onUpdateElementText(element.id, e.target.value)}
                   />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant={element.bold ? "default" : "outline"}
+                      className="h-7 w-9 font-bold"
+                      aria-pressed={!!element.bold}
+                      onClick={() => onUpdateElementFormat(element.id, { bold: !element.bold })}
+                    >
+                      B
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={element.italic ? "default" : "outline"}
+                      className="h-7 w-9 italic"
+                      aria-pressed={!!element.italic}
+                      onClick={() => onUpdateElementFormat(element.id, { italic: !element.italic })}
+                    >
+                      I
+                    </Button>
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {VIRAL_PRESETS.map((preset) => (
                       <Button
