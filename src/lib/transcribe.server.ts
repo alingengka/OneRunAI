@@ -24,13 +24,23 @@ function laoPrompt(context: string, glossary: string[], strict: boolean): string
     "The speaker is speaking Lao, not Thai. Transcribe verbatim in Lao script exactly as spoken.",
     "Never translate, never use Thai script, never summarise, and never invent missing speech.",
     "Use standard Vientiane/Central Lao spelling. Preserve tone marks, repeated words, names, numbers and spoken particles.",
+    // Lao speakers code-switch constantly; spelling English words out in Lao
+    // letters loses the real wording, so keep them in Latin script.
+    "Lao speakers often mix English words into a Lao sentence. Write any English word that is actually spoken in Latin letters exactly as said (e.g. appreciate, the best thing, edit, video, viral) — never transliterate it into Lao script and never drop it.",
     "Return transcript text only without labels or commentary.",
   ];
-  if (strict) base.push("Use only Lao characters (U+0E80–U+0EFF), digits, spaces and spoken punctuation.");
+  if (strict) base.push("Apart from spoken English words, use only Lao characters (U+0E80–U+0EFF), digits, spaces and spoken punctuation.");
   if (glossary.length) base.push(`Preferred spellings when audible: ${glossary.slice(0, 40).join(", ")}`);
   if (context && !strict) base.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
   if (strict) base.push("Listen independently from prior context and prefer only words clearly audible in this recording.");
   return base.join(" ");
+}
+
+const LATIN_WORD = /[A-Za-z][A-Za-z'’-]*/g;
+
+/** Latin-script words in a candidate — spoken English kept as English. */
+function latinWords(text: string): string[] {
+  return (text.match(LATIN_WORD) ?? []).map((word) => word.toLowerCase());
 }
 
 function cleanup(text: string, language?: string): string {
@@ -40,10 +50,13 @@ function cleanup(text: string, language?: string): string {
   if (language === "lo" && out) {
     const lao = (out.match(/[\u0e80-\u0eff]/g) ?? []).length;
     const thai = (out.match(/[\u0e00-\u0e7f]/g) ?? []).length;
-    if (!lao || thai > Math.max(1, lao * 0.08)) return "";
+    // Code-switched speech can be entirely English in a short chunk, so Latin
+    // text counts as valid output; only Thai script means a wrong rendering.
+    if ((!lao && !latinWords(out).length) || thai > Math.max(1, lao * 0.08)) return "";
   }
   return out;
 }
+
 
 function chars(text: string): string[] {
   return [...text.normalize("NFC").replace(/[\s.,!?]/g, "")];
@@ -66,14 +79,20 @@ function similarity(a: string, b: string): number {
   return Math.max(0, 1 - (row[y.length] ?? Math.max(x.length, y.length)) / Math.max(x.length, y.length));
 }
 
-function scoreCandidate(candidate: string, others: string[], language?: string): number {
+function scoreCandidate(candidate: string, others: string[], language?: string, bestLatin = 0): number {
   const agreement = others.length ? others.reduce((sum, value) => sum + similarity(candidate, value), 0) / others.length : 0.72;
   if (language !== "lo") return agreement;
-  const symbols = [...candidate].filter((char) => !/\s/.test(char));
+  // Latin letters are legitimate code-switched English, so they are neither
+  // rewarded nor punished: purity only measures Lao vs. other non-Latin script.
+  const symbols = [...candidate].filter((char) => !/\s/.test(char) && !/[A-Za-z0-9'’\-.,!?]/.test(char));
   const lao = symbols.filter((char) => /[\u0e80-\u0eff]/.test(char)).length;
-  const scriptPurity = symbols.length ? lao / symbols.length : 0;
-  return agreement * 0.72 + scriptPurity * 0.28;
+  const scriptPurity = symbols.length ? lao / symbols.length : 1;
+  // Prefer the candidate that kept the spoken English words instead of
+  // transliterating or dropping them.
+  const codeSwitch = bestLatin ? Math.min(1, latinWords(candidate).length / bestLatin) : 1;
+  return agreement * 0.62 + scriptPurity * 0.24 + codeSwitch * 0.14;
 }
+
 
 /**
  * ElevenLabs Scribe recognises Lao speech far better than the OpenAI model, but
@@ -174,7 +193,9 @@ async function transcribeWithGemini(
     "Transcribe it verbatim in Lao script (U+0E80–U+0EFF) exactly as spoken.",
     "Never translate, never use Thai script, never summarise, never invent speech that is not audible.",
     "Preserve tone marks, repeated words, names, numbers and spoken particles.",
+    "Lao speakers mix English words into Lao sentences: write any spoken English word in Latin letters exactly as said — never transliterate it into Lao script and never drop it.",
     "Return the transcript text only, with no labels, quotes or commentary.",
+
   ];
   if (glossary.length) instructions.push(`Preferred spellings when audible: ${glossary.slice(0, 40).join(", ")}`);
   if (context) instructions.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
@@ -288,15 +309,17 @@ export async function transcribeAudioServer(input: {
     if (lastError) throw lastError;
     return { text: "", alternatives: [], agreement: 0, words: scribeTiming, wordSource: scribeTiming.length ? "scribe" : null };
   }
+  const bestLatin = Math.max(0, ...alternatives.map((text) => latinWords(text).length));
   const ranked = alternatives
     .map((text) => ({
       text,
       // Thai->Lao transliteration (Scribe) is lossy, so such a candidate only
       // wins when it is clearly better than a natively Lao-script candidate.
-      score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language)
+      score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language, bestLatin)
         - (transliterated.has(text) ? 0.03 : 0),
     }))
     .sort((a, b) => b.score - a.score);
+
 
   return {
     text: ranked[0]?.text ?? "",

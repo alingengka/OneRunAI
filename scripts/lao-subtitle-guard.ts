@@ -430,13 +430,35 @@ async function checkLongClip(): Promise<void> {
   if (total > 1.2) failures.push(`(จ) รวมช่วงพูดที่ไม่มีซับ ${total.toFixed(2)} วิ เกินเกณฑ์ 1.2 วิ`);
 }
 
+/* ---- (ฉ) ประโยคลาวที่มีคำอังกฤษแทรก: ต้องไม่ถูกกรอง/ถอดเป็นอักษรลาว ---- */
+const CODESWITCH_FIXTURE = "tests/fixtures/lao-codeswitch.wav";
+const CODESWITCH_EXPECTED = ["appreciate", "the", "best", "thing"];
+
+async function checkCodeSwitch(): Promise<void> {
+  if (SKIP_STT) {
+    console.log("(ฉ) ข้ามคลิปลาวปนอังกฤษ (--layout-only)");
+    return;
+  }
+  if (!existsSync(CODESWITCH_FIXTURE)) throw new Error(`ไม่พบคลิปทดสอบ ${CODESWITCH_FIXTURE}`);
+  const audioBase64 = readFileSync(CODESWITCH_FIXTURE).toString("base64");
+  const result = await transcribeAudioServer({ audioBase64, language: "lo" });
+  const text = result.text.toLowerCase();
+  const missing = CODESWITCH_EXPECTED.filter((word) => !new RegExp(`\\b${word}\\b`).test(text));
+  const laoChars = (result.text.match(/[\u0e80-\u0eff]/g) ?? []).length;
+  console.log(`(ฉ) ลาวปนอังกฤษ: "${result.text}"`);
+  if (missing.length) failures.push(`(ฉ) คำอังกฤษหายไปจากผลถอดเสียง: ${missing.join(", ")}`);
+  if (laoChars < 10) failures.push(`(ฉ) ส่วนภาษาลาวหายไป (เหลืออักษรลาว ${laoChars} ตัว)`);
+}
+
 if (!ONLY_INTEGRATION) {
   await checkAccuracy();
   await checkCompleteness();
+  await checkCodeSwitch();
 }
 await checkOverlapWindows();
 await checkIntegration();
 await checkLongClip();
+
 
 
 if (failures.length) {
