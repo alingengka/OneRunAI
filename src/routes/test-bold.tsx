@@ -37,7 +37,7 @@ function makeStyle(fontFamily: string, bold: boolean, italic: boolean) {
 function TestBold() {
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-white p-6">
-      <h1 className="mb-4 text-lg font-bold">Bold preview test</h1>
+      <h1 className="mb-4 text-lg font-bold">Bold / Italic preview test</h1>
       {FONTS.map(([label, fontFamily, lang]) => {
         const text = TEST_TEXTS[lang]!;
         const group = makeGroup(text);
@@ -45,10 +45,10 @@ function TestBold() {
           <div key={label} className="relative mb-6 h-44 border border-dashed border-gray-300">
             <span className="absolute left-2 top-2 text-xs text-gray-500">{label}</span>
             <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-200" />
-            <CaptionOverlay group={group} time={10} style={makeStyle(fontFamily, false, false)} height={176} />
-            <span className="absolute right-2 top-2 text-xs text-gray-500">plain</span>
-            <CaptionOverlay group={group} time={10} style={makeStyle(fontFamily, true, false)} height={176} />
-            <span className="absolute right-[52%] top-2 text-xs text-gray-500">bold</span>
+            <CaptionOverlay group={group} time={10} style={{ ...makeStyle(fontFamily, false, false), posX: 27, width: "44%" as any }} height={176} />
+            <span className="absolute left-[27%] top-2 -translate-x-1/2 text-xs text-gray-500">plain</span>
+            <CaptionOverlay group={group} time={10} style={{ ...makeStyle(fontFamily, true, false), posX: 73, width: "44%" as any }} height={176} />
+            <span className="absolute left-[73%] top-2 -translate-x-1/2 text-xs text-gray-500">bold</span>
           </div>
         );
       })}
