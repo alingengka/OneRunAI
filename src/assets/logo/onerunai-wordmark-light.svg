@@ -1,0 +1,23 @@
+<svg width="640" height="180" viewBox="0 0 640 180" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="ringLightW" x1="0%" y1="0%" x2="0%" y2="100%">
+<stop offset="0%" stop-color="#A78BFA"/>
+<stop offset="50%" stop-color="#8B5CF6"/>
+<stop offset="100%" stop-color="#6D28D9"/>
+</linearGradient>
+<radialGradient id="dotFillLavenderW" cx="32%" cy="28%" r="80%">
+<stop offset="0%" stop-color="#FBFAFF"/>
+<stop offset="45%" stop-color="#DDD6FE"/>
+<stop offset="100%" stop-color="#A78BFA"/>
+</radialGradient>
+<radialGradient id="softShadowW" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#6D28D9" stop-opacity="0.10"/>
+<stop offset="100%" stop-color="#6D28D9" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect x="0" y="0" width="640" height="180" rx="20" fill="#FAFAFA" stroke="#E4E4E7" stroke-width="1"/>
+<circle cx="110" cy="55.36" r="14" fill="url(#softShadowW)"/>
+<path d="M120.64 64.28 A40 40 0 1 1 96.94 50.61" fill="none" stroke="url(#ringLightW)" stroke-width="9" stroke-linecap="round"/>
+<circle cx="110" cy="55.36" r="9" fill="url(#dotFillLavenderW)"/>
+<text x="155" y="106" fill="#18181B" style="font-size:50px;font-weight:700;font-family:'Bricolage Grotesque',sans-serif;letter-spacing:0.3px">OneRunAI</text>
+</svg>

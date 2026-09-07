@@ -1,0 +1,28 @@
+<svg width="640" height="180" viewBox="0 0 640 180" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="ringDarkW" x1="0%" y1="0%" x2="0%" y2="100%">
+<stop offset="0%" stop-color="#E9D5FF"/>
+<stop offset="30%" stop-color="#C084FC"/>
+<stop offset="65%" stop-color="#9333EA"/>
+<stop offset="100%" stop-color="#6D28D9"/>
+</linearGradient>
+<radialGradient id="ambientGlowW" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#A855F7" stop-opacity="0.3"/>
+<stop offset="100%" stop-color="#A855F7" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="dotGlowW" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+<stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="dotFillW" cx="35%" cy="30%" r="75%">
+<stop offset="0%" stop-color="#FFFFFF"/>
+<stop offset="100%" stop-color="#F1EAFE"/>
+</radialGradient>
+</defs>
+<rect x="0" y="0" width="640" height="180" rx="20" fill="#14121C"/>
+<circle cx="90" cy="90" r="80" fill="url(#ambientGlowW)"/>
+<circle cx="110" cy="55.36" r="19" fill="url(#dotGlowW)"/>
+<path d="M120.64 64.28 A40 40 0 1 1 96.94 50.61" fill="none" stroke="url(#ringDarkW)" stroke-width="9" stroke-linecap="round"/>
+<circle cx="110" cy="55.36" r="9" fill="url(#dotFillW)"/>
+<text x="155" y="106" fill="#FFFFFF" style="font-size:50px;font-weight:700;font-family:'Bricolage Grotesque',sans-serif;letter-spacing:0.3px">OneRunAI</text>
+</svg>
