@@ -45,10 +45,14 @@ function TestBold() {
           <div key={label} className="relative mb-6 h-44 border border-dashed border-gray-300">
             <span className="absolute left-2 top-2 text-xs text-gray-500">{label}</span>
             <div className="absolute left-1/2 top-0 bottom-0 w-px bg-gray-200" />
-            <CaptionOverlay group={group} time={10} style={{ ...makeStyle(fontFamily, false, false), posX: 27, width: "44%" as any }} height={176} />
-            <span className="absolute left-[27%] top-2 -translate-x-1/2 text-xs text-gray-500">plain</span>
-            <CaptionOverlay group={group} time={10} style={{ ...makeStyle(fontFamily, true, false), posX: 73, width: "44%" as any }} height={176} />
-            <span className="absolute left-[73%] top-2 -translate-x-1/2 text-xs text-gray-500">bold</span>
+            <div className="absolute inset-y-0 left-0 w-1/2">
+              <CaptionOverlay group={group} time={10} style={makeStyle(fontFamily, false, false)} height={176} />
+              <span className="absolute left-1/2 top-2 -translate-x-1/2 text-xs text-gray-500">plain</span>
+            </div>
+            <div className="absolute inset-y-0 right-0 w-1/2">
+              <CaptionOverlay group={group} time={10} style={makeStyle(fontFamily, true, false)} height={176} />
+              <span className="absolute left-1/2 top-2 -translate-x-1/2 text-xs text-gray-500">bold</span>
+            </div>
           </div>
         );
       })}
