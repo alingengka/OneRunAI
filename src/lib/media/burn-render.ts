@@ -7,16 +7,67 @@ import type { Segment } from "./audio";
 import { motionTransform, NO_MOTION, type MotionElement, type MotionScene } from "./motion";
 import { viralTextWindow } from "../scenes";
 import {
+  ITALIC_SKEW,
   LINE_BREAK,
+  emphasizedWeight,
   isKeyword,
   shadowBlur,
   strokeWidth,
   type CaptionGroup,
   type CaptionStyle,
   type LineStyle,
+  type TextEmphasis,
 } from "../captions";
 
 export type ExportResolution = "source" | "4k" | "1080" | "720";
+
+/**
+ * วาดข้อความพร้อมตัวหนา/ตัวเอียง "สังเคราะห์"
+ * - เอียง: skew บนแกน x รอบเส้น baseline (สระ/วรรณยุกต์ลาวเลื่อนตามตัวอักษร ไม่หลุดตำแหน่ง)
+ * - หนา: วาดซ้อนหลายรอบด้วย offset เล็ก ๆ เพราะ canvas ไม่สังเคราะห์ตัวหนาให้ฟอนต์ custom
+ */
+export function paintEmphasized(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  fontSize: number,
+  em: TextEmphasis,
+  mode: "fill" | "stroke",
+): void {
+  const draw = (dx: number, dy: number) =>
+    mode === "stroke" ? ctx.strokeText(text, dx, dy) : ctx.fillText(text, dx, dy);
+  ctx.save();
+  ctx.translate(x, y);
+  if (em.italic) ctx.transform(1, 0, ITALIC_SKEW, 1, 0, 0);
+  if (em.bold) {
+    const d = Math.max(0.6, fontSize * 0.018);
+    const o = d * 0.72;
+    for (const [dx, dy] of [
+      [0, 0],
+      [d, 0],
+      [-d, 0],
+      [0, d],
+      [0, -d],
+      [o, o],
+      [-o, -o],
+      [o, -o],
+      [-o, o],
+    ] as const) {
+      draw(dx, dy);
+    }
+  } else {
+    draw(0, 0);
+  }
+  ctx.restore();
+}
+
+/** ความกว้างที่เพิ่มขึ้นจากการหนา/เอียงสังเคราะห์ (ใช้กัน layout ชนกัน) */
+export function emphasisPad(fontSize: number, em: TextEmphasis): number {
+  return (em.bold ? fontSize * 0.036 : 0) + (em.italic ? fontSize * 0.05 : 0);
+}
+
+
 
 /**
  * บังคับให้ฟอนต์ทุกตัวที่ซับใช้ (รวม override รายบรรทัด) โหลดเสร็จก่อนวาดลง canvas
