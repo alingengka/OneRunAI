@@ -6,7 +6,6 @@ import { AudioPreview } from "@/components/audio-preview";
 import { toast } from "sonner";
 import {
   Captions,
-  CheckCircle2,
   Download,
   FileDown,
   Loader2,
@@ -18,7 +17,6 @@ import {
   Upload,
   Waves,
   Wand2,
-  AlertTriangle,
   Maximize2,
   Save,
   Volume2,
