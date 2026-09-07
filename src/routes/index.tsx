@@ -1669,48 +1669,6 @@ function Studio() {
             </div>
             {videoUrl && <p className="mt-2 text-center text-xs text-muted-foreground">ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)</p>}
 
-            <div className="mt-3 space-y-2 rounded-xl border border-border p-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium">รีซิงก์เวลาอัตโนมัติเมื่อแก้ข้อความ</div>
-                <Switch checked={autoResync} onCheckedChange={setAutoResync} aria-label="เปิดโหมดรีซิงก์อัตโนมัติ" />
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">สถานะความแม่นยำ</span>
-                <span
-                  className={
-                    accuracy.tone === "good"
-                      ? "rounded-full bg-primary/15 px-2 py-1 font-medium text-primary"
-                      : accuracy.tone === "ok"
-                        ? "rounded-full bg-secondary px-2 py-1 font-medium text-foreground"
-                        : "rounded-full bg-destructive/15 px-2 py-1 font-medium text-destructive"
-                  }
-                >
-                  {accuracy.label}
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 pt-1 text-center text-xs">
-                <div className="rounded-md bg-primary/10 p-2">
-                  <CheckCircle2 className="mx-auto mb-1 h-4 w-4 text-primary" />
-                  <div className="font-semibold">{confidenceSummary.high}</div>
-                  <div className="text-muted-foreground">มั่นใจสูง</div>
-                </div>
-                <div className="rounded-md bg-secondary p-2">
-                  <AlertTriangle className="mx-auto mb-1 h-4 w-4 text-muted-foreground" />
-                  <div className="font-semibold">{confidenceSummary.review}</div>
-                  <div className="text-muted-foreground">ควรฟังตรวจ</div>
-                </div>
-                <div className="rounded-md bg-destructive/10 p-2">
-                  <AlertTriangle className="mx-auto mb-1 h-4 w-4 text-destructive" />
-                  <div className="font-semibold">{confidenceSummary.low}</div>
-                  <div className="text-muted-foreground">ต้องแก้</div>
-                </div>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                {confidenceSummary.score === null
-                  ? "สร้างซับใหม่เพื่อวัดความมั่นใจจาก transcript และเสียงจริง"
-                  : `หลักฐานความมั่นใจรวม ${Math.round(confidenceSummary.score * 100)}% — ใช้สำหรับชี้จุดตรวจ ไม่ใช่การรับประกันความถูกต้องของทุกคำ`}
-              </p>
-            </div>
 
 
             <div className="mt-4 space-y-3">
