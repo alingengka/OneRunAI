@@ -53,8 +53,8 @@ export function WordTimelineEditor({ words, duration, onChange, onPreview, onRet
         </div>
       )}
 
-      <div className="max-h-48 overflow-y-auto border-y border-border py-3">
-        <div className="flex flex-wrap gap-1.5">
+      <div className="max-h-56 overflow-y-auto rounded-xl border border-border bg-preview p-3">
+        <div className="flex flex-wrap gap-2">
           {words.map((word, index) => (
             <button
               key={`${index}-${word.start}`}
@@ -68,16 +68,21 @@ export function WordTimelineEditor({ words, duration, onChange, onPreview, onRet
                 onPreview(word.start, word.end);
               }}
               className={cn(
-                "rounded-md border px-2 py-1 text-xs transition-colors",
-                selected.includes(index) ? "border-primary bg-primary/15" : "border-border bg-secondary hover:bg-accent",
+                "rounded-lg border px-2.5 py-1.5 text-xs shadow-sm transition-colors",
+                selected.includes(index)
+                  ? "border-primary bg-primary/15 ring-1 ring-primary/30"
+                  : "border-primary/25 bg-card hover:border-primary/60 hover:bg-accent",
                 issues.some((issue) => issue.index === index) && "border-destructive",
                 word.confidenceLabel === "review" && "border-muted-foreground",
                 word.confidenceLabel === "low" && "border-destructive bg-destructive/10",
               )}
               title={typeof word.confidence === "number" ? `ความมั่นใจ ${Math.round(word.confidence * 100)}%` : undefined}
             >
-              {word.text}<span className="ml-1 font-mono text-[9px] text-muted-foreground">{word.start.toFixed(2)}</span>
-              {typeof word.confidence === "number" && <span className="ml-1 text-[9px] text-muted-foreground">{Math.round(word.confidence * 100)}%</span>}
+              {word.text}
+              <span className="ml-1 font-mono text-[9px] text-muted-foreground">{word.start.toFixed(2)}</span>
+              {typeof word.confidence === "number" && (
+                <span className="ml-1 text-[9px] text-muted-foreground">{Math.round(word.confidence * 100)}%</span>
+              )}
             </button>
           ))}
         </div>
