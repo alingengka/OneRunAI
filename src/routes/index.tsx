@@ -90,7 +90,7 @@ import { motionAt } from "@/lib/media/motion";
 import { addSceneElement, buildScenes, updateSceneElementFormat, updateSceneElementText, updateSceneElementTiming, type SceneElement, type SceneElementKind } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { ViralTextOverlay } from "@/components/editor/ViralTextOverlay";
-import { StepBar, type Step } from "@/components/editor/StepBar";
+
 import { AccuracyPanel } from "@/components/editor/AccuracyPanel";
 import { GlossaryManager } from "@/components/editor/GlossaryManager";
 import { applyRulesToWords, parseGlossaryTerms, type LexRule } from "@/lib/lao-glossary";
@@ -979,44 +979,6 @@ function Studio() {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
 
-  const steps: Step[] = [
-    {
-      key: "tools",
-      label: "1 · อัปโหลด",
-      hint: file ? file.name : "เลือกไฟล์วิดีโอ/เสียง",
-      state: analyzing ? "busy" : file ? "done" : tab === "tools" ? "active" : "todo",
-    },
-    {
-      key: "tools",
-      label: "2 · AI ซับ + ตัดเงียบ",
-      hint: words.length ? `${words.length} คำ · ตัดออก ${savedSeconds.toFixed(1)}s` : "สร้างซับด้วย AI",
-      state: transcribing ? "busy" : words.length ? "done" : file ? "active" : "todo",
-    },
-    {
-      key: "scenes",
-      label: "3 · ซีน",
-      hint: scenes.length ? `${scenes.length} ซีน · ตัดทิ้ง ${dropped.length}` : "แบ่งคลิปเป็นซีน",
-      state: tab === "scenes" ? "active" : scenes.length ? "done" : "todo",
-    },
-    {
-      key: "styles",
-      label: "4 · สไตล์",
-      hint: style.name,
-      state: tab === "styles" || tab === "customize" ? "active" : words.length ? "done" : "todo",
-    },
-    {
-      key: "text",
-      label: "5 · แก้คำ",
-      hint: accuracy.label,
-      state: retryingSync ? "busy" : tab === "text" ? "active" : words.length ? "done" : "todo",
-    },
-    {
-      key: "export",
-      label: "6 · ส่งออก",
-      hint: rendering ? (job?.label ?? "กำลังเรนเดอร์") : "เรนเดอร์วิดีโอ / CapCut",
-      state: rendering ? "busy" : tab === "export" ? "active" : "todo",
-    },
-  ];
 
   return (
     <main className="studio-shell min-h-screen overflow-hidden bg-background text-foreground">
@@ -1058,11 +1020,9 @@ function Studio() {
         </div>
       </header>
 
-      {/* ขั้นตอนการทำงาน: เห็นสถานะทุกขั้นและกดข้ามไปขั้นไหนก็ได้ */}
-      <div className="mx-auto max-w-[1500px] px-4 pt-4 sm:px-6">
-        <StepBar steps={steps} onSelect={(key) => setTab(key as Tab)} />
-        {job && (
-          <div className="mt-3 flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3">
+      {job && (
+        <div className="mx-auto max-w-[1500px] px-4 pt-4 sm:px-6">
+          <div className="flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
             <div className="min-w-0 flex-1">
               <div className="flex justify-between text-xs font-medium">
@@ -1077,8 +1037,9 @@ function Studio() {
               ยกเลิก
             </Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
 
       <div className="mx-auto grid min-w-0 max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
         {/* Left: controls */}
