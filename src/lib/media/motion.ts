@@ -59,7 +59,11 @@ export type MotionElement = {
   /** สำหรับ viral text: จังหวะที่โผล่ */
   offset?: number;
   durationSec?: number;
+  /** สำหรับ viral text: ตัวหนา/ตัวเอียงสังเคราะห์ */
+  bold?: boolean | undefined;
+  italic?: boolean | undefined;
 };
+
 
 
 /** หา transform ณ เวลานั้นจากรายการซีน + element ที่เปิด motion ไว้ */
