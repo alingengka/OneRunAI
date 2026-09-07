@@ -62,6 +62,7 @@
   --color-glow: var(--glow);
   --color-glow-bright: var(--glow-bright);
   --color-brand-magenta: var(--brand-magenta);
+  --color-preview: var(--preview);
   --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --shadow-primary: 0 8px 24px -12px color-mix(in oklab, var(--primary) 65%, transparent);
   --shadow-primary-lg: 0 14px 40px -16px color-mix(in oklab, var(--glow) 70%, transparent);
@@ -99,6 +100,7 @@
   --glow: oklch(0.8112 0.1013 293.57);
   --glow-bright: oklch(0.6056 0.2189 292.72);
   --brand-magenta: oklch(0.6668 0.2591 322.15);
+  --preview: oklch(0.11 0.008 285);
   --chart-1: var(--accent-primary);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -146,6 +148,7 @@
   --glow: oklch(0.7217 0.1767 305.5);
   --glow-bright: oklch(0.709 0.1592 293.54);
   --brand-magenta: oklch(0.7477 0.207 322.16);
+  --preview: oklch(0.09 0.008 285);
   --chart-1: var(--accent-primary);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
