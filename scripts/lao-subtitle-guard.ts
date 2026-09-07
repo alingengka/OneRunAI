@@ -62,7 +62,8 @@ async function checkCompleteness(): Promise<void> {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await context.newPage();
-  await page.goto(APP, { waitUntil: "domcontentloaded" });
+  await page.goto(APP, { waitUntil: "load" });
+  await page.waitForTimeout(2500);
 
   const rows = (await page.evaluate(async (sentence: string) => {
     const captions = (await import("/src/lib/captions.ts")) as typeof import("../src/lib/captions");
