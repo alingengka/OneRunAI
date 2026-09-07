@@ -1,7 +1,7 @@
 import type { Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
-import { createBurnRenderer, targetSize, type ExportResolution } from "./burn-render";
+import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 export { targetSize };
@@ -120,7 +120,7 @@ export async function exportBurnedVideo(
   try {
     await waitFor("loadedmetadata");
     if (video.readyState < 2) await waitFor("loadeddata");
-    try { await (document as Document & { fonts?: FontFaceSet }).fonts?.ready; } catch { /* ignore */ }
+    await ensureCaptionFonts(style);
 
     const sourceWidth = video.videoWidth || 1080;
     const sourceHeight = video.videoHeight || 1920;

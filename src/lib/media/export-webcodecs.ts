@@ -13,7 +13,7 @@ import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import type { Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
-import { createBurnRenderer, targetSize, type ExportResolution } from "./burn-render";
+import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 type Progress = (ratio: number) => void;
@@ -230,7 +230,7 @@ export async function exportWebCodecsVideo(
   try {
     await waitFor("loadedmetadata");
     if (video.readyState < 2) await waitFor("loadeddata");
-    try { await (document as Document & { fonts?: FontFaceSet }).fonts?.ready; } catch { /* ignore */ }
+    await ensureCaptionFonts(style);
 
     const sourceWidth = video.videoWidth || 1080;
     const sourceHeight = video.videoHeight || 1920;

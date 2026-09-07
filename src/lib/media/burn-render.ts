@@ -18,6 +18,32 @@ import {
 
 export type ExportResolution = "source" | "4k" | "1080" | "720";
 
+/**
+ * บังคับให้ฟอนต์ทุกตัวที่ซับใช้ (รวม override รายบรรทัด) โหลดเสร็จก่อนวาดลง canvas
+ * ถ้าไม่ทำ ฟอนต์ที่ยังไม่ถูกใช้บนหน้าเว็บจะไม่ถูกดาวน์โหลด แล้ว canvas จะ fallback
+ */
+export async function ensureCaptionFonts(style: CaptionStyle): Promise<void> {
+  const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+  if (!fonts) return;
+  const families = new Set<string>([style.fontFamily]);
+  for (const ls of Object.values(style.lineStyles ?? {})) {
+    if (ls?.fontFamily) families.add(ls.fontFamily);
+  }
+  const weights = new Set<number>([style.fontWeight, 400, 700, 900]);
+  for (const ls of Object.values(style.lineStyles ?? {})) {
+    if (ls?.fontWeight) weights.add(ls.fontWeight);
+  }
+  const jobs: Promise<unknown>[] = [];
+  for (const family of families) {
+    for (const weight of weights) {
+      jobs.push(fonts.load(`${weight} 64px ${family}`, "ສະບາຍດີ ABC ก").catch(() => undefined));
+    }
+  }
+  await Promise.all(jobs);
+  try { await fonts.ready; } catch { /* ignore */ }
+}
+
+
 /** ความสูงของด้านสั้น (แนวตั้ง 9:16 → 1080 = 1080x1920) */
 const SHORT_SIDE: Record<Exclude<ExportResolution, "source">, number> = {
   "4k": 2160,
