@@ -79,14 +79,20 @@ function similarity(a: string, b: string): number {
   return Math.max(0, 1 - (row[y.length] ?? Math.max(x.length, y.length)) / Math.max(x.length, y.length));
 }
 
-function scoreCandidate(candidate: string, others: string[], language?: string): number {
+function scoreCandidate(candidate: string, others: string[], language?: string, bestLatin = 0): number {
   const agreement = others.length ? others.reduce((sum, value) => sum + similarity(candidate, value), 0) / others.length : 0.72;
   if (language !== "lo") return agreement;
-  const symbols = [...candidate].filter((char) => !/\s/.test(char));
+  // Latin letters are legitimate code-switched English, so they are neither
+  // rewarded nor punished: purity only measures Lao vs. other non-Latin script.
+  const symbols = [...candidate].filter((char) => !/\s/.test(char) && !/[A-Za-z0-9'’\-.,!?]/.test(char));
   const lao = symbols.filter((char) => /[\u0e80-\u0eff]/.test(char)).length;
-  const scriptPurity = symbols.length ? lao / symbols.length : 0;
-  return agreement * 0.72 + scriptPurity * 0.28;
+  const scriptPurity = symbols.length ? lao / symbols.length : 1;
+  // Prefer the candidate that kept the spoken English words instead of
+  // transliterating or dropping them.
+  const codeSwitch = bestLatin ? Math.min(1, latinWords(candidate).length / bestLatin) : 1;
+  return agreement * 0.62 + scriptPurity * 0.24 + codeSwitch * 0.14;
 }
+
 
 /**
  * ElevenLabs Scribe recognises Lao speech far better than the OpenAI model, but
