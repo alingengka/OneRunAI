@@ -1079,9 +1079,9 @@ function Studio() {
         )}
       </div>
 
-      <div className="mx-auto grid max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
+      <div className="mx-auto grid min-w-0 max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
         {/* Left: controls */}
-        <section className="studio-panel order-2 rounded-xl border border-border bg-card p-4 sm:p-5 lg:order-1">
+        <section className="studio-panel order-2 min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5 lg:order-1">
           <div className="mb-5 flex gap-1 overflow-x-auto rounded-lg bg-secondary p-1">
             {(
               [
@@ -1546,7 +1546,7 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start">
+        <section className="order-1 min-w-0 lg:order-2 lg:sticky lg:top-4 lg:self-start">
           <div className="studio-panel rounded-xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium"><Smartphone className="h-4 w-4" /> TikTok Preview</div>
