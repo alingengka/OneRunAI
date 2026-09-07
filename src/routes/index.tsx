@@ -286,8 +286,10 @@ function Studio() {
       style,
       duration,
       transcribing,
+      analyzing,
+      segmentCount: segments.length,
     };
-  }, [visibleWords, groups, style, duration, transcribing]);
+  }, [visibleWords, groups, style, duration, transcribing, analyzing, segments.length]);
 
 
   // measure preview frame for font scaling
