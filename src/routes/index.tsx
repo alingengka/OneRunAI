@@ -1032,16 +1032,17 @@ function Studio() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/*,audio/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void onPickFile(f);
-            }}
-          />
+          <span className="hidden">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/*,audio/*"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onPickFile(f);
+              }}
+            />
+          </span>
           <Button variant="secondary" onClick={() => fileInputRef.current?.click()} className="hidden sm:inline-flex">
             <Upload className="mr-2 h-4 w-4" /> อัปโหลดคลิป
           </Button>
