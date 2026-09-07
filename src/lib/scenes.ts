@@ -26,7 +26,20 @@ export type SceneElement = {
   offset?: number;
   /** ความยาวที่โชว์ (default 2.5 วินาที) */
   durationSec?: number;
+  /** ตัวหนาสังเคราะห์ */
+  bold?: boolean | undefined;
+  /** ตัวเอียงสังเคราะห์ */
+  italic?: boolean | undefined;
 };
+
+/** เปิด/ปิดตัวหนา-ตัวเอียงของ element (ใช้กับ viral text) */
+export function updateSceneElementFormat(
+  elements: SceneElement[],
+  id: string,
+  patch: { bold?: boolean; italic?: boolean },
+): SceneElement[] {
+  return elements.map((element) => (element.id === id ? { ...element, ...patch } : element));
+}
 
 export function addSceneElement(elements: SceneElement[], sceneId: string, kind: SceneElementKind): SceneElement[] {
   const labels: Record<SceneElementKind, string> = {
@@ -121,6 +134,8 @@ export function isInScenes(time: number, scenes: Scene[]) {
 export type ViralTextHit = {
   text: string;
   position: "top" | "middle";
+  bold?: boolean | undefined;
+  italic?: boolean | undefined;
   /** 0..1 ความคืบหน้าใน window */
   progress: number;
   /** ความยาว window เป็นวินาที */
@@ -132,7 +147,15 @@ export function viralTextAt(
   time: number,
   scenes: SceneWindow[] | undefined,
   elements:
-    | ({ sceneId: string; kind: string; enabled: boolean; text?: string; position?: "top" | "middle" } & ViralTiming)[]
+    | ({
+        sceneId: string;
+        kind: string;
+        enabled: boolean;
+        text?: string;
+        position?: "top" | "middle";
+        bold?: boolean | undefined;
+        italic?: boolean | undefined;
+      } & ViralTiming)[]
     | undefined,
 ): ViralTextHit | null {
   if (!scenes?.length || !elements?.length) return null;
@@ -145,6 +168,8 @@ export function viralTextAt(
     return {
       text: element.text.trim(),
       position: element.position ?? "top",
+      bold: element.bold,
+      italic: element.italic,
       progress: Math.max(0, Math.min(1, (time - win.start) / span)),
       span,
     };
