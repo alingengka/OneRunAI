@@ -22,6 +22,7 @@ export type SavedProject = {
   noiseReduction?: boolean;
   dropped?: string[];
   sceneElements?: SceneElement[];
+  splitPoints?: number[];
   projectName?: string;
   sfx?: { enabled: boolean; volume: number; pack: SoundPack };
 };
