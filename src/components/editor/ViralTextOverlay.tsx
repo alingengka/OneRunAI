@@ -1,4 +1,6 @@
 import { viralTextAt, type Scene, type SceneElement } from "@/lib/scenes";
+import { VIRAL_REF_HEIGHT } from "@/lib/media/motion";
+
 
 type Props = {
   scenes: Scene[];
