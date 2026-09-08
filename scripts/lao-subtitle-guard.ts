@@ -379,10 +379,13 @@ async function checkLongClip(): Promise<void> {
   if (!existsSync(LONG_FIXTURE)) throw new Error(`ไม่พบคลิปยาวทดสอบ ${LONG_FIXTURE}`);
   const browser = await chromium.launch({ headless: true });
   const page = await (await browser.newContext({ viewport: { width: 1400, height: 1800 } })).newPage();
+  console.log("(จ1) เปิดหน้าทดสอบคลิปยาว");
   await page.goto(APP, { waitUntil: "load" });
   await page.waitForFunction(() => !!(window as unknown as { __shortcutState?: unknown }).__shortcutState, undefined, { timeout: 60_000 });
   await page.getByRole("button", { name: "ລາວ", exact: true }).first().click();
-  await page.setInputFiles('input[type="file"]', LONG_FIXTURE);
+  console.log("(จ2) อัปโหลดคลิปยาว");
+  await page.locator('input[type="file"]').first().setInputFiles(LONG_FIXTURE, { timeout: 90_000 });
+  console.log("(จ3) รอวิเคราะห์เสียงคลิปยาว");
   await page.waitForFunction(
     () => {
       const btns = [...document.querySelectorAll("button")].filter((b) => b.textContent?.includes("สร้างซับด้วย AI"));
@@ -391,6 +394,7 @@ async function checkLongClip(): Promise<void> {
     undefined,
     { timeout: 30_000 },
   );
+  console.log("(จ4) เริ่มถอดเสียงคลิปยาว");
   await page.getByRole("button", { name: "สร้างซับด้วย AI", exact: true }).click();
   await page.waitForFunction(
     () => {
@@ -400,6 +404,7 @@ async function checkLongClip(): Promise<void> {
     undefined,
     { timeout: 300_000 },
   );
+  console.log("(จ5) ถอดเสียงคลิปยาวเสร็จ");
   const state = (await page.evaluate(() => {
     const st = (window as unknown as {
       __shortcutState: {

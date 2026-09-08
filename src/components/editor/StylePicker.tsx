@@ -30,7 +30,6 @@ const strokeWidth = { none: 0, small: 1, medium: 2, large: 3 } as const;
 
 function PresetPreview({ preset, text }: { preset: CaptionStyle; text: string }) {
   const shadow = strokeWidth[preset.shadow];
-  const stroke = strokeWidth[preset.stroke];
 
   return (
     <span
@@ -38,12 +37,13 @@ function PresetPreview({ preset, text }: { preset: CaptionStyle; text: string })
       style={{
         fontFamily: preset.fontFamily,
         fontWeight: preset.fontWeight,
-        color: preset.highlight === "box" ? preset.highlightTextColor : preset.color,
+        color: "var(--preview-foreground)",
         background: preset.highlight === "box" ? preset.highlightColor : undefined,
         borderRadius: preset.highlight === "box" ? 4 : undefined,
         textTransform: preset.uppercase ? "uppercase" : "none",
-        WebkitTextStroke: stroke ? `${stroke}px ${preset.strokeColor}` : undefined,
-        textShadow: shadow ? `0 ${shadow}px ${shadow * 2}px ${preset.shadowColor}` : undefined,
+        textShadow: shadow
+          ? `0 ${Math.min(shadow, 1)}px ${Math.min(shadow * 2, 2)}px ${preset.shadowColor}`
+          : undefined,
         transform: preset.italic ? "skewX(-12deg)" : undefined,
       }}
     >
@@ -76,12 +76,12 @@ function AnimationCard({
         aria-label={`ใช้อนิเมชัน ${label}`}
         aria-pressed={active}
         className={cn(
-          "flex aspect-[1.75/1] w-full min-h-24 items-center justify-center overflow-hidden rounded-md border bg-preview px-2 transition-colors",
+          "flex aspect-[1.75/1] w-full min-h-24 items-center justify-center overflow-hidden rounded-md border bg-preview px-2 text-preview-foreground transition-colors",
           active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50",
         )}
       >
         <span
-          className={cn("cap-demo max-w-full truncate text-xl font-bold text-foreground", `cap-demo-${value}`)}
+          className={cn("cap-demo max-w-full truncate text-xl font-bold text-preview-foreground", `cap-demo-${value}`)}
           style={{ fontFamily }}
         >
           {text}
@@ -214,7 +214,7 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
             <article key={preset.id} className="min-w-0">
               <div
                 className={cn(
-                  "group relative flex aspect-[1.75/1] min-h-24 items-center justify-center overflow-hidden rounded-md border bg-preview transition-colors",
+                  "group relative flex aspect-[1.75/1] min-h-24 items-center justify-center overflow-hidden rounded-md border bg-preview text-preview-foreground transition-colors",
                   activeId === preset.id
                     ? "border-primary ring-2 ring-primary/30"
                     : "border-border hover:border-primary/50",

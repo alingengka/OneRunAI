@@ -65,6 +65,7 @@
   --color-glow-bright: var(--glow-bright);
   --color-brand-magenta: var(--brand-magenta);
   --color-preview: var(--preview);
+  --color-preview-foreground: var(--preview-foreground);
   --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --shadow-primary: 0 8px 24px -12px color-mix(in oklab, var(--primary) 65%, transparent);
   --shadow-primary-lg: 0 14px 40px -16px color-mix(in oklab, var(--glow) 70%, transparent);
@@ -104,7 +105,8 @@
   --glow: oklch(0.8112 0.1013 293.57);
   --glow-bright: oklch(0.6056 0.2189 292.72);
   --brand-magenta: oklch(0.6668 0.2591 322.15);
-  --preview: oklch(0.11 0.008 285);
+  --preview: oklch(0.205 0.045 267);
+  --preview-foreground: oklch(0.985 0.004 250);
   --chart-1: var(--accent-primary);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -154,7 +156,8 @@
   --glow: oklch(0.7217 0.1767 305.5);
   --glow-bright: oklch(0.709 0.1592 293.54);
   --brand-magenta: oklch(0.7477 0.207 322.16);
-  --preview: oklch(0.09 0.008 285);
+  --preview: oklch(0.19 0.042 267);
+  --preview-foreground: oklch(0.985 0.004 250);
   --chart-1: var(--accent-primary);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -327,25 +330,25 @@
 }
 
 /* ---- ตัวอย่างอนิเมชันซับในการ์ดหน้า "เลือกสไตล์" (สีธีม OneRunAI) ---- */
-@keyframes cap-pop { 0%,10% { transform: scale(0.9); opacity: 0.3 } 35%,100% { transform: scale(1); opacity: 1 } }
-@keyframes cap-fade { 0% { opacity: 0 } 35%,100% { opacity: 1 } }
-@keyframes cap-slide-up { 0% { transform: translateY(60%); opacity: 0 } 35%,100% { transform: translateY(0); opacity: 1 } }
-@keyframes cap-slide-up2 { 0% { transform: translateX(-70%) scale(0.96); opacity: 0 } 40% { transform: translateX(6%) scale(1.02); opacity: 1 } 55%,100% { transform: translateX(0) scale(1); opacity: 1 } }
-@keyframes cap-typewriter { 0% { clip-path: inset(0 100% 0 0) } 60%,100% { clip-path: inset(0 0 0 0) } }
+@keyframes cap-pop { 0% { transform: scale(0.92); opacity: 0.7 } 16%,100% { transform: scale(1); opacity: 1 } }
+@keyframes cap-fade { 0% { opacity: 0.55 } 16%,100% { opacity: 1 } }
+@keyframes cap-slide-up { 0% { transform: translateY(35%); opacity: 0.65 } 18%,100% { transform: translateY(0); opacity: 1 } }
+@keyframes cap-slide-up2 { 0% { transform: translateX(-45%) scale(0.97); opacity: 0.65 } 14% { transform: translateX(4%) scale(1.02); opacity: 1 } 20%,100% { transform: translateX(0) scale(1); opacity: 1 } }
+@keyframes cap-typewriter { 0% { clip-path: inset(0 65% 0 0) } 18%,100% { clip-path: inset(0 0 0 0) } }
 @keyframes cap-bounce { 0%,100% { transform: translateY(0) } 25% { transform: translateY(-18%) scale(1.08) } 50% { transform: translateY(0) } }
-@keyframes cap-zoom { 0% { transform: scale(0.6); opacity: 0 } 40%,100% { transform: scale(1); opacity: 1 } }
+@keyframes cap-zoom { 0% { transform: scale(0.78); opacity: 0.65 } 18%,100% { transform: scale(1); opacity: 1 } }
 @keyframes cap-shake { 0%,100% { transform: translateX(0) } 20% { transform: translateX(-8%) } 40% { transform: translateX(8%) } 60% { transform: translateX(-4%) } 80% { transform: translateX(4%) } }
-@keyframes cap-flip { 0% { transform: perspective(600px) rotateX(80deg); opacity: 0.2 } 45%,100% { transform: perspective(600px) rotateX(0); opacity: 1 } }
-@keyframes cap-karaoke { 0% { background-position: 100% 0 } 70%,100% { background-position: 0 0 } }
-@keyframes cap-karaoke2 { 0% { background-position: 0 100% } 70%,100% { background-position: 0 0 } }
-@keyframes cap-karaoke-plus { 0% { background-position: 100% 0; transform: scale(1) } 50% { transform: scale(1.16) } 70%,100% { background-position: 0 0; transform: scale(1) } }
+@keyframes cap-flip { 0% { transform: perspective(600px) rotateX(55deg); opacity: 0.65 } 18%,100% { transform: perspective(600px) rotateX(0); opacity: 1 } }
+@keyframes cap-karaoke { 0% { background-position: 100% 0 } 20%,100% { background-position: 0 0 } }
+@keyframes cap-karaoke2 { 0% { background-position: 0 100% } 20%,100% { background-position: 0 0 } }
+@keyframes cap-karaoke-plus { 0% { background-position: 100% 0; transform: scale(1) } 12% { transform: scale(1.12) } 20%,100% { background-position: 0 0; transform: scale(1) } }
 @keyframes cap-glow {
   0%,100% { text-shadow: 0 0 6px var(--accent-secondary), 0 0 14px var(--accent-primary) }
   50% { text-shadow: 0 0 14px var(--accent-secondary), 0 0 30px var(--accent-primary) }
 }
-@keyframes cap-highlight { 0% { background-size: 100% 0% } 55%,100% { background-size: 100% 100% } }
+@keyframes cap-highlight { 0% { background-size: 100% 18% } 20%,100% { background-size: 100% 100% } }
 
-.cap-demo { display: inline-block; animation-duration: 2.2s; animation-iteration-count: infinite; animation-timing-function: ease-out }
+.cap-demo { display: inline-block; color: var(--preview-foreground); opacity: 1; animation-duration: 2.2s; animation-iteration-count: infinite; animation-timing-function: ease-out }
 .cap-demo-pop { animation-name: cap-pop }
 .cap-demo-fade { animation-name: cap-fade }
 .cap-demo-slideUp { animation-name: cap-slide-up }
@@ -370,11 +373,11 @@
   -webkit-text-fill-color: transparent;
 }
 .cap-demo-karaoke, .cap-demo-karaokePlus {
-  background-image: linear-gradient(to right, var(--accent-secondary) 50%, var(--foreground) 50%);
+  background-image: linear-gradient(to right, var(--accent-secondary) 50%, var(--preview-foreground) 50%);
   background-size: 200% 100%;
 }
 .cap-demo-karaoke2 {
-  background-image: linear-gradient(to bottom, var(--accent-secondary) 50%, var(--foreground) 50%);
+  background-image: linear-gradient(to bottom, var(--accent-secondary) 50%, var(--preview-foreground) 50%);
   background-size: 100% 200%;
 }
 .cap-demo-karaoke { animation-name: cap-karaoke }
