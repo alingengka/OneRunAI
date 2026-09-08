@@ -210,9 +210,9 @@ export const baseStyle: CaptionStyle = {
 };
 
 export const sampleTextByLanguage: Record<string, string> = {
-  lo: "ຫ້າມພາດ ນີ້ຄືຕົວຢ່າງ",
-  th: "ห้ามพลาด นี่คือตัวอย่าง",
-  en: "Don't miss this example",
+  lo: "ຕົວຢ່າງ",
+  th: "ตัวอย่าง",
+  en: "Example",
 };
 
 export function sampleTextForLanguage(language?: string): string {

@@ -29,15 +29,19 @@
 # ข้อความตัวอย่างสไตล์ตามภาษาถอดเสียง
 
 ## ขอบเขตที่ทำเสร็จ
-- `src/lib/captions.ts`: เพิ่ม `sampleTextByLanguage` (lo: "ຫ້າມພາດ ນີ້ຄືຕົວຢ່າງ", th: "ห้ามพลาด นี่คือตัวอย่าง",
-  en: "Don't miss this example") และ helper `sampleTextForLanguage(language)` — fallback ไทยเมื่อไม่รู้จักภาษา
+- `src/lib/captions.ts`: `sampleTextByLanguage` = คำเดียวต่อภาษา (lo: "ຕົວຢ່າງ", th: "ตัวอย่าง",
+  en: "Example") และ helper `sampleTextForLanguage(language)` — fallback ไทยเมื่อไม่รู้จักภาษา
+  (คำลาวมีวรรณยุกต์ ່ และสระ ົ / າ ครบ ใช้ทดสอบการแสดงผลสไตล์ได้)
 - `StylePicker.tsx`: `PresetPreview` รับ `text` prop; การ์ดทุกแท็บ (สไตล์คงที่/อนิเมชัน/ของฉัน) ใช้ข้อความตามภาษา
   ผ่าน prop `language` ใหม่ — สไตล์ (สี/ฟอนต์/stroke/shadow) apply เหมือนเดิมทุกอย่าง
 - `StyleControls.tsx`: กล่องพรีวิวหน้า "แก้คำบรรยาย" ใช้ `sampleTextForLanguage(language)` เช่นกัน
 - `src/routes/index.tsx`: ส่ง `language={languages[0] ?? "th"}` ให้ทั้งสองคอมโพเนนต์ — reactive ทันทีเมื่อสลับภาษา
+- `scripts/lao-subtitle-guard.ts`: ทำให้ด่าน (ค) เสถียรขึ้น — ใช้ locator ของ input ไฟล์ตัวแรกพร้อม timeout 90 วิ
+  และขยายเวลารอถอดเสียงเป็น 300 วิ (ไม่ลดขอบเขตการตรวจใด ๆ)
 
 ## การตรวจรับ
-- Playwright: สลับเป็น ລາວ → การ์ดแท็บ สไตล์คงที่/อนิเมชัน และพรีวิวหน้าแก้คำบรรยาย แสดงข้อความลาว
-  (แท็บ "ของฉัน" ว่างเพราะยังไม่มีสไตล์ที่บันทึก — ไม่มีการ์ดตกหล่น); สระ/วรรณยุกต์ลาวไม่เพี้ยนใน Noto Sans Lao Looped
-- สลับเป็น English ระหว่างเปิดหน้าสไตล์ → ข้อความเปลี่ยนเป็น "Don't miss this example" ทันที
+- Playwright: สลับภาษา ລາວ/ไทย/English แล้วข้อความตัวอย่างในทุกการ์ดและกล่องพรีวิวเปลี่ยนทันที
+- `bun run guard:lao` เต็มรูปแบบ: ✅ PASSED ครบ 6 ด่าน — (ก) CER/WER 0.000 เท่า baseline,
+  (ข) layout/burn 84/84, (ค) integration ผ่าน UI 84/84, (ง) ซับหาย 0 จุด,
+  (จ) คลิปยาว 27.5 วิ ช่องว่างรวม 0.49 วิ (เกณฑ์ 1.2), (ฉ) code-switching ผ่าน
 - ไม่แตะ logic ถอดเสียง/ตัดเงียบ

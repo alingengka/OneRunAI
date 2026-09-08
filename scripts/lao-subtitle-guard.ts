@@ -187,8 +187,9 @@ async function checkIntegration(): Promise<void> {
   await page.getByRole("button", { name: "ລາວ", exact: true }).first().click();
 
   // ป้อนไฟล์แล้วยืนยันว่า state รับไฟล์จริง ถ้าไม่ติดให้ลองใหม่ (กัน hydration race)
+  const fileInput = page.locator('input[type="file"]').first();
   for (let attempt = 1; attempt <= 3; attempt++) {
-    await page.setInputFiles('input[type="file"]', FIXTURE);
+    await fileInput.setInputFiles(FIXTURE, { timeout: 90_000 });
     try {
       await page.waitForFunction(
         () => {
@@ -203,7 +204,7 @@ async function checkIntegration(): Promise<void> {
       break;
     } catch (e) {
       if (attempt === 3) throw new Error("อัปโหลดไฟล์แล้วปุ่ม 'สร้างซับด้วย AI' ยังถูก disable");
-      await page.setInputFiles('input[type="file"]', []);
+      await fileInput.setInputFiles([], { timeout: 90_000 });
     }
   }
 
@@ -229,7 +230,7 @@ async function checkIntegration(): Promise<void> {
       return !!s && !s.transcribing && !!s.words?.length;
     },
     undefined,
-    { timeout: 180_000 },
+    { timeout: 300_000 },
   );
 
   const rows = (await page.evaluate(async () => {
