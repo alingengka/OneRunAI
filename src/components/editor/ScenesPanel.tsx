@@ -80,6 +80,11 @@ type Props = {
   onUpdateElementText: (id: string, text: string) => void;
   onUpdateElementTiming: (id: string, offset: number, durationSec: number) => void;
   onUpdateElementFormat: (id: string, patch: { bold?: boolean; italic?: boolean }) => void;
+  onUpdateElementMotionKind: (id: string, motionKind: MotionKind) => void;
+  onUpdateElementLayout: (
+    id: string,
+    patch: { offsetX?: number; offsetY?: number; scalePercent?: number },
+  ) => void;
 };
 
 function clock(t: number) {
@@ -102,6 +107,8 @@ export function ScenesPanel({
   onUpdateElementText,
   onUpdateElementTiming,
   onUpdateElementFormat,
+  onUpdateElementMotionKind,
+  onUpdateElementLayout,
 }: Props) {
   if (!scenes.length) {
     return (
@@ -133,8 +140,8 @@ export function ScenesPanel({
         const active = activeTime >= scene.start && activeTime <= scene.end;
         const sceneElements = elements.filter((element) => element.sceneId === scene.id);
         const enabledElements = sceneElements.filter((element) => element.enabled);
-        const motionKind = motionKindForScene(scene.index);
-        const hasMotion = enabledElements.some((element) => element.kind === "motion");
+        const motionElement = enabledElements.find((element) => element.kind === "motion");
+        const motionKind = motionElement?.motionKind ?? motionKindForScene(scene.index);
         const missing = (list: { kind: SceneElementKind; label: string }[]) =>
           list.filter(({ kind }) => !enabledElements.some((element) => element.kind === kind));
         const mediaLeft = missing(MEDIA_KINDS);
@@ -279,7 +286,7 @@ export function ScenesPanel({
               </DropdownMenu>
             </div>
 
-            {hasMotion && (
+            {motionElement && (
               <div className="space-y-2 border-t border-border px-4 py-3">
                 <p className="text-[11px] font-semibold uppercase text-muted-foreground">
                   แพทเทิร์นการเคลื่อนกล้องของซีนนี้
@@ -288,13 +295,16 @@ export function ScenesPanel({
                   {MOTION_PATTERNS.map(({ kind, label, icon: Icon }) => {
                     const on = kind === motionKind;
                     return (
-                      <div
+                      <button
                         key={kind}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => onUpdateElementMotionKind(motionElement.id, kind)}
                         className={cn(
-                          "relative flex flex-col items-center gap-1.5 rounded-lg border bg-preview p-3 text-center",
+                          "relative flex flex-col items-center gap-1.5 rounded-lg border bg-preview p-3 text-center transition-colors hover:border-primary/50",
                           on
                             ? "border-primary/70 ring-1 ring-primary/25"
-                            : "border-border opacity-60",
+                            : "border-border opacity-70",
                         )}
                       >
                         <Icon
@@ -306,12 +316,12 @@ export function ScenesPanel({
                             ใช้อยู่
                           </span>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  ระบบสลับแพทเทิร์นให้อัตโนมัติตามลำดับซีน (ยังเลือกเองไม่ได้)
+                  กดเลือกแพทเทิร์นได้เอง{motionElement.motionKind ? "" : " (ตอนนี้ใช้ค่าอัตโนมัติตามลำดับซีน)"}
                 </p>
               </div>
             )}
