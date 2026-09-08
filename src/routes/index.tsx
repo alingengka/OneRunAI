@@ -1317,12 +1317,12 @@ function Studio() {
 
 
   return (
-    <main className="studio-shell min-h-screen overflow-hidden bg-background text-foreground">
+    <main className="studio-shell min-h-screen overflow-hidden bg-background text-foreground lg:flex lg:h-dvh lg:flex-col">
       <div
         className="orbit-decoration pointer-events-none absolute -right-32 top-24 -z-10 h-72 w-[32rem] opacity-60"
         aria-hidden="true"
       />
-      <header className="studio-header sticky top-0 z-40 flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
+      <header className="studio-header sticky top-0 z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-4">
           <OneRunLogo className="shrink-0" />
           <div className="hidden h-8 w-px bg-border sm:block" />
@@ -1377,7 +1377,7 @@ function Studio() {
       </header>
 
       {job && (
-        <div className="mx-auto max-w-[1500px] px-4 pt-4 sm:px-6">
+        <div className="mx-auto w-full max-w-[1500px] shrink-0 px-4 pt-4 sm:px-6">
           <div className="flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
             <div className="min-w-0 flex-1">
@@ -1399,9 +1399,9 @@ function Studio() {
         </div>
       )}
 
-      <div className="mx-auto grid min-w-0 max-w-[1500px] gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
+      <div className="mx-auto grid min-w-0 w-full max-w-[1500px] gap-5 p-4 sm:p-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)] lg:overflow-hidden">
         {/* Left: controls */}
-        <section className="studio-panel order-2 min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5 lg:order-1">
+        <section className="studio-panel order-2 min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5 lg:order-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
           <div className="mb-5 flex gap-1 overflow-x-auto rounded-lg bg-secondary p-1">
             {(
               [
@@ -2219,7 +2219,7 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 lg:order-2 lg:sticky lg:top-4 lg:self-start">
+        <section className="order-1 min-w-0 lg:order-2 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
           <div className="studio-panel rounded-xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium">
