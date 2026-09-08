@@ -24,6 +24,8 @@ export function ViralTextOverlay({ scenes, sceneElements, time, height }: Props)
   const opacity = Math.min(inRatio, outRatio);
   const scale = 0.7 + 0.3 * (inRatio < 1 ? 1 - Math.pow(1 - inRatio, 3) : 1) + (inRatio < 1 ? 0 : 0);
 
+  const px = height / VIRAL_REF_HEIGHT;
+  const userScale = Math.max(0.2, hit.scalePercent / 100);
   const fontSize = height * 0.075;
   const stroke = Math.max(2, fontSize * 0.07);
   const shadow = [
@@ -48,7 +50,7 @@ export function ViralTextOverlay({ scenes, sceneElements, time, height }: Props)
           fontWeight: hit.bold ? 900 : 800,
           fontStyle: hit.italic ? "italic" : "normal",
           WebkitTextStroke: hit.bold ? boldStroke(fontSize) : undefined,
-          transform: `scale(${scale})`,
+          transform: `translate(${hit.offsetX * px}px, ${hit.offsetY * px}px) scale(${scale * userScale})`,
           transformOrigin: "center",
         }}
       >
