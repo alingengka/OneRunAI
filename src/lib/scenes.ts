@@ -39,7 +39,29 @@ export type SceneElement = {
   offsetY?: number | undefined;
   /** ขนาดตัวอักษรเป็น % ของค่าเริ่มต้น (default 100) */
   scalePercent?: number | undefined;
+  /** B-roll: URL ของสื่อที่ใช้แทนภาพต้นฉบับ */
+  assetUrl?: string | undefined;
+  assetType?: "image" | "video" | undefined;
+  assetSource?: "upload" | "klipy" | undefined;
+  /** คำค้นหาล่าสุดที่ใช้กับคลังคลิป */
+  searchQuery?: string | undefined;
 };
+
+export type SceneAssetPatch = {
+  assetUrl?: string | undefined;
+  assetType?: "image" | "video" | undefined;
+  assetSource?: "upload" | "klipy" | undefined;
+  searchQuery?: string | undefined;
+};
+
+/** ตั้งค่าสื่อของ B-roll */
+export function updateSceneElementAsset(
+  elements: SceneElement[],
+  id: string,
+  patch: SceneAssetPatch,
+): SceneElement[] {
+  return elements.map((element) => (element.id === id ? { ...element, ...patch } : element));
+}
 
 /** เลือกแพทเทิร์นกล้องของ element motion */
 export function updateSceneElementMotionKind(

@@ -1,0 +1,2 @@
+CREATE POLICY "broll assets readable" ON storage.objects FOR SELECT TO anon, authenticated USING (bucket_id = 'broll-assets');
+CREATE POLICY "broll assets uploadable" ON storage.objects FOR INSERT TO anon, authenticated WITH CHECK (bucket_id = 'broll-assets');

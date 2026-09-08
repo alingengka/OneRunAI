@@ -10,33 +10,43 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiPublicBrollMediaRouteImport } from './routes/api/public/broll-media'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicBrollMediaRoute = ApiPublicBrollMediaRouteImport.update({
+  id: '/api/public/broll-media',
+  path: '/api/public/broll-media',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/api/public/broll-media': typeof ApiPublicBrollMediaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/api/public/broll-media': typeof ApiPublicBrollMediaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/api/public/broll-media': typeof ApiPublicBrollMediaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/api/public/broll-media'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/api/public/broll-media'
+  id: '__root__' | '/' | '/api/public/broll-media'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ApiPublicBrollMediaRoute: typeof ApiPublicBrollMediaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +58,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/broll-media': {
+      id: '/api/public/broll-media'
+      path: '/api/public/broll-media'
+      fullPath: '/api/public/broll-media'
+      preLoaderRoute: typeof ApiPublicBrollMediaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ApiPublicBrollMediaRoute: ApiPublicBrollMediaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

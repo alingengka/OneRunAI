@@ -12,6 +12,7 @@ import {
   type MotionScene,
 } from "./motion";
 import { viralTextWindow } from "../scenes";
+import { coverRect, sourceSize, type BrollTrack } from "./broll";
 import {
   ITALIC_SKEW,
   LINE_BREAK,
@@ -208,6 +209,8 @@ export type BurnRenderOptions = {
   smoothCuts?: boolean | undefined;
   scenes?: MotionScene[] | undefined;
   sceneElements?: MotionElement[] | undefined;
+  /** สื่อ B-roll ที่โหลดไว้แล้ว ใช้วาดแทนเฟรมต้นฉบับ */
+  brollTrack?: BrollTrack | undefined;
 };
 
 const FADE = 0.08; // วินาทีของ cross-fade ภาพตรงรอยตัด
@@ -458,6 +461,15 @@ export function createBurnRenderer(
   };
 
   const paint = (source: CanvasImageSource, time: number, seg: Segment) => {
+    // B-roll (cutaway): ถ้าซีนนี้มีสื่อ ให้วาดสื่อแทนภาพต้นฉบับทั้งเฟรม
+    const broll = options.brollTrack?.sourceAt(time) ?? null;
+    const image = broll ?? source;
+    const fit = broll
+      ? (() => {
+          const size = sourceSize(broll);
+          return coverRect(size.width, size.height, width, height);
+        })()
+      : { x: 0, y: 0, w: width, h: height };
     // Motion (Ken Burns) applies to the image only — captions stay still.
     const mw = motionWindows.length ? findWindow(motionWindows, time, 0.001) : null;
     const motion = mw ? motionTransform(mw.scene, time, mw.intensity, mw.motionKind) : NO_MOTION;
@@ -465,10 +477,10 @@ export function createBurnRenderer(
       ctx.save();
       ctx.translate(width / 2 + motion.translateX * width, height / 2 + motion.translateY * height);
       ctx.scale(motion.scale, motion.scale);
-      ctx.drawImage(source, -width / 2, -height / 2, width, height);
+      ctx.drawImage(image, fit.x - width / 2, fit.y - height / 2, fit.w, fit.h);
       ctx.restore();
     } else {
-      ctx.drawImage(source, 0, 0, width, height);
+      ctx.drawImage(image, fit.x, fit.y, fit.w, fit.h);
     }
     if (options.smoothCuts !== false) {
       // ช่วงสั้นได้ fade สั้นลงตามสัดส่วน ไม่งั้นคลิป 0.2s จะดำเกือบทั้งช่วง
