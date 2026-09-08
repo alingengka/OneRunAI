@@ -339,6 +339,9 @@ export function ScenesPanel({
                   Math.max(0.5, sceneLen - offset),
                 );
                 const win = viralTextWindow(scene, element);
+                const posX = element.offsetX ?? 0;
+                const posY = element.offsetY ?? 0;
+                const scalePercent = element.scalePercent ?? 100;
                 return (
                   <div
                     key={`${element.id}-editor`}
@@ -489,6 +492,51 @@ export function ScenesPanel({
                         (บันทึกให้อัตโนมัติทันทีที่ปรับ)
                       </p>
                     </div>
+                    <div className="space-y-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        ตำแหน่งและขนาด
+                      </p>
+                      {(
+                        [
+                          { key: "offsetX", label: "เลื่อนซ้าย–ขวา", value: posX, min: -400, max: 400, step: 5, def: 0, unit: "px" },
+                          { key: "offsetY", label: "เลื่อนขึ้น–ลง", value: posY, min: -400, max: 400, step: 5, def: 0, unit: "px" },
+                          { key: "scalePercent", label: "ขนาดตัวอักษร", value: scalePercent, min: 40, max: 200, step: 5, def: 100, unit: "%" },
+                        ] as const
+                      ).map((row) => (
+                        <div key={row.key} className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                            <span>{row.label}</span>
+                            <span className="flex items-center gap-1">
+                              <span className="font-mono text-foreground">
+                                {Math.round(row.value)}
+                                {row.unit}
+                              </span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6"
+                                aria-label={`รีเซ็ต${row.label}`}
+                                onClick={() =>
+                                  onUpdateElementLayout(element.id, { [row.key]: row.def })
+                                }
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                              </Button>
+                            </span>
+                          </div>
+                          <Slider
+                            value={[row.value]}
+                            min={row.min}
+                            max={row.max}
+                            step={row.step}
+                            onValueChange={([v]) =>
+                              onUpdateElementLayout(element.id, { [row.key]: v ?? row.def })
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+
                   </div>
                 );
               })}
