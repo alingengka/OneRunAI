@@ -27,6 +27,7 @@ export function motionTransform(
   scene: Pick<Scene, "index" | "start" | "end">,
   time: number,
   intensity = 0.7,
+  kind?: MotionKind | undefined,
 ): MotionTransform {
   const length = Math.max(0.001, scene.end - scene.start);
   const progress = Math.max(0, Math.min(1, (time - scene.start) / length));
@@ -35,7 +36,7 @@ export function motionTransform(
   const zoom = 0.12 * amount; // สูงสุด +12%
   const pan = 0.06 * amount; // สูงสุด 6% ของเฟรม
 
-  switch (motionKindForScene(scene.index)) {
+  switch (kind ?? motionKindForScene(scene.index)) {
     case "zoom-in":
       return { scale: 1 + zoom * eased, translateX: 0, translateY: 0 };
     case "zoom-out":
@@ -62,7 +63,15 @@ export type MotionElement = {
   /** สำหรับ viral text: ตัวหนา/ตัวเอียงสังเคราะห์ */
   bold?: boolean | undefined;
   italic?: boolean | undefined;
+  /** แพทเทิร์นกล้องที่เลือกเอง */
+  motionKind?: MotionKind | undefined;
+  offsetX?: number | undefined;
+  offsetY?: number | undefined;
+  scalePercent?: number | undefined;
 };
+
+/** ความสูงเฟรมอ้างอิงของค่าตำแหน่ง viral text (px) — ใช้สเกลให้พรีวิวกับไฟล์ส่งออกตรงกัน */
+export const VIRAL_REF_HEIGHT = 1280;
 
 
 
@@ -77,5 +86,5 @@ export function motionAt(
   if (!scene) return NO_MOTION;
   const element = elements.find((e) => e.sceneId === scene.id && e.kind === "motion" && e.enabled);
   if (!element) return NO_MOTION;
-  return motionTransform(scene, time, element.intensity);
+  return motionTransform(scene, time, element.intensity, element.motionKind);
 }

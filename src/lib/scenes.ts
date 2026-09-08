@@ -1,5 +1,6 @@
 import { LINE_BREAK, type Word } from "@/lib/captions";
 import type { Segment } from "@/lib/media/audio";
+import type { MotionKind } from "@/lib/media/motion";
 
 export type Scene = {
   id: string;
@@ -30,7 +31,44 @@ export type SceneElement = {
   bold?: boolean | undefined;
   /** ตัวเอียงสังเคราะห์ */
   italic?: boolean | undefined;
+  /** แพทเทิร์นกล้องที่ผู้ใช้เลือกเอง (ไม่มี = อัตโนมัติตามลำดับซีน) */
+  motionKind?: MotionKind | undefined;
+  /** เลื่อนแนวนอนเป็น px จากกลางจอ (default 0) */
+  offsetX?: number | undefined;
+  /** เลื่อนแนวตั้งเป็น px จากตำแหน่งเริ่มต้น (default 0) */
+  offsetY?: number | undefined;
+  /** ขนาดตัวอักษรเป็น % ของค่าเริ่มต้น (default 100) */
+  scalePercent?: number | undefined;
 };
+
+/** เลือกแพทเทิร์นกล้องของ element motion */
+export function updateSceneElementMotionKind(
+  elements: SceneElement[],
+  id: string,
+  motionKind: MotionKind,
+): SceneElement[] {
+  return elements.map((element) => (element.id === id ? { ...element, motionKind } : element));
+}
+
+/** ปรับตำแหน่ง/ขนาดของ viral text */
+export function updateSceneElementLayout(
+  elements: SceneElement[],
+  id: string,
+  patch: { offsetX?: number; offsetY?: number; scalePercent?: number },
+): SceneElement[] {
+  return elements.map((element) =>
+    element.id === id
+      ? {
+          ...element,
+          ...(patch.offsetX === undefined ? {} : { offsetX: Math.round(patch.offsetX) }),
+          ...(patch.offsetY === undefined ? {} : { offsetY: Math.round(patch.offsetY) }),
+          ...(patch.scalePercent === undefined
+            ? {}
+            : { scalePercent: Math.max(20, Math.min(300, Math.round(patch.scalePercent))) }),
+        }
+      : element,
+  );
+}
 
 /** เปิด/ปิดตัวหนา-ตัวเอียงของ element (ใช้กับ viral text) */
 export function updateSceneElementFormat(
@@ -140,6 +178,9 @@ export type ViralTextHit = {
   progress: number;
   /** ความยาว window เป็นวินาที */
   span: number;
+  offsetX: number;
+  offsetY: number;
+  scalePercent: number;
 };
 
 /** หา viral text ที่ควรโชว์ ณ เวลานั้น */
@@ -155,6 +196,9 @@ export function viralTextAt(
         position?: "top" | "middle";
         bold?: boolean | undefined;
         italic?: boolean | undefined;
+        offsetX?: number | undefined;
+        offsetY?: number | undefined;
+        scalePercent?: number | undefined;
       } & ViralTiming)[]
     | undefined,
 ): ViralTextHit | null {
@@ -172,6 +216,9 @@ export function viralTextAt(
       italic: element.italic,
       progress: Math.max(0, Math.min(1, (time - win.start) / span)),
       span,
+      offsetX: element.offsetX ?? 0,
+      offsetY: element.offsetY ?? 0,
+      scalePercent: element.scalePercent ?? 100,
     };
   }
   return null;

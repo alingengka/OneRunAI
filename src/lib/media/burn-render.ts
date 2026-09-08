@@ -4,7 +4,13 @@
  * โค้ดวาดทั้งหมดอยู่ที่นี่ที่เดียว เพื่อให้สองเส้นทางได้ภาพเหมือนกันเป๊ะ
  */
 import type { Segment } from "./audio";
-import { motionTransform, NO_MOTION, type MotionElement, type MotionScene } from "./motion";
+import {
+  motionTransform,
+  NO_MOTION,
+  VIRAL_REF_HEIGHT,
+  type MotionElement,
+  type MotionScene,
+} from "./motion";
 import { viralTextWindow } from "../scenes";
 import {
   ITALIC_SKEW,
@@ -379,7 +385,15 @@ export function createBurnRenderer(
       const element = (options.sceneElements ?? []).find(
         (e) => e.sceneId === scene.id && e.kind === "motion" && e.enabled,
       );
-      return element ? { start: scene.start, end: scene.end, scene, intensity: element.intensity } : null;
+      return element
+        ? {
+            start: scene.start,
+            end: scene.end,
+            scene,
+            intensity: element.intensity,
+            motionKind: element.motionKind,
+          }
+        : null;
     })
     .filter((w): w is NonNullable<typeof w> => !!w)
     .sort((a, b) => a.start - b.start);
@@ -397,6 +411,9 @@ export function createBurnRenderer(
         text: element.text.trim().toUpperCase(),
         position: element.position ?? "top",
         em: { bold: element.bold, italic: element.italic } as TextEmphasis,
+        offsetX: element.offsetX ?? 0,
+        offsetY: element.offsetY ?? 0,
+        scalePercent: element.scalePercent ?? 100,
       };
     })
     .filter((w): w is NonNullable<typeof w> => !!w)
@@ -424,8 +441,10 @@ export function createBurnRenderer(
     ctx.textAlign = "center";
     const vsplit = splitEmphasis(style.fontFamily, hit.em);
     ctx.font = `${vsplit.native.italic ? "italic " : ""}900 ${viralFontSize}px ${style.fontFamily}`;
-    ctx.translate(width / 2, y);
-    ctx.scale(pop, pop);
+    const userScale = Math.max(0.2, hit.scalePercent / 100);
+    const px = height / VIRAL_REF_HEIGHT;
+    ctx.translate(width / 2 + hit.offsetX * px, y + hit.offsetY * px);
+    ctx.scale(pop * userScale, pop * userScale);
     ctx.lineJoin = "round";
     ctx.miterLimit = 2;
     ctx.lineWidth = Math.max(4, viralFontSize * 0.14) + (hit.em.bold ? viralFontSize * 0.02 : 0);
@@ -441,7 +460,7 @@ export function createBurnRenderer(
   const paint = (source: CanvasImageSource, time: number, seg: Segment) => {
     // Motion (Ken Burns) applies to the image only — captions stay still.
     const mw = motionWindows.length ? findWindow(motionWindows, time, 0.001) : null;
-    const motion = mw ? motionTransform(mw.scene, time, mw.intensity) : NO_MOTION;
+    const motion = mw ? motionTransform(mw.scene, time, mw.intensity, mw.motionKind) : NO_MOTION;
     if (motion.scale !== 1 || motion.translateX || motion.translateY) {
       ctx.save();
       ctx.translate(width / 2 + motion.translateX * width, height / 2 + motion.translateY * height);

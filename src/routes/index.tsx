@@ -101,11 +101,13 @@ import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import { wordsToTranscript, buildRowWords, type SyncIssue } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
-import { motionAt } from "@/lib/media/motion";
+import { motionAt, type MotionKind } from "@/lib/media/motion";
 import {
   addSceneElement,
   buildScenes,
   updateSceneElementFormat,
+  updateSceneElementLayout,
+  updateSceneElementMotionKind,
   updateSceneElementText,
   updateSceneElementTiming,
   type SceneElement,
@@ -1263,6 +1265,17 @@ function Studio() {
     setSceneElements((current) => updateSceneElementFormat(current, id, patch));
   };
 
+  const updateElementMotionKind = (id: string, motionKind: MotionKind) => {
+    setSceneElements((current) => updateSceneElementMotionKind(current, id, motionKind));
+  };
+
+  const updateElementLayout = (
+    id: string,
+    patch: { offsetX?: number; offsetY?: number; scalePercent?: number },
+  ) => {
+    setSceneElements((current) => updateSceneElementLayout(current, id, patch));
+  };
+
   const addElement = (sceneId: string, kind: SceneElementKind) => {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
@@ -1828,6 +1841,8 @@ function Studio() {
               onUpdateElementText={updateElementText}
               onUpdateElementTiming={updateElementTiming}
               onUpdateElementFormat={updateElementFormat}
+              onUpdateElementMotionKind={updateElementMotionKind}
+              onUpdateElementLayout={updateElementLayout}
             />
           )}
 
