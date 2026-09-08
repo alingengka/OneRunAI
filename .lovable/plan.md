@@ -23,3 +23,21 @@
   ได้ 2 ซีน index 0/1 และ Viral text ที่ offset 7 ย้ายไปซีนที่สองด้วย offset 2, Motion ยังอยู่ซีนแรก
 - `bun run guard:lao`: (ก) CER/WER 0.000 เท่า baseline, (ข) layout/burn 84/84, (ง) ซับหาย 0 จุด,
   (ฉ) code-switching ผ่าน — ส่วน (ค) integration ผ่าน UI ใช้เวลานานมากและยังรันค้างอยู่ตอนปิดงาน
+
+---
+
+# ข้อความตัวอย่างสไตล์ตามภาษาถอดเสียง
+
+## ขอบเขตที่ทำเสร็จ
+- `src/lib/captions.ts`: เพิ่ม `sampleTextByLanguage` (lo: "ຫ້າມພາດ ນີ້ຄືຕົວຢ່າງ", th: "ห้ามพลาด นี่คือตัวอย่าง",
+  en: "Don't miss this example") และ helper `sampleTextForLanguage(language)` — fallback ไทยเมื่อไม่รู้จักภาษา
+- `StylePicker.tsx`: `PresetPreview` รับ `text` prop; การ์ดทุกแท็บ (สไตล์คงที่/อนิเมชัน/ของฉัน) ใช้ข้อความตามภาษา
+  ผ่าน prop `language` ใหม่ — สไตล์ (สี/ฟอนต์/stroke/shadow) apply เหมือนเดิมทุกอย่าง
+- `StyleControls.tsx`: กล่องพรีวิวหน้า "แก้คำบรรยาย" ใช้ `sampleTextForLanguage(language)` เช่นกัน
+- `src/routes/index.tsx`: ส่ง `language={languages[0] ?? "th"}` ให้ทั้งสองคอมโพเนนต์ — reactive ทันทีเมื่อสลับภาษา
+
+## การตรวจรับ
+- Playwright: สลับเป็น ລາວ → การ์ดแท็บ สไตล์คงที่/อนิเมชัน และพรีวิวหน้าแก้คำบรรยาย แสดงข้อความลาว
+  (แท็บ "ของฉัน" ว่างเพราะยังไม่มีสไตล์ที่บันทึก — ไม่มีการ์ดตกหล่น); สระ/วรรณยุกต์ลาวไม่เพี้ยนใน Noto Sans Lao Looped
+- สลับเป็น English ระหว่างเปิดหน้าสไตล์ → ข้อความเปลี่ยนเป็น "Don't miss this example" ทันที
+- ไม่แตะ logic ถอดเสียง/ตัดเงียบ
