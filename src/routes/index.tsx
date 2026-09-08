@@ -105,6 +105,8 @@ import { motionAt, type MotionKind } from "@/lib/media/motion";
 import {
   addSceneElement,
   buildScenes,
+  reassignElementsAfterSplit,
+  splitSceneAt,
   updateSceneElementFormat,
   updateSceneElementLayout,
   updateSceneElementAsset,
@@ -112,6 +114,7 @@ import {
   updateSceneElementMotionKind,
   updateSceneElementText,
   updateSceneElementTiming,
+  type Scene,
   type SceneElement,
   type SceneElementKind,
 } from "@/lib/scenes";
@@ -249,7 +252,14 @@ function Studio() {
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
 
-  const scenes = useMemo(() => buildScenes(segments, words), [segments, words]);
+  const [splitPoints, setSplitPoints] = useState<number[]>([]);
+  const scenes = useMemo(
+    () =>
+      [...splitPoints]
+        .sort((a, b) => a - b)
+        .reduce((acc, t) => splitSceneAt(acc, t), buildScenes(segments, words)),
+    [segments, words, splitPoints],
+  );
   const droppedRanges = useMemo(
     () => scenes.filter((s) => dropped.includes(s.id)).map((s) => ({ start: s.start, end: s.end })),
     [scenes, dropped],
@@ -419,6 +429,7 @@ function Studio() {
       setSegments([]);
       setDropped([]);
       setSceneElements([]);
+      setSplitPoints([]);
       setProjectName(f.name.replace(/\.[^.]+$/, ""));
     }
     setTime(0);
@@ -454,6 +465,7 @@ function Studio() {
       noiseReduction,
       dropped,
       sceneElements,
+      splitPoints,
       projectName,
       sfx,
     }),
@@ -472,6 +484,7 @@ function Studio() {
       noiseReduction,
       dropped,
       sceneElements,
+      splitPoints,
       projectName,
       sfx,
     ],
@@ -509,6 +522,7 @@ function Studio() {
     setNoiseReduction(p.noiseReduction ?? false);
     setDropped(p.dropped ?? []);
     setSceneElements(p.sceneElements ?? []);
+    setSplitPoints(p.splitPoints ?? []);
     setProjectName(p.projectName ?? p.fileName.replace(/\.[^.]+$/, ""));
     restoredProjectRef.current = true;
     if (p.sfx) setSfx(p.sfx);
@@ -1287,6 +1301,21 @@ function Studio() {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
 
+  /** แบ่งซีนตรงเวลาที่กำลังเล่น (ถ้า playhead ไม่อยู่ในซีน ใช้กึ่งกลางซีน) */
+  const splitScene = (scene: Scene) => {
+    const inside = time > scene.start + 0.05 && time < scene.end - 0.05;
+    const at = inside ? time : (scene.start + scene.end) / 2;
+    const next = splitSceneAt(scenes, at);
+    if (next.length === scenes.length) {
+      toast.error("ซีนสั้นเกินไปสำหรับการแบ่ง");
+      return;
+    }
+    setSceneElements((current) => reassignElementsAfterSplit(current, scene, next));
+    setSplitPoints((current) => [...current, at]);
+    toast.success("แบ่งซีนแล้ว");
+  };
+
+
   return (
     <main className="studio-shell min-h-screen overflow-hidden bg-background text-foreground">
       <div
@@ -1851,6 +1880,7 @@ function Studio() {
               onUpdateElementMotionKind={updateElementMotionKind}
               onUpdateElementLayout={updateElementLayout}
               onUpdateElementAsset={updateElementAsset}
+              onSplitScene={splitScene}
             />
           )}
 

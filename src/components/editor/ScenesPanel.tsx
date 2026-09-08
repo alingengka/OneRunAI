@@ -88,6 +88,7 @@ type Props = {
     patch: { offsetX?: number; offsetY?: number; scalePercent?: number },
   ) => void;
   onUpdateElementAsset: (id: string, patch: SceneAssetPatch) => void;
+  onSplitScene: (scene: Scene) => void;
 };
 
 function clock(t: number) {
@@ -113,6 +114,7 @@ export function ScenesPanel({
   onUpdateElementMotionKind,
   onUpdateElementLayout,
   onUpdateElementAsset,
+  onSplitScene,
 }: Props) {
   if (!scenes.length) {
     return (
@@ -190,6 +192,17 @@ export function ScenesPanel({
                   aria-label="เล่นซีนนี้"
                 >
                   <Play className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  disabled={scene.end - scene.start < 0.6}
+                  onClick={() => onSplitScene(scene)}
+                  className="text-primary hover:bg-primary/10 hover:text-primary"
+                  aria-label={`แบ่งซีนที่ ${scene.index + 1}`}
+                  title="แบ่งซีนตรงตำแหน่งที่กำลังเล่น"
+                >
+                  <Scissors className="h-4 w-4" />
                 </Button>
                 <Switch
                   checked={!off}

@@ -1,17 +1,25 @@
-# B-roll (cutaway) ต่อซีน — ค้นหาจาก KLIPY + อัปโหลดเอง
+# แบ่ง/เพิ่มซีนเอง (manual scene split)
 
 ## ขอบเขตที่ทำเสร็จ
-- `SceneElement` เพิ่ม `assetUrl`, `assetType`, `assetSource`, `searchQuery` + `updateSceneElementAsset()`
-- `BrollPicker.tsx`: dialog 2 แท็บ — "ค้นหา" (KLIPY ผ่าน `klipy.functions.ts` + คำเตือนลิขสิทธิ์สีเหลืองใต้กริด) และ "อัปโหลดเอง" (bucket `broll-assets` แบบส่วนตัว ผู้ใช้เห็นเฉพาะไฟล์ตัวเอง)
-- `BrollEditor.tsx` ในการ์ดซีน: thumbnail, ปุ่มเปลี่ยนสื่อ/เอาสื่อออก, คำเตือนเมื่อใช้สื่อจาก KLIPY
-- พรีวิว `BrollOverlay.tsx`: cutaway เต็มเฟรม (cover) ซับ/ข้อความไวรัลยังทับด้านบน วิดีโอเริ่มจาก 0 ทุกครั้งที่เข้าซีนและวนซ้ำ
-- ส่งออก: `broll.ts` (`brollWindows`/`createBrollTrack`/`coverRect`) ใช้ร่วมกับ `burn-render.ts`, `export-webcodecs.ts` (seek ต่อเฟรม) และ `export-burned.ts` (เรียลไทม์) — รองรับทั้งรูปและวิดีโอ
-- `/api/public/broll-media`: พร็อกซีสื่อภายนอกให้เป็น origin เดียวกัน กัน canvas ถูก taint ตอน export (จำกัดเฉพาะโฮสต์ KLIPY/Storage, โฮสต์อื่น 403)
-- เพิ่ม token สี `--warning` / `--warning-foreground` ในธีม
+- `src/lib/scenes.ts`: เพิ่ม `splitSceneAt(scenes, time)` — แบ่งซีนที่ครอบคลุมเวลานั้นเป็นสองซีน
+  (ไม่แบ่งถ้าใกล้ขอบซีนน้อยกว่า `MIN_SPLIT_GAP` = 0.3 วินาที), แยก `segments` ตรงจุดตัด,
+  แบ่งข้อความตามสัดส่วนเวลา, จัด `index` ใหม่ต่อเนื่อง
+  ซีนแรกคง `id` เดิม ซีนที่สองได้ `id` ใหม่ `<เดิม>+<เวลา>` (เสถียร ไม่ชนกันเมื่อแบ่งซ้ำ)
+- `reassignElementsAfterSplit(elements, oldScene, newScenes)`: element (Motion/Sound/ViralText/B-roll)
+  ที่ timing อยู่หลังจุดแบ่ง จะย้าย `sceneId`/`id` ไปซีนที่สองและปรับ `offset` ให้สัมพัทธ์กับ start ใหม่
+  ส่วนที่อยู่ก่อนจุดแบ่งคงเดิม
+- `src/routes/index.tsx`: เพิ่ม state `splitPoints` (บันทึกลงงานที่เซฟไว้ผ่าน `project-store`)
+  และ `scenes` = ผลของ `splitSceneAt` ทับบน `buildScenes(segments, words)` ตามลำดับเวลา
+  ล้าง `splitPoints` เมื่ออัปโหลดไฟล์ใหม่ ทำให้ทุกเส้นทาง (พรีวิว motion/B-roll, drop scene, export) ใช้ซีนชุดเดียวกัน
+- `ScenesPanel.tsx`: ปุ่มกรรไกรสีม่วง (theme token) ในการ์ดซีน — แบ่งตรง playhead ถ้าอยู่ในซีนนั้น
+  ไม่งั้นแบ่งกึ่งกลางซีน; ปิดปุ่มเมื่อซีนสั้นกว่า 0.6 วินาที
 
-## ข้อจำกัดที่พบ
-- GIF ที่ใช้เป็น "รูปภาพ" จะถูกวาดเฟรมแรกในไฟล์ส่งออก — เลือกไฟล์ mp4/webm จาก KLIPY จึงได้ภาพเคลื่อนไหวเต็ม
-- ยังไม่มีการปรับ trim/ตำแหน่งของสื่อ B-roll ในซีน (ใช้เต็มช่วงซีนแบบ cover)
+## Backward compatible
+- ไม่มี `splitPoints` = พฤติกรรมเดิมจากการตัดเงียบอัตโนมัติทุกประการ
+- ไม่แตะ `transcribe.server.ts`, `forced-align.ts`, `audio.ts`
 
 ## การตรวจรับ
-- `bun run guard:lao` ผ่านครบทุกด้าน (ก–ฉ)
+- typecheck ผ่าน; ทดสอบ `splitSceneAt`/`reassignElementsAfterSplit` โดยตรง: แบ่งที่ 5 วินาทีของซีน 0–10
+  ได้ 2 ซีน index 0/1 และ Viral text ที่ offset 7 ย้ายไปซีนที่สองด้วย offset 2, Motion ยังอยู่ซีนแรก
+- `bun run guard:lao`: (ก) CER/WER 0.000 เท่า baseline, (ข) layout/burn 84/84, (ง) ซับหาย 0 จุด,
+  (ฉ) code-switching ผ่าน — ส่วน (ค) integration ผ่าน UI ใช้เวลานานมากและยังรันค้างอยู่ตอนปิดงาน

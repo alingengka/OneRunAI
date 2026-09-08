@@ -187,6 +187,73 @@ export function sceneDuration(scene: Scene) {
   return scene.segments.reduce((n, s) => n + (s.end - s.start), 0);
 }
 
+export const MIN_SPLIT_GAP = 0.3;
+
+/** แบ่งซีนที่ครอบคลุมเวลานั้นออกเป็นสองซีน (คืนค่าเดิมถ้าแบ่งไม่ได้) */
+export function splitSceneAt(scenes: Scene[], time: number): Scene[] {
+  const target = scenes.find((s) => time > s.start && time < s.end);
+  if (!target) return scenes;
+  if (time - target.start < MIN_SPLIT_GAP || target.end - time < MIN_SPLIT_GAP) return scenes;
+
+  const head: Segment[] = [];
+  const tail: Segment[] = [];
+  for (const seg of target.segments) {
+    if (seg.end <= time) head.push(seg);
+    else if (seg.start >= time) tail.push(seg);
+    else {
+      head.push({ ...seg, end: time });
+      tail.push({ ...seg, start: time });
+    }
+  }
+
+  const words = target.text.trim() ? target.text.trim().split(/\s+/) : [];
+  const ratio = (time - target.start) / Math.max(0.001, target.end - target.start);
+  const cut = Math.max(0, Math.min(words.length, Math.round(words.length * ratio)));
+
+  const first: Scene = {
+    ...target,
+    end: time,
+    segments: head,
+    text: words.slice(0, cut).join(" "),
+  };
+  const second: Scene = {
+    id: `${target.id}+${time.toFixed(2)}`,
+    index: target.index + 1,
+    start: time,
+    end: target.end,
+    segments: tail,
+    text: words.slice(cut).join(" "),
+  };
+
+  const next = scenes.flatMap((s) => (s.id === target.id ? [first, second] : [s]));
+  return next
+    .sort((a, b) => a.start - b.start)
+    .map((s, index) => ({ ...s, index }));
+}
+
+/** ย้าย element ที่ผูกกับซีนเดิมไปยังซีนที่ถูกต้องหลังแบ่ง (ปรับ offset ให้สัมพัทธ์กับ start ใหม่) */
+export function reassignElementsAfterSplit(
+  elements: SceneElement[],
+  oldScene: { id: string; start: number },
+  newScenes: Scene[],
+): SceneElement[] {
+  const parts = newScenes
+    .filter((s) => s.id === oldScene.id || s.id.startsWith(`${oldScene.id}+`))
+    .sort((a, b) => a.start - b.start);
+  if (parts.length < 2) return elements;
+  const second = parts[parts.length - 1]!;
+
+  return elements.map((element) => {
+    if (element.sceneId !== oldScene.id) return element;
+    const absolute = oldScene.start + (element.offset ?? 0);
+    if (absolute < second.start - 0.001) return element;
+    const offset = Math.max(0, absolute - second.start);
+    return { ...element, id: `${second.id}-${element.kind}`, sceneId: second.id, offset };
+  });
+}
+
+
+
 export function isInScenes(time: number, scenes: Scene[]) {
   return scenes.some((scene) => time >= scene.start - 0.001 && time <= scene.end + 0.001);
 }
