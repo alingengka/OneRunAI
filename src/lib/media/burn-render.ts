@@ -14,7 +14,10 @@ import {
 import { viralTextWindow } from "../scenes";
 import { coverRect, sourceSize, type BrollTrack } from "./broll";
 import {
+  ACCENT_PRIMARY_HEX,
+  ACCENT_SECONDARY_HEX,
   ITALIC_SKEW,
+
   LINE_BREAK,
   emphasizedWeight,
   isKeyword,
@@ -301,6 +304,8 @@ export function createBurnRenderer(
   };
 
 
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
   const drawCaption = (time: number) => {
     if (options.captions === false || !sortedGroups.length) return;
     const group = findWindow(sortedGroups, time, 0.02);
@@ -308,9 +313,23 @@ export function createBurnRenderer(
     const { lines, metrics, blockHeight } = layoutFor(group);
     if (!lines.length) return;
 
+    const anim = style.animation;
+    const speed = Math.max(0.25, style.animationSpeed ?? 1);
+    // ความคืบหน้าของการ "เข้า" กลุ่มซับ (ตรงกับพรีวิว)
+    const p = clamp01((time - group.start) / (0.18 / speed));
+    const ease = 1 - Math.pow(1 - p, 3);
+    const glowPulse = 0.5 + 0.5 * Math.sin((time - group.start) * Math.PI * 3);
+
     ctx.textBaseline = "middle";
     const centerX = (style.posX / 100) * width;
     let y = (style.posY / 100) * height - blockHeight / 2 + lineHeight / 2;
+
+    // สไลด์2: เลื่อนทั้งบล็อกเข้าจากด้านข้าง (คำยังถูกวาดครบทุกคำ)
+    const slid = anim === "slideUp2";
+    if (slid) {
+      ctx.save();
+      ctx.translate((1 - ease) * -fontSize * 1.6, 0);
+    }
 
     lines.forEach((line, i) => {
       const m = metrics[i]!;
@@ -331,11 +350,25 @@ export function createBurnRenderer(
         ctx.globalAlpha = 1;
       }
 
+      // ไฮไลต์: แถบสีม่วงธีมเลื่อนขึ้นมาจากด้านล่างของบรรทัด
+      if (anim === "highlight" && ease > 0) {
+        const bh = lineHeight * 1.12 * ease;
+        const bottom = y + lineHeight * 0.56;
+        ctx.fillStyle = ACCENT_PRIMARY_HEX;
+        ctx.globalAlpha = 0.85;
+        ctx.beginPath();
+        ctx.roundRect(left - fontSize * 0.24, bottom - bh, m.total + fontSize * 0.48, bh, fontSize * 0.18);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
       let x = left;
       ctx.font = m.font;
       line.words.forEach((word, wi) => {
         const w = m.widths[wi]!;
         const highlighted = time >= word.start - 0.01 && time <= word.end + 0.01;
+        const spoken = time >= word.start - 0.01;
+        const wordProgress = clamp01((time - word.start) / (0.14 / speed));
         if (highlighted && style.highlight === "box") {
           ctx.fillStyle = style.highlightColor;
           ctx.globalAlpha = 1;
@@ -349,6 +382,15 @@ export function createBurnRenderer(
           ctx.fill();
         }
 
+        // คาราโอเกะ+: ขยายคำที่กำลังถูกพูด (วาดรอบจุดกึ่งกลางของคำ)
+        const plusScale = anim === "karaokePlus" && highlighted ? 1 + wordProgress * 0.22 : 1;
+        if (plusScale !== 1) {
+          ctx.save();
+          ctx.translate(x + w / 2, y);
+          ctx.scale(plusScale, plusScale);
+          ctx.translate(-(x + w / 2), -y);
+        }
+
         const strokePx = strokeWidth[m.ls.stroke ?? style.stroke] * (fontSize / 64);
         if (strokePx > 0) {
           ctx.lineJoin = "round";
@@ -359,28 +401,68 @@ export function createBurnRenderer(
         }
 
         const blur = shadowBlur[style.shadow] * (fontSize / 64);
-        ctx.shadowBlur = blur;
-        ctx.shadowColor = blur ? style.shadowColor : "transparent";
-        ctx.shadowOffsetY = blur ? blur * 0.25 : 0;
+        if (anim === "glow") {
+          // เรืองแสง: ใช้สี accent ของธีมกระพริบเบา ๆ
+          ctx.shadowBlur = fontSize * (0.26 + 0.2 * glowPulse);
+          ctx.shadowColor = ACCENT_SECONDARY_HEX;
+          ctx.shadowOffsetY = 0;
+        } else {
+          ctx.shadowBlur = blur;
+          ctx.shadowColor = blur ? style.shadowColor : "transparent";
+          ctx.shadowOffsetY = blur ? blur * 0.25 : 0;
+        }
 
-        ctx.fillStyle = highlighted
-          ? style.highlight === "box"
-            ? style.highlightTextColor
-            : style.highlight === "color"
-              ? style.highlightColor
-              : (m.ls.color ?? style.color)
-          : (m.ls.color ?? style.color);
-        paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
+        const baseColor = m.ls.color ?? style.color;
+        const karaokeColor = style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor;
+        const karaokeLike = anim === "karaoke" || anim === "karaokePlus" || anim === "karaoke2";
+        ctx.fillStyle =
+          anim === "highlight" && ease > 0.5
+            ? "#ffffff"
+            : karaokeLike && spoken
+              ? karaokeColor
+              : highlighted
+                ? style.highlight === "box"
+                  ? style.highlightTextColor
+                  : style.highlight === "color"
+                    ? style.highlightColor
+                    : baseColor
+                : baseColor;
+
+        if (anim === "karaoke2" && highlighted) {
+          // คาราโอเกะ2: สีไล่จากบนลงล่างภายในคำที่กำลังถูกพูด
+          const top = y - lineHeight * 0.6;
+          const fillH = lineHeight * 1.2 * wordProgress;
+          ctx.fillStyle = baseColor;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x - fontSize * 0.3, top + fillH, w + fontSize * 0.6, lineHeight * 1.2 - fillH);
+          ctx.clip();
+          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
+          ctx.restore();
+          ctx.fillStyle = karaokeColor;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x - fontSize * 0.3, top, w + fontSize * 0.6, fillH);
+          ctx.clip();
+          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
+          ctx.restore();
+        } else {
+          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
+        }
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
         ctx.shadowColor = "transparent";
+        if (plusScale !== 1) ctx.restore();
         x += w + m.space;
       });
 
 
       y += lineHeight;
     });
+
+    if (slid) ctx.restore();
   };
+
 
   // ตารางค้นหาที่คำนวณล่วงหน้า: ไม่ต้องวน scenes/elements ทุกเฟรมอีก
   const motionWindows = (options.scenes ?? [])

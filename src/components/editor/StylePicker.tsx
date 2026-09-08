@@ -4,11 +4,19 @@ import { Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { sampleTextForLanguage, stylePresets, type CaptionStyle } from "@/lib/captions";
+import {
+  animationModes,
+  animationOptions,
+  sampleTextForLanguage,
+  stylePresets,
+  type CaptionAnimation,
+  type CaptionStyle,
+} from "@/lib/captions";
 import { loadCustomStyles, removeCustomStyle, saveCustomStyle } from "@/lib/style-library";
 import { cn } from "@/lib/utils";
 
 type Mode = "fixed" | "animation" | "mine";
+type WordMode = "word" | "sentence";
 
 type Props = {
   activeId: string;
@@ -44,20 +52,58 @@ function PresetPreview({ preset, text }: { preset: CaptionStyle; text: string })
   );
 }
 
+/** การ์ดอนิเมชัน: เล่นตัวอย่างจริงวนอัตโนมัติด้วยข้อความตามภาษาที่เลือก */
+function AnimationCard({
+  value,
+  label,
+  text,
+  active,
+  fontFamily,
+  onSelect,
+}: {
+  value: CaptionAnimation;
+  label: string;
+  text: string;
+  active: boolean;
+  fontFamily: string;
+  onSelect: () => void;
+}) {
+  return (
+    <article className="min-w-0">
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-label={`ใช้อนิเมชัน ${label}`}
+        aria-pressed={active}
+        className={cn(
+          "flex aspect-[1.75/1] w-full min-h-24 items-center justify-center overflow-hidden rounded-md border bg-preview px-2 transition-colors",
+          active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50",
+        )}
+      >
+        <span
+          className={cn("cap-demo max-w-full truncate text-xl font-bold text-foreground", `cap-demo-${value}`)}
+          style={{ fontFamily }}
+        >
+          {text}
+        </span>
+      </button>
+      <p className="mt-2 truncate text-sm font-semibold text-foreground">{label}</p>
+    </article>
+  );
+}
+
 export function StylePicker({ activeId, activeStyle, onSelect, onChange, language }: Props) {
   const [mode, setMode] = useState<Mode>("fixed");
+  const [wordMode, setWordMode] = useState<WordMode>(activeStyle.wordsPerGroup === 1 ? "word" : "sentence");
   const sampleText = sampleTextForLanguage(language);
   const [customStyles, setCustomStyles] = useState<CaptionStyle[]>(() =>
     typeof window === "undefined" ? [] : loadCustomStyles(),
   );
-  const presets =
-    mode === "fixed"
-      ? stylePresets.filter((preset) => preset.animation === "none" || preset.animation === "fade")
-      : mode === "animation"
-        ? stylePresets.filter(
-            (preset) => preset.animation !== "none" && preset.animation !== "fade",
-          )
-        : customStyles;
+  const presets = mode === "fixed" ? stylePresets : customStyles;
+  const animations = animationOptions.filter(
+    (option) => option.value !== "none" && animationModes[option.value].includes(wordMode),
+  );
+
 
   return (
     <div className="space-y-5 pb-3">
@@ -94,21 +140,31 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
       {mode === "animation" && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/50 p-2.5">
           <p className="text-xs text-muted-foreground">รูปแบบการขึ้นคำ</p>
-          <div className="flex rounded-md bg-background p-0.5">
+          <div className="flex rounded-md bg-background p-0.5" role="tablist" aria-label="รูปแบบการขึ้นคำ">
             <Button
               type="button"
+              role="tab"
               size="sm"
-              variant={activeStyle.wordsPerGroup === 1 ? "secondary" : "ghost"}
-              onClick={() => onChange({ wordsPerGroup: 1 })}
+              aria-selected={wordMode === "word"}
+              variant={wordMode === "word" ? "secondary" : "ghost"}
+              onClick={() => {
+                setWordMode("word");
+                onChange({ wordsPerGroup: 1 });
+              }}
               className="h-7"
             >
               ทีละคำ
             </Button>
             <Button
               type="button"
+              role="tab"
               size="sm"
-              variant={activeStyle.wordsPerGroup !== 1 ? "secondary" : "ghost"}
-              onClick={() => onChange({ wordsPerGroup: Math.max(2, activeStyle.wordsPerGroup) })}
+              aria-selected={wordMode === "sentence"}
+              variant={wordMode === "sentence" ? "secondary" : "ghost"}
+              onClick={() => {
+                setWordMode("sentence");
+                onChange({ wordsPerGroup: Math.max(3, activeStyle.wordsPerGroup) });
+              }}
               className="h-7"
             >
               ทั้งประโยค
@@ -116,6 +172,23 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
           </div>
         </div>
       )}
+
+      {mode === "animation" && (
+        <div className="grid grid-cols-2 gap-3">
+          {animations.map((option) => (
+            <AnimationCard
+              key={option.value}
+              value={option.value}
+              label={option.label}
+              text={sampleText}
+              fontFamily={activeStyle.fontFamily}
+              active={activeStyle.animation === option.value}
+              onSelect={() => onChange({ animation: option.value })}
+            />
+          ))}
+        </div>
+      )}
+
 
       {mode === "mine" && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/40 p-3">
@@ -134,8 +207,9 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
         <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
           ยังไม่มีสไตล์ที่บันทึก
         </p>
-      ) : (
+      ) : mode === "animation" ? null : (
         <div className="grid grid-cols-2 gap-3">
+
           {presets.map((preset) => (
             <article key={preset.id} className="min-w-0">
               <div
@@ -153,11 +227,8 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
                   aria-label={`ใช้สไตล์ ${preset.name}`}
                 />
                 <PresetPreview preset={preset} text={sampleText} />
-                {mode === "animation" && (
-                  <span className="absolute right-2 top-2 rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">
-                    ใช้ได้
-                  </span>
-                )}
+                {null}
+
                 {mode === "mine" && (
                   <Button
                     size="icon"
