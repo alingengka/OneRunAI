@@ -65,7 +65,13 @@ export type MotionElement = {
   italic?: boolean | undefined;
   /** แพทเทิร์นกล้องที่เลือกเอง */
   motionKind?: MotionKind | undefined;
+  offsetX?: number | undefined;
+  offsetY?: number | undefined;
+  scalePercent?: number | undefined;
 };
+
+/** ความสูงเฟรมอ้างอิงของค่าตำแหน่ง viral text (px) — ใช้สเกลให้พรีวิวกับไฟล์ส่งออกตรงกัน */
+export const VIRAL_REF_HEIGHT = 1280;
 
 
 

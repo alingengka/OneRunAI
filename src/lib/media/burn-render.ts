@@ -4,7 +4,13 @@
  * โค้ดวาดทั้งหมดอยู่ที่นี่ที่เดียว เพื่อให้สองเส้นทางได้ภาพเหมือนกันเป๊ะ
  */
 import type { Segment } from "./audio";
-import { motionTransform, NO_MOTION, type MotionElement, type MotionScene } from "./motion";
+import {
+  motionTransform,
+  NO_MOTION,
+  VIRAL_REF_HEIGHT,
+  type MotionElement,
+  type MotionScene,
+} from "./motion";
 import { viralTextWindow } from "../scenes";
 import {
   ITALIC_SKEW,
@@ -436,7 +442,8 @@ export function createBurnRenderer(
     const vsplit = splitEmphasis(style.fontFamily, hit.em);
     ctx.font = `${vsplit.native.italic ? "italic " : ""}900 ${viralFontSize}px ${style.fontFamily}`;
     const userScale = Math.max(0.2, hit.scalePercent / 100);
-    ctx.translate(width / 2 + hit.offsetX, y + hit.offsetY);
+    const px = height / VIRAL_REF_HEIGHT;
+    ctx.translate(width / 2 + hit.offsetX * px, y + hit.offsetY * px);
     ctx.scale(pop * userScale, pop * userScale);
     ctx.lineJoin = "round";
     ctx.miterLimit = 2;
