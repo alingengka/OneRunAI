@@ -24,7 +24,12 @@ export type CaptionAnimation =
   | "zoom"
   | "karaoke"
   | "shake"
-  | "flip";
+  | "flip"
+  | "slideUp2"
+  | "glow"
+  | "highlight"
+  | "karaokePlus"
+  | "karaoke2";
 
 export const animationOptions: { label: string; value: CaptionAnimation }[] = [
   { label: "None", value: "none" },
@@ -37,7 +42,39 @@ export const animationOptions: { label: string; value: CaptionAnimation }[] = [
   { label: "Karaoke", value: "karaoke" },
   { label: "Shake", value: "shake" },
   { label: "Flip", value: "flip" },
+  { label: "สไลด์2", value: "slideUp2" },
+  { label: "เรืองแสง", value: "glow" },
+  { label: "ไฮไลต์", value: "highlight" },
+  { label: "คาราโอเกะ+", value: "karaokePlus" },
+  { label: "คาราโอเกะ2", value: "karaoke2" },
 ];
+
+/** สีเรืองแสง/แถบไฮไลต์ตามธีม OneRunAI (ค่าเดียวกันทั้งพรีวิวและ export) */
+export const ACCENT_PRIMARY_HEX = "#6d28d9";
+export const ACCENT_SECONDARY_HEX = "#8b5cf6";
+
+/**
+ * อนิเมชันแต่ละแบบเหมาะกับโหมดไหน
+ * word = ไล่ทีละคำ, sentence = ทั้งประโยคพร้อมกัน (บางแบบใช้ได้ทั้งคู่)
+ */
+export const animationModes: Record<CaptionAnimation, ("word" | "sentence")[]> = {
+  none: ["word", "sentence"],
+  pop: ["word", "sentence"],
+  fade: ["word", "sentence"],
+  slideUp: ["word", "sentence"],
+  slideUp2: ["word", "sentence"],
+  typewriter: ["word"],
+  bounce: ["word", "sentence"],
+  zoom: ["word", "sentence"],
+  karaoke: ["word"],
+  karaokePlus: ["word"],
+  karaoke2: ["word"],
+  shake: ["word", "sentence"],
+  flip: ["word"],
+  glow: ["word", "sentence"],
+  highlight: ["word", "sentence"],
+};
+
 
 export type FontOption = { label: string; value: string; scripts: ("latin" | "th" | "lo")[] };
 

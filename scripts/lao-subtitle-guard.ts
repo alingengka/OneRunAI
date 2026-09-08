@@ -83,9 +83,11 @@ async function checkCompleteness(): Promise<void> {
     const group = { start: 0, end: tokens.length * 0.4, words };
 
     const source = document.createElement("canvas");
-    source.width = width;
-    source.height = height;
+    // ภาพพื้นหลังไม่เกี่ยวกับสิ่งที่ตรวจ (ตำแหน่ง/จำนวนคำ) ใช้ผืนเล็กเพื่อลดเวลา blit ต่อเฟรม
+    source.width = 8;
+    source.height = 8;
 
+    const loadedFonts = new Set<string>();
     const out: {
       font: string;
       bold: boolean;
@@ -109,7 +111,11 @@ async function checkCompleteness(): Promise<void> {
           italic,
           wordsPerGroup: tokens.length,
         };
-        await burn.ensureCaptionFonts(style);
+        const fontKey = `${style.fontFamily}|${style.fontWeight}`;
+        if (!loadedFonts.has(fontKey)) {
+          loadedFonts.add(fontKey);
+          await burn.ensureCaptionFonts(style);
+        }
 
         const canvas = document.createElement("canvas");
         canvas.width = width;
@@ -132,7 +138,7 @@ async function checkCompleteness(): Promise<void> {
           return originalFill(text, x, y);
         }) as typeof ctx.fillText;
 
-        const renderer = burn.createBurnRenderer(ctx, width, height, [group], style, {});
+        const renderer = burn.createBurnRenderer(ctx, width, height, [group], style, { smoothCuts: false });
         for (const w of words) {
           renderer.paint(source, (w.start + w.end) / 2, { start: 0, end: group.end } as never);
         }
@@ -248,9 +254,11 @@ async function checkIntegration(): Promise<void> {
     const width = 1080;
     const height = 1920;
     const source = document.createElement("canvas");
-    source.width = width;
-    source.height = height;
+    // ภาพพื้นหลังไม่เกี่ยวกับสิ่งที่ตรวจ (ตำแหน่ง/จำนวนคำ) ใช้ผืนเล็กเพื่อลดเวลา blit ต่อเฟรม
+    source.width = 8;
+    source.height = 8;
 
+    const loadedFonts = new Set<string>();
     const out: {
       font: string;
       bold: boolean;
@@ -273,7 +281,11 @@ async function checkIntegration(): Promise<void> {
         const expectedWords = new Set(
           state.words.map((w) => (style.uppercase ? w.text.toUpperCase() : w.text)).filter((t) => t !== captions.LINE_BREAK),
         );
-        await burn.ensureCaptionFonts(style);
+        const fontKey = `${style.fontFamily}|${style.fontWeight}`;
+        if (!loadedFonts.has(fontKey)) {
+          loadedFonts.add(fontKey);
+          await burn.ensureCaptionFonts(style);
+        }
 
         const canvas = document.createElement("canvas");
         canvas.width = width;
@@ -291,7 +303,7 @@ async function checkIntegration(): Promise<void> {
           return originalFill(text, x, y);
         }) as typeof ctx.fillText;
 
-        const renderer = burn.createBurnRenderer(ctx, width, height, groups, style, {});
+        const renderer = burn.createBurnRenderer(ctx, width, height, groups, style, { smoothCuts: false });
         const end = Math.max(state.duration || 0, ...groups.map((g) => g.end)) + 0.2;
         // เดินไล่ทุกเฟรม 30fps เหมือนตอน export จริง
         for (let t = 0; t <= end; t += 1 / 30) renderer.paint(source, t, { start: 0, end } as never);

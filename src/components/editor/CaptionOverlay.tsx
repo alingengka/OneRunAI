@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
+import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
+
 
 type Props = {
   group: CaptionGroup | null;
@@ -40,14 +41,22 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
     .replace(/ ?\n ?/g, "\n")
     .trim();
 
+  const glowPulse = 0.5 + 0.5 * Math.sin((time - group.start) * Math.PI * 3);
+  const glowShadow =
+    style.animation === "glow"
+      ? `0 0 ${fontSize * (0.1 + 0.1 * glowPulse)}px ${ACCENT_SECONDARY_HEX}, 0 0 ${fontSize * (0.26 + 0.2 * glowPulse)}px ${ACCENT_PRIMARY_HEX}`
+      : "";
+
   const textShadow = [
     stroke > 0
       ? `${-stroke}px ${-stroke}px 0 ${style.strokeColor}, ${stroke}px ${-stroke}px 0 ${style.strokeColor}, ${-stroke}px ${stroke}px 0 ${style.strokeColor}, ${stroke}px ${stroke}px 0 ${style.strokeColor}`
       : "",
     blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : "",
+    glowShadow,
   ]
     .filter(Boolean)
     .join(", ");
+
 
   const anim = style.animation;
 
@@ -94,7 +103,13 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
   } else if (anim === "shake") {
     const s = p < 1 ? Math.sin(p * Math.PI * 6) * fontSize * 0.06 : 0;
     containerTransform += ` translateX(${s}px)`;
+  } else if (anim === "slideUp2") {
+    // สไลด์2: เข้าจากด้านข้าง + overshoot (ต่างจาก slideUp ที่เข้าจากด้านล่างแบบ linear)
+    const ease = 1 - Math.pow(1 - p, 3);
+    containerTransform += ` translateX(${(1 - ease) * -fontSize * 1.6}px) scale(${0.96 + ease * 0.04})`;
+    containerOpacity = ease;
   }
+
 
   // TikTok keeps its own UI on the right edge and bottom bar; stay clear of it.
   const width = safeArea ? "72%" : "88%";
@@ -208,9 +223,16 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
             style={{
               display: "inline-block",
               maxWidth: "100%",
-              background: style.plate ? style.plateColor : undefined,
-              padding: style.plate ? `${fontSize * 0.12}px ${fontSize * 0.28}px` : undefined,
-              borderRadius: style.plate ? fontSize * 0.22 : undefined,
+              background: style.plate
+                ? style.plateColor
+                : anim === "highlight"
+                  ? `linear-gradient(to top, ${ACCENT_PRIMARY_HEX} ${(1 - Math.pow(1 - p, 3)) * 100}%, transparent ${(1 - Math.pow(1 - p, 3)) * 100}%)`
+                  : undefined,
+              padding:
+                style.plate || anim === "highlight"
+                  ? `${fontSize * 0.12}px ${fontSize * 0.28}px`
+                  : undefined,
+              borderRadius: style.plate || anim === "highlight" ? fontSize * 0.22 : undefined,
               marginTop: li > 0 ? fontSize * gap : undefined,
             }}
           >
@@ -221,10 +243,10 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
               // typewriter: hide words not yet reached
               if (anim === "typewriter" && !spoken) return null;
 
-              const emphasize =
-                anim === "karaoke"
-                  ? spoken && style.highlight !== "none"
-                  : active && (style.highlight !== "none" || isKeyword(word.text));
+              const karaokeLike = anim === "karaoke" || anim === "karaokePlus" || anim === "karaoke2";
+              const emphasize = karaokeLike
+                ? spoken && style.highlight !== "none"
+                : active && (style.highlight !== "none" || isKeyword(word.text));
               const boxed = emphasize && style.highlight === "box";
 
               const wordProgress = clamp01((time - word.start) / (0.14 / speed));
@@ -233,6 +255,9 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                 wordTransform = `perspective(600px) rotateX(${(1 - wordProgress) * 80}deg)`;
               } else if (active && anim === "karaoke") {
                 wordTransform = `scale(${1 + wordProgress * 0.08})`;
+              } else if (active && anim === "karaokePlus") {
+                // คาราโอเกะ+: ขยายเด่นกว่าเดิม พร้อมยกขึ้นเล็กน้อยตอนคำถูกพูด
+                wordTransform = `scale(${1 + wordProgress * 0.22}) translateY(${-wordProgress * 4}%)`;
               } else if (active && (anim === "pop" || anim === "bounce")) {
                 wordTransform = "translateY(-3%)";
               }
@@ -240,6 +265,10 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
               const effectiveBold = ls.bold ?? style.bold;
               const lineFamily = ls.fontFamily ?? style.fontFamily;
               const syntheticBold = effectiveBold && !fontRealFaces(lineFamily).bold;
+
+              // คาราโอเกะ2: สีไล่จากบนลงล่างตามจังหวะคำ (ต่างจากคาราโอเกะเดิมที่เปลี่ยนทั้งคำ)
+              const k2Fill = active && anim === "karaoke2";
+              const k2Color = style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor;
 
               return (
                 <span
@@ -249,12 +278,20 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                     margin: `0 ${fontSize * 0.09}px`,
                     padding: boxed ? `0 ${fontSize * 0.1}px` : undefined,
                     borderRadius: boxed ? fontSize * 0.12 : undefined,
-                    background: boxed ? style.highlightColor : undefined,
-                    color: boxed
-                      ? style.highlightTextColor
-                      : emphasize && style.highlight === "color"
+                    background: k2Fill
+                      ? `linear-gradient(to bottom, ${k2Color} ${wordProgress * 100}%, ${ls.color ?? style.color} ${wordProgress * 100}%)`
+                      : boxed
                         ? style.highlightColor
                         : undefined,
+                    WebkitBackgroundClip: k2Fill ? "text" : undefined,
+                    backgroundClip: k2Fill ? "text" : undefined,
+                    color: k2Fill
+                      ? "transparent"
+                      : boxed
+                        ? style.highlightTextColor
+                        : emphasize && (anim === "karaoke2" || style.highlight === "color")
+                          ? (style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor)
+                          : undefined,
                     transform: wordTransform,
                     transition:
                       anim === "none" ? undefined : `color ${Math.round(80 / speed)}ms linear`,
@@ -263,6 +300,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                 >
                   {word.text}
                 </span>
+
               );
             })}
           </span>
