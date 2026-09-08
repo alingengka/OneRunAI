@@ -19,6 +19,8 @@ import {
   type SceneElementKind,
 } from "@/lib/scenes";
 import { motionKindForScene, type MotionKind } from "@/lib/media/motion";
+import { BrollEditor } from "@/components/editor/BrollEditor";
+import type { SceneAssetPatch } from "@/lib/scenes";
 import {
   AudioLines,
   Clock,
@@ -85,6 +87,7 @@ type Props = {
     id: string,
     patch: { offsetX?: number; offsetY?: number; scalePercent?: number },
   ) => void;
+  onUpdateElementAsset: (id: string, patch: SceneAssetPatch) => void;
 };
 
 function clock(t: number) {
@@ -109,6 +112,7 @@ export function ScenesPanel({
   onUpdateElementFormat,
   onUpdateElementMotionKind,
   onUpdateElementLayout,
+  onUpdateElementAsset,
 }: Props) {
   if (!scenes.length) {
     return (
@@ -325,6 +329,17 @@ export function ScenesPanel({
                 </p>
               </div>
             )}
+
+            {sceneElements
+              .filter((element) => element.kind === "broll" && element.enabled)
+              .map((element) => (
+                <BrollEditor
+                  key={`${element.id}-broll`}
+                  element={element}
+                  sceneText={scene.text}
+                  onUpdateAsset={(patch) => onUpdateElementAsset(element.id, patch)}
+                />
+              ))}
 
             {sceneElements
               .filter((element) => element.kind === "viralText" && element.enabled)

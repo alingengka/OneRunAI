@@ -107,6 +107,8 @@ import {
   buildScenes,
   updateSceneElementFormat,
   updateSceneElementLayout,
+  updateSceneElementAsset,
+  type SceneAssetPatch,
   updateSceneElementMotionKind,
   updateSceneElementText,
   updateSceneElementTiming,
@@ -115,6 +117,7 @@ import {
 } from "@/lib/scenes";
 import { ScenesPanel } from "@/components/editor/ScenesPanel";
 import { ViralTextOverlay } from "@/components/editor/ViralTextOverlay";
+import { BrollOverlay } from "@/components/editor/BrollOverlay";
 
 import { AccuracyPanel } from "@/components/editor/AccuracyPanel";
 import { GlossaryManager } from "@/components/editor/GlossaryManager";
@@ -1276,6 +1279,10 @@ function Studio() {
     setSceneElements((current) => updateSceneElementLayout(current, id, patch));
   };
 
+  const updateElementAsset = (id: string, patch: SceneAssetPatch) => {
+    setSceneElements((current) => updateSceneElementAsset(current, id, patch));
+  };
+
   const addElement = (sceneId: string, kind: SceneElementKind) => {
     setSceneElements((current) => addSceneElement(current, sceneId, kind));
   };
@@ -1843,6 +1850,7 @@ function Studio() {
               onUpdateElementFormat={updateElementFormat}
               onUpdateElementMotionKind={updateElementMotionKind}
               onUpdateElementLayout={updateElementLayout}
+              onUpdateElementAsset={updateElementAsset}
             />
           )}
 
@@ -2217,6 +2225,12 @@ function Studio() {
                   แตะเพื่ออัปโหลดคลิป
                 </button>
               )}
+              <BrollOverlay
+                scenes={scenes}
+                sceneElements={sceneElements}
+                time={time}
+                playing={playing}
+              />
               {captionsOn && (
                 <CaptionOverlay
                   group={activeGroup}

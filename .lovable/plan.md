@@ -1,19 +1,17 @@
-# เลือกแพทเทิร์นกล้อง + ตำแหน่ง/ขนาดข้อความไวรัล
+# B-roll (cutaway) ต่อซีน — ค้นหาจาก KLIPY + อัปโหลดเอง
 
-## 1. แพทเทิร์นกล้อง (Motion) ต่อซีน
-- `SceneElement` เพิ่ม `motionKind?: MotionKind` — มีค่า = ใช้ค่าที่เลือก, ไม่มี = อัตโนมัติตามลำดับซีน (เข้ากับงานเก่า)
-- `updateSceneElementMotionKind()` ใน `src/lib/scenes.ts`
-- `motionTransform()` / `motionAt()` รับและใช้ `motionKind`
-- การ์ด 4 แพทเทิร์นใน `ScenesPanel.tsx` กดเลือกได้จริง badge "ใช้อยู่" ตามค่าที่เลือก
-- พรีวิว (`routes/index.tsx` → `motionAt`) และไฟล์ส่งออก (`burn-render.ts`) ใช้ค่าเดียวกัน
+## ขอบเขตที่ทำเสร็จ
+- `SceneElement` เพิ่ม `assetUrl`, `assetType`, `assetSource`, `searchQuery` + `updateSceneElementAsset()`
+- `BrollPicker.tsx`: dialog 2 แท็บ — "ค้นหา" (KLIPY ผ่าน `klipy.functions.ts` + คำเตือนลิขสิทธิ์สีเหลืองใต้กริด) และ "อัปโหลดเอง" (bucket `broll-assets` แบบส่วนตัว ผู้ใช้เห็นเฉพาะไฟล์ตัวเอง)
+- `BrollEditor.tsx` ในการ์ดซีน: thumbnail, ปุ่มเปลี่ยนสื่อ/เอาสื่อออก, คำเตือนเมื่อใช้สื่อจาก KLIPY
+- พรีวิว `BrollOverlay.tsx`: cutaway เต็มเฟรม (cover) ซับ/ข้อความไวรัลยังทับด้านบน วิดีโอเริ่มจาก 0 ทุกครั้งที่เข้าซีนและวนซ้ำ
+- ส่งออก: `broll.ts` (`brollWindows`/`createBrollTrack`/`coverRect`) ใช้ร่วมกับ `burn-render.ts`, `export-webcodecs.ts` (seek ต่อเฟรม) และ `export-burned.ts` (เรียลไทม์) — รองรับทั้งรูปและวิดีโอ
+- `/api/public/broll-media`: พร็อกซีสื่อภายนอกให้เป็น origin เดียวกัน กัน canvas ถูก taint ตอน export (จำกัดเฉพาะโฮสต์ KLIPY/Storage, โฮสต์อื่น 403)
+- เพิ่ม token สี `--warning` / `--warning-foreground` ในธีม
 
-## 2. ตำแหน่ง X/Y และขนาดข้อความไวรัล
-- `SceneElement` เพิ่ม `offsetX`, `offsetY` (px อ้างอิงเฟรมสูง 1280) และ `scalePercent` (default 100)
-- `updateSceneElementLayout()` clamp ขนาด 20–300%
-- `ScenesPanel.tsx` เพิ่ม 3 แถบเลื่อน (X, Y, ขนาด) พร้อมตัวเลขและปุ่มรีเซ็ตแยกอัน
-- พรีวิว `ViralTextOverlay.tsx` ใช้ `translate(...) scale(...)`, ส่งออก `burn-render.ts` ใช้ `ctx.translate`/`ctx.scale` สเกลตามความสูงเฟรมให้ตรงกัน
-- element เก่าที่ไม่มีค่า แสดงผลเหมือนเดิมทุกอย่าง
+## ข้อจำกัดที่พบ
+- GIF ที่ใช้เป็น "รูปภาพ" จะถูกวาดเฟรมแรกในไฟล์ส่งออก — เลือกไฟล์ mp4/webm จาก KLIPY จึงได้ภาพเคลื่อนไหวเต็ม
+- ยังไม่มีการปรับ trim/ตำแหน่งของสื่อ B-roll ในซีน (ใช้เต็มช่วงซีนแบบ cover)
 
 ## การตรวจรับ
-- `bun run guard:lao` ผ่านครบทุกด้าน
-- ตรวจภาพจริง desktop/mobile และ dark/light mode
+- `bun run guard:lao` ผ่านครบทุกด้าน (ก–ฉ)

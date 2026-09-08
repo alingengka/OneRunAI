@@ -68,6 +68,9 @@ export type MotionElement = {
   offsetX?: number | undefined;
   offsetY?: number | undefined;
   scalePercent?: number | undefined;
+  /** สำหรับ B-roll: สื่อที่ใช้แทนภาพต้นฉบับ */
+  assetUrl?: string | undefined;
+  assetType?: "image" | "video" | undefined;
 };
 
 /** ความสูงเฟรมอ้างอิงของค่าตำแหน่ง viral text (px) — ใช้สเกลให้พรีวิวกับไฟล์ส่งออกตรงกัน */

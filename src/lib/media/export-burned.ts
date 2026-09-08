@@ -2,6 +2,7 @@ import type { Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
 import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
+import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 export { targetSize };
@@ -110,6 +111,7 @@ export async function exportBurnedVideo(
   let gate: NoiseGateNode | null = null;
   /** จำนวนเฟรมที่วาดจริง ใช้ตรวจเฟรมตกตอนเรนเดอร์ความละเอียดสูง */
   let painted = 0;
+  let brollTrack: BrollTrack | null = null;
   /** สถิติเวลาวาดต่อเฟรม (ms) ใช้หาว่าเฟรมไหนช้าจนภาพกระตุก */
   const frameCosts: number[] = [];
   let frameCostTotal = 0;
@@ -204,11 +206,14 @@ export async function exportBurnedVideo(
 
 
     // ตัววาดร่วม (ซับ + motion + viral text) ใช้ชุดเดียวกับเส้นทาง WebCodecs
+    brollTrack = await createBrollTrack(brollWindows(options.scenes, options.sceneElements));
+
     const renderer = createBurnRenderer(ctx, width, height, groups, style, {
       captions: options.captions,
       smoothCuts: options.smoothCuts,
       scenes: options.scenes,
       sceneElements: options.sceneElements,
+      brollTrack,
     });
 
 
@@ -236,7 +241,10 @@ export async function exportBurnedVideo(
     };
     const frameVideo = video as FrameVideo;
 
-    const paint = (time: number, seg: Segment) => renderer.paint(video, time, seg);
+    const paint = (time: number, seg: Segment) => {
+      brollTrack?.syncRealtime(time);
+      renderer.paint(video, time, seg);
+    };
 
 
     // ---- ตัวจับเฟรมแบบปรับ fps อัตโนมัติ ----
@@ -498,6 +506,7 @@ export async function exportBurnedVideo(
 
 
   } finally {
+    try { brollTrack?.dispose(); } catch { /* ignore */ }
     video.pause();
     video.remove();
     if (recorder && recorder.state !== "inactive") recorder.stop();
