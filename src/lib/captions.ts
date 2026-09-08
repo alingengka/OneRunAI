@@ -209,6 +209,16 @@ export const baseStyle: CaptionStyle = {
   lineStyles: {},
 };
 
+export const sampleTextByLanguage: Record<string, string> = {
+  lo: "ຫ້າມພາດ ນີ້ຄືຕົວຢ່າງ",
+  th: "ห้ามพลาด นี่คือตัวอย่าง",
+  en: "Don't miss this example",
+};
+
+export function sampleTextForLanguage(language?: string): string {
+  return (language && sampleTextByLanguage[language]) || sampleTextByLanguage["th"]!;
+}
+
 export const stylePresets: CaptionStyle[] = [
   { ...baseStyle },
   {

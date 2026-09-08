@@ -2079,6 +2079,7 @@ function Studio() {
             <StylePicker
               activeId={style.id}
               activeStyle={style}
+              language={languages[0] ?? "th"}
               onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
               onSelect={(preset) => {
                 setStyle(preset);
@@ -2098,6 +2099,7 @@ function Studio() {
                 }}
                 scripts={languages.map((c) => (c === "en" ? "latin" : c))}
                 lineCount={Math.max(2, previewLineCount)}
+                language={languages[0] ?? "th"}
               />
               <Accordion type="single" collapsible className="border-t border-border">
                 <AccordionItem value="caption-languages" className="border-b-0">

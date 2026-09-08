@@ -13,6 +13,7 @@ import { Slider } from "@/components/ui/slider";
 import {
   animationOptions,
   fontOptions,
+  sampleTextForLanguage,
   type CaptionStyle,
   type LineStyle,
   type StrokeSize,
@@ -24,6 +25,7 @@ type Props = {
   onChange: (patch: Partial<CaptionStyle>) => void;
   scripts?: ("latin" | "th" | "lo")[];
   lineCount?: number;
+  language?: string;
 };
 
 const sizes: StrokeSize[] = ["none", "small", "medium", "large"];
@@ -85,7 +87,7 @@ function Control({
   );
 }
 
-function StylePreview({ style }: { style: CaptionStyle }) {
+function StylePreview({ style, text }: { style: CaptionStyle; text: string }) {
   const shadow = effectStrength[style.shadow];
   const stroke = effectStrength[style.stroke];
   return (
@@ -105,13 +107,13 @@ function StylePreview({ style }: { style: CaptionStyle }) {
           transform: style.italic ? "skewX(-12deg)" : undefined,
         }}
       >
-        ตัวอย่าง
+        {text}
       </span>
     </div>
   );
 }
 
-export function StyleControls({ style, onChange, scripts, lineCount = 3 }: Props) {
+export function StyleControls({ style, onChange, scripts, lineCount = 3, language }: Props) {
   const [activeLine, setActiveLine] = useState(0);
   const fonts =
     scripts && scripts.length
@@ -129,7 +131,7 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3 }: Props
 
   return (
     <div className="space-y-6">
-      <StylePreview style={style} />
+      <StylePreview style={style} text={sampleTextForLanguage(language)} />
 
       <Control label="ฟอนต์">
         <select
