@@ -4,7 +4,7 @@ import { Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { stylePresets, type CaptionStyle } from "@/lib/captions";
+import { sampleTextForLanguage, stylePresets, type CaptionStyle } from "@/lib/captions";
 import { loadCustomStyles, removeCustomStyle, saveCustomStyle } from "@/lib/style-library";
 import { cn } from "@/lib/utils";
 
@@ -15,11 +15,12 @@ type Props = {
   activeStyle: CaptionStyle;
   onSelect: (style: CaptionStyle) => void;
   onChange: (patch: Partial<CaptionStyle>) => void;
+  language?: string;
 };
 
 const strokeWidth = { none: 0, small: 1, medium: 2, large: 3 } as const;
 
-function PresetPreview({ preset }: { preset: CaptionStyle }) {
+function PresetPreview({ preset, text }: { preset: CaptionStyle; text: string }) {
   const shadow = strokeWidth[preset.shadow];
   const stroke = strokeWidth[preset.stroke];
 
@@ -38,13 +39,14 @@ function PresetPreview({ preset }: { preset: CaptionStyle }) {
         transform: preset.italic ? "skewX(-12deg)" : undefined,
       }}
     >
-      ตัวอย่าง
+      {text}
     </span>
   );
 }
 
-export function StylePicker({ activeId, activeStyle, onSelect, onChange }: Props) {
+export function StylePicker({ activeId, activeStyle, onSelect, onChange, language }: Props) {
   const [mode, setMode] = useState<Mode>("fixed");
+  const sampleText = sampleTextForLanguage(language);
   const [customStyles, setCustomStyles] = useState<CaptionStyle[]>(() =>
     typeof window === "undefined" ? [] : loadCustomStyles(),
   );
@@ -150,7 +152,7 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange }: Props
                   className="absolute inset-0 z-10 cursor-pointer"
                   aria-label={`ใช้สไตล์ ${preset.name}`}
                 />
-                <PresetPreview preset={preset} />
+                <PresetPreview preset={preset} text={sampleText} />
                 {mode === "animation" && (
                   <span className="absolute right-2 top-2 rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">
                     ใช้ได้
