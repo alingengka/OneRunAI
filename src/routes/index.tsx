@@ -2219,9 +2219,9 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 lg:order-2 lg:sticky lg:top-0 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden">
-          <div className="studio-panel flex flex-col rounded-xl border border-border bg-card p-4 lg:h-full lg:overflow-hidden">
-            <div className="mb-3 flex shrink-0 items-center justify-between">
+        <section className="order-1 min-w-0 lg:order-2 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+          <div className="studio-panel rounded-xl border border-border bg-card p-4">
+            <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Smartphone className="h-4 w-4" /> TikTok Preview
               </div>
@@ -2233,7 +2233,7 @@ function Studio() {
             </div>
             <div
               ref={frameRef}
-              className={`relative mx-auto w-full overflow-hidden rounded-xl bg-preview shadow-primary-lg ring-1 ring-primary/20 lg:max-h-[calc(100%-14rem)] ${tiktokPreview ? "aspect-[886/1920] max-w-[314px]" : "aspect-[9/16] max-w-[340px]"}`}
+              className={`relative mx-auto w-full overflow-hidden rounded-xl bg-preview shadow-primary-lg ring-1 ring-primary/20 ${tiktokPreview ? "aspect-[886/1920] max-w-[314px]" : "aspect-[9/16] max-w-[340px]"}`}
             >
               {videoUrl ? (
                 <video
@@ -2285,12 +2285,12 @@ function Studio() {
               {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
             {videoUrl && (
-              <p className="mt-2 shrink-0 text-center text-xs text-muted-foreground">
+              <p className="mt-2 text-center text-xs text-muted-foreground">
                 ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)
               </p>
             )}
 
-            <div className="mt-4 shrink-0 space-y-3">
+            <div className="mt-4 space-y-3">
               <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
                 {duration > 0 &&
                   silences.map((s, i) => (
