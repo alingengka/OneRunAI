@@ -190,6 +190,13 @@ async function transcribeWithGemini(
   language: "th" | "lo" | "en" | undefined,
   context: string,
   glossary: string[],
+  /**
+   * "independent" listens without prior context and only keeps clearly
+   * audible words, so it disagrees with the main pass where the main pass
+   * guessed — the same role the strict OpenAI pass plays.
+   */
+  variant: "main" | "independent" = "main",
+  options: { temperature?: number; retries?: number } = {},
 ): Promise<string> {
   const instructions = language === "lo"
     ? [
@@ -206,7 +213,11 @@ async function transcribeWithGemini(
       "Return the transcript text only, with no labels, quotes or commentary.",
     ];
   if (glossary.length) instructions.push(`Preferred spellings when audible: ${glossary.slice(0, 40).join(", ")}`);
-  if (context) instructions.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
+  if (variant === "independent") {
+    instructions.push("Listen to this recording on its own and write only words that are clearly audible in it.");
+  } else if (context) {
+    instructions.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
+  }
 
   return geminiChat(GEMINI_TRANSCRIBE_MODEL, [{
     role: "user",
@@ -214,7 +225,7 @@ async function transcribeWithGemini(
       { type: "text", text: instructions.join(" ") },
       { type: "input_audio", input_audio: { data: audioBase64, format: "wav" } },
     ],
-  }], "Gemini transcription");
+  }], "Gemini transcription", options);
 }
 
 export async function transcribeAudioServer(input: {
@@ -270,6 +281,25 @@ export async function transcribeAudioServer(input: {
     hasOpenAI ? attempts.map((_, index) => openaiPass(index)) : [],
   );
 
+  // Without OpenAI, Lao gets two extra Gemini passes in its place so ranking
+  // still has several independent candidates. They are best-effort: no
+  // retries and no user-facing warning, so a free-tier rate limit only drops
+  // the extras instead of slowing everything down.
+  const geminiExtrasSettled = Promise.allSettled(
+    !hasOpenAI && hasGemini && input.language === "lo"
+      ? [
+          transcribeWithGemini(input.audioBase64, "lo", "", input.glossary ?? [], "independent", {
+            temperature: 0,
+            retries: 0,
+          }),
+          transcribeWithGemini(input.audioBase64, "lo", input.context ?? "", input.glossary ?? [], "main", {
+            temperature: 0.4,
+            retries: 0,
+          }),
+        ]
+      : [],
+  );
+
   if (input.language === "lo") {
     const [scribeResult, geminiResult] = await Promise.allSettled([
       transcribeWithScribe(binary, input.glossary ?? []),
@@ -307,6 +337,15 @@ export async function transcribeAudioServer(input: {
       input.language,
     );
     if (text) alternatives.push(text);
+  }
+
+  for (const result of await geminiExtrasSettled) {
+    if (result.status === "fulfilled") {
+      const text = cleanup(result.value, "lo");
+      if (text && !alternatives.includes(text)) alternatives.push(text);
+    } else {
+      console.warn("[transcribe] extra Gemini pass skipped:", String(result.reason).slice(0, 200));
+    }
   }
 
   const openaiResults = await openaiSettled;
