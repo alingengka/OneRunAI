@@ -128,6 +128,7 @@ import { applyRulesToWords, parseGlossaryTerms, type LexRule } from "@/lib/lao-g
 import { buildAccuracyReport } from "@/lib/accuracy-report";
 import { OneRunLogo } from "@/components/brand/OneRunLogo";
 import { isAccountError } from "@/lib/account-shared";
+import { runInOrderPool } from "@/lib/pool";
 import { AccessGate } from "@/components/account/AccessGate";
 import { AccountMenu } from "@/components/account/AccountMenu";
 
@@ -169,6 +170,9 @@ const LANGUAGES: { code: LangCode; label: string; font: string }[] = [
   { code: "lo", label: "ລາວ", font: "'Noto Sans Lao Looped', 'Noto Sans Lao', sans-serif" },
   { code: "en", label: "English", font: "'Inter', system-ui, sans-serif" },
 ];
+
+/** How many subtitle chunks are transcribed at the same time. */
+const TRANSCRIBE_CONCURRENCY = 3;
 
 function fmt(t: number) {
   const m = Math.floor(t / 60);
@@ -694,36 +698,55 @@ function Studio() {
 
       if (chunks.length) {
         const missing: Segment[][] = [];
-        for (let i = 0; i < chunks.length; i++) {
-          const chunkSegs = chunks[i]!;
-          const out = await transcribeChunk(chunkSegs, 2);
-          if ("skipped" in out && out.skipped) continue;
-          if ("failed" in out) {
-            missing.push(chunkSegs);
-            continue;
-          }
-          texts.push(out.text);
-          const merged = mergeAlignedChunks(allWords, out.aligned);
-          allWords.splice(0, allWords.length, ...merged);
-
-          setTranscript(texts.join(" "));
-          setWords([...allWords]);
+        const progressId = toast.loading(`กำลังถอดเสียง 0/${chunks.length} ช่วง…`);
+        let done = 0;
+        try {
+          // Chunks run in parallel; each one gets whatever earlier text has
+          // already been committed as spelling context.
+          await runInOrderPool(
+            chunks.length,
+            TRANSCRIBE_CONCURRENCY,
+            async (i) => {
+              const out = await transcribeChunk(chunks[i]!, 2);
+              done++;
+              toast.loading(`กำลังถอดเสียง ${done}/${chunks.length} ช่วง…`, { id: progressId });
+              return out;
+            },
+            (i, out) => {
+              if ("skipped" in out && out.skipped) return;
+              if ("failed" in out) {
+                missing.push(chunks[i]!);
+                return;
+              }
+              texts.push(out.text);
+              const merged = mergeAlignedChunks(allWords, out.aligned);
+              allWords.splice(0, allWords.length, ...merged);
+              setTranscript(texts.join(" "));
+              setWords([...allWords]);
+            },
+          );
+        } finally {
+          toast.dismiss(progressId);
         }
 
         // ด่านสุดท้าย: ช่วงไหนยังไม่มีคำ ให้ลองใหม่อีกครั้งก่อนแสดงผล
         const stillMissing: Segment[][] = [];
-        for (const chunkSegs of missing) {
-          const out = await transcribeChunk(chunkSegs, 1);
-          if ("skipped" in out && out.skipped) continue;
-          if ("failed" in out) {
-            stillMissing.push(chunkSegs);
-            continue;
-          }
-          texts.push(out.text);
-          allWords.push(...out.aligned);
-          allWords.sort((a, b) => a.start - b.start);
-          setWords([...allWords]);
-        }
+        await runInOrderPool(
+          missing.length,
+          TRANSCRIBE_CONCURRENCY,
+          (i) => transcribeChunk(missing[i]!, 1),
+          (i, out) => {
+            if ("skipped" in out && out.skipped) return;
+            if ("failed" in out) {
+              stillMissing.push(missing[i]!);
+              return;
+            }
+            texts.push(out.text);
+            allWords.push(...out.aligned);
+            allWords.sort((a, b) => a.start - b.start);
+            setWords([...allWords]);
+          },
+        );
         if (stillMissing.length) {
           const ranges = stillMissing
             .map(

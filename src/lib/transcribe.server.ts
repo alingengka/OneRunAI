@@ -1,6 +1,6 @@
 import { thaiToLaoScript } from "./lao-script";
 import { tokenizeWords } from "./captions";
-import { GEMINI_TRANSCRIBE_MODEL, geminiChat, geminiKey, openaiKey, openaiTranscribe } from "./ai-providers.server";
+import { GEMINI_TRANSCRIBE_MODEL, fetchWithRetry, geminiChat, geminiKey, openaiKey, openaiTranscribe } from "./ai-providers.server";
 
 const HALLUCINATIONS = new Set([
   "thank you", "thanks for watching", "you", "bye", "subtitles by",
@@ -116,7 +116,7 @@ async function transcribeWithScribe(
   form.append("tag_audio_events", "false");
   if (glossary.length) form.append("biased_keywords", JSON.stringify(glossary.slice(0, 40)));
 
-  const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+  const response = await fetchWithRetry("https://api.elevenlabs.io/v1/speech-to-text", {
     method: "POST",
     headers: { "xi-api-key": apiKey },
     body: form,
@@ -243,6 +243,33 @@ export async function transcribeAudioServer(input: {
     warnings.push(`${engine} ใช้งานไม่ได้ ซับอาจไม่ครบหรือไม่แม่น: ${message.slice(0, 160)}`);
   };
 
+  /** One gpt-4o-transcribe pass; resolves to cleaned text ("" if nothing usable). */
+  const openaiPass = async (index: number): Promise<string> => {
+    const form = new FormData();
+    form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
+    form.append("temperature", String(attempts[index]));
+    if (input.language === "lo") form.append("prompt", laoPrompt(input.context ?? "", input.glossary ?? [], index > 0));
+    else if (input.language) {
+      form.append("language", input.language);
+      if (input.context) form.append("prompt", `Continue without repeating: ${input.context.slice(-500)}`);
+    }
+    const response = await openaiTranscribe(form);
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Transcription failed [${response.status}]: ${body.slice(0, 300)}`);
+    }
+    const payload = (await response.json()) as { text?: string };
+    return cleanup(payload.text ?? "", input.language);
+  };
+
+  // Every engine runs at the same time; total latency is the slowest one,
+  // not the sum of all of them.
+  // allSettled is attached immediately so an early OpenAI failure is never an
+  // unhandled rejection while the other engines are still running.
+  const openaiSettled = Promise.allSettled(
+    hasOpenAI ? attempts.map((_, index) => openaiPass(index)) : [],
+  );
+
   if (input.language === "lo") {
     const [scribeResult, geminiResult] = await Promise.allSettled([
       transcribeWithScribe(binary, input.glossary ?? []),
@@ -273,9 +300,6 @@ export async function transcribeAudioServer(input: {
     }
   }
 
-
-
-
   // Without OpenAI, Thai/English fall back to a single Gemini pass.
   if (!hasOpenAI && input.language !== "lo" && hasGemini) {
     const text = cleanup(
@@ -285,35 +309,17 @@ export async function transcribeAudioServer(input: {
     if (text) alternatives.push(text);
   }
 
-  for (let index = 0; index < attempts.length && hasOpenAI; index++) {
-    const form = new FormData();
-
-    form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
-    form.append("temperature", String(attempts[index]));
-    if (input.language === "lo") form.append("prompt", laoPrompt(input.context ?? "", input.glossary ?? [], index > 0));
-    else if (input.language) {
-      form.append("language", input.language);
-      if (input.context) form.append("prompt", `Continue without repeating: ${input.context.slice(-500)}`);
-    }
-
-    try {
-      const response = await openaiTranscribe(form);
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        const error = new Error(`Transcription failed [${response.status}]: ${body.slice(0, 300)}`);
-        if (response.status < 500 && response.status !== 429) throw error;
-        lastError = error;
-        continue;
-      }
-      const payload = (await response.json()) as { text?: string };
-      const text = cleanup(payload.text ?? "", input.language);
-      if (text && !alternatives.includes(text)) alternatives.push(text);
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error("Transcription failed");
-      if (alternatives.length === 0) throw lastError;
-      break;
+  const openaiResults = await openaiSettled;
+  let openaiFailed = false;
+  for (const result of openaiResults) {
+    if (result.status === "fulfilled") {
+      if (result.value && !alternatives.includes(result.value)) alternatives.push(result.value);
+    } else {
+      lastError = result.reason instanceof Error ? result.reason : new Error("Transcription failed");
+      openaiFailed = true;
     }
   }
+  if (openaiFailed && alternatives.length) warn("OpenAI", lastError);
 
   if (!alternatives.length) {
     if (lastError) throw lastError;
