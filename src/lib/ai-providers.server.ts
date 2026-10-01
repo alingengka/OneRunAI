@@ -17,6 +17,29 @@ export const GEMINI_TRANSLATE_MODEL = process.env["GEMINI_TRANSLATE_MODEL"] || "
 export const OPENAI_TRANSCRIBE_MODEL =
   process.env["OPENAI_TRANSCRIBE_MODEL"] || "gpt-4o-transcribe";
 
+/**
+ * fetch that retries rate limits and transient overloads (429/502/503) with a
+ * short backoff. Parallel chunk transcription can briefly exceed free-tier
+ * request limits; a retry is cheaper than dropping an engine.
+ */
+export async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  retries = 2,
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, init);
+    if (attempt >= retries || ![429, 502, 503].includes(response.status)) return response;
+    const retryAfter = Number(response.headers.get("retry-after"));
+    const delay =
+      Number.isFinite(retryAfter) && retryAfter > 0 && retryAfter <= 10
+        ? retryAfter * 1000
+        : 1500 * (attempt + 1) + Math.random() * 500;
+    await response.body?.cancel().catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
+}
+
 export function geminiKey(): string | undefined {
   return process.env["GEMINI_API_KEY"] || undefined;
 }
@@ -50,7 +73,7 @@ export async function geminiChat(
   const models = model === GEMINI_FALLBACK_MODEL ? [model] : [model, GEMINI_FALLBACK_MODEL];
   let lastError: Error | null = null;
   for (const candidate of models) {
-    const response = await fetch(`${GEMINI_BASE}/chat/completions`, {
+    const response = await fetchWithRetry(`${GEMINI_BASE}/chat/completions`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: candidate, messages }),
@@ -78,7 +101,7 @@ export function openaiTranscribe(form: FormData): Promise<Response> {
   const apiKey = openaiKey();
   if (!apiKey) throw new Error("Missing OPENAI_API_KEY");
   form.append("model", OPENAI_TRANSCRIBE_MODEL);
-  return fetch(`${OPENAI_BASE}/audio/transcriptions`, {
+  return fetchWithRetry(`${OPENAI_BASE}/audio/transcriptions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
