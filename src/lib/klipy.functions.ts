@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const GATEWAY_URL = "https://connector-gateway.lovable.dev/klipy";
+const KLIPY_API = "https://api.klipy.com/api/v1";
 
 export type KlipyItem = {
   id: string;
@@ -37,6 +38,7 @@ function pickUrl(file: KlipyRaw["file"], formats: string[]): string | undefined 
 }
 
 export const searchKlipyMedia = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) =>
     z
       .object({
@@ -46,22 +48,20 @@ export const searchKlipyMedia = createServerFn({ method: "POST" })
       })
       .parse(data),
   )
-  .handler(async ({ data }): Promise<{ items: KlipyItem[] }> => {
-    const lovableKey = process.env["LOVABLE_API_KEY"];
+  .handler(async ({ data, context }): Promise<{ items: KlipyItem[] }> => {
+    const { assertAccess } = await import("./account.server");
+    await assertAccess(context.userId);
     const klipyKey = process.env["KLIPY_API_KEY"];
-    if (!lovableKey || !klipyKey) throw new Error("ยังไม่ได้เชื่อมต่อคลังคลิป KLIPY");
+    if (!klipyKey) throw new Error("ยังไม่ได้เชื่อมต่อคลังคลิป KLIPY");
 
     const params = new URLSearchParams({
       q: data.query,
       customer_id: data.customerId,
       per_page: "24",
     });
-    const response = await fetch(`${GATEWAY_URL}/${data.kind}/search?${params}`, {
-      headers: {
-        Authorization: `Bearer ${lovableKey}`,
-        "X-Connection-Api-Key": klipyKey,
-      },
-    });
+    const response = await fetch(
+      `${KLIPY_API}/${encodeURIComponent(klipyKey)}/${data.kind}/search?${params}`,
+    );
     if (!response.ok) {
       const body = await response.text();
       console.error(`KLIPY search failed [${response.status}]: ${body}`);

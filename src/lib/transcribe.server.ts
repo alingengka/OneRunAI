@@ -1,5 +1,6 @@
 import { thaiToLaoScript } from "./lao-script";
 import { tokenizeWords } from "./captions";
+import { GEMINI_TRANSCRIBE_MODEL, geminiChat, geminiKey, openaiKey, openaiTranscribe } from "./ai-providers.server";
 
 const HALLUCINATIONS = new Set([
   "thank you", "thanks for watching", "you", "bye", "subtitles by",
@@ -179,47 +180,39 @@ export function buildScribeTiming(
 }
 
 /**
- * Gemini is multimodal on /v1/chat/completions and, verified live, emits Lao
+ * Gemini is multimodal on /chat/completions and, verified live, emits Lao
  * script directly, so it needs no Thai->Lao transliteration pass.
  */
 async function transcribeWithGemini(
   audioBase64: string,
-  apiKey: string,
+  language: "th" | "lo" | "en" | undefined,
   context: string,
   glossary: string[],
 ): Promise<string> {
-  const instructions = [
-    "This recording is spoken Lao (Vientiane / Central Lao), not Thai.",
-    "Transcribe it verbatim in Lao script (U+0E80–U+0EFF) exactly as spoken.",
-    "Never translate, never use Thai script, never summarise, never invent speech that is not audible.",
-    "Preserve tone marks, repeated words, names, numbers and spoken particles.",
-    "Lao speakers mix English words into Lao sentences: write any spoken English word in Latin letters exactly as said — never transliterate it into Lao script and never drop it.",
-    "Return the transcript text only, with no labels, quotes or commentary.",
-
-  ];
+  const instructions = language === "lo"
+    ? [
+      "This recording is spoken Lao (Vientiane / Central Lao), not Thai.",
+      "Transcribe it verbatim in Lao script (U+0E80–U+0EFF) exactly as spoken.",
+      "Never translate, never use Thai script, never summarise, never invent speech that is not audible.",
+      "Preserve tone marks, repeated words, names, numbers and spoken particles.",
+      "Lao speakers mix English words into Lao sentences: write any spoken English word in Latin letters exactly as said — never transliterate it into Lao script and never drop it.",
+      "Return the transcript text only, with no labels, quotes or commentary.",
+    ]
+    : [
+      `Transcribe this recording verbatim${language === "th" ? " in Thai script" : language === "en" ? " in English" : ""} exactly as spoken.`,
+      "Never translate, never summarise, never invent speech that is not audible.",
+      "Return the transcript text only, with no labels, quotes or commentary.",
+    ];
   if (glossary.length) instructions.push(`Preferred spellings when audible: ${glossary.slice(0, 40).join(", ")}`);
   if (context) instructions.push(`Context before this audio, for spelling continuity only: ${context.slice(-500)}`);
 
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "google/gemini-3.7-flash",
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: instructions.join(" ") },
-          { type: "input_audio", input_audio: { data: audioBase64, format: "wav" } },
-        ],
-      }],
-    }),
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Gemini transcription failed [${response.status}]: ${body.slice(0, 300)}`);
-  }
-  const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
-  return (payload.choices?.[0]?.message?.content ?? "").trim();
+  return geminiChat(GEMINI_TRANSCRIBE_MODEL, [{
+    role: "user",
+    content: [
+      { type: "text", text: instructions.join(" ") },
+      { type: "input_audio", input_audio: { data: audioBase64, format: "wav" } },
+    ],
+  }], "Gemini transcription");
 }
 
 export async function transcribeAudioServer(input: {
@@ -228,9 +221,12 @@ export async function transcribeAudioServer(input: {
   context?: string;
   glossary?: string[];
 }): Promise<TranscriptionResult> {
-  // Read lazily: Lao can complete on ElevenLabs alone if the gateway key is absent.
-  const apiKey = process.env["LOVABLE_API_KEY"];
-  if (!apiKey && input.language !== "lo") throw new Error("Missing LOVABLE_API_KEY");
+  // Read lazily: every engine is optional as long as at least one is configured.
+  const hasGemini = !!geminiKey();
+  const hasOpenAI = !!openaiKey();
+  if (!hasGemini && !hasOpenAI && !process.env["ELEVENLABS_API_KEY"]) {
+    throw new Error("ยังไม่ได้ตั้งค่า API key สำหรับถอดเสียง (GEMINI_API_KEY)");
+  }
 
   const binary = Uint8Array.from(atob(input.audioBase64), (character) => character.charCodeAt(0));
   const attempts = input.language === "lo" ? [0, 0] : [0];
@@ -242,9 +238,9 @@ export async function transcribeAudioServer(input: {
   if (input.language === "lo") {
     const [scribeResult, geminiResult] = await Promise.allSettled([
       transcribeWithScribe(binary, input.glossary ?? []),
-      apiKey
-        ? transcribeWithGemini(input.audioBase64, apiKey, input.context ?? "", input.glossary ?? [])
-        : Promise.reject(new Error("Missing LOVABLE_API_KEY")),
+      hasGemini
+        ? transcribeWithGemini(input.audioBase64, "lo", input.context ?? "", input.glossary ?? [])
+        : Promise.reject(new Error("Missing GEMINI_API_KEY")),
     ]);
 
     if (scribeResult.status === "fulfilled") {
@@ -262,7 +258,7 @@ export async function transcribeAudioServer(input: {
     if (geminiResult.status === "fulfilled") {
       const text = cleanup(geminiResult.value, "lo");
       if (text && !alternatives.includes(text)) alternatives.push(text);
-    } else if (apiKey) {
+    } else if (hasGemini) {
       lastError = geminiResult.reason instanceof Error ? geminiResult.reason : new Error("Gemini transcription failed");
     }
   }
@@ -270,10 +266,18 @@ export async function transcribeAudioServer(input: {
 
 
 
-  for (let index = 0; index < attempts.length && apiKey; index++) {
+  // Without OpenAI, Thai/English fall back to a single Gemini pass.
+  if (!hasOpenAI && input.language !== "lo" && hasGemini) {
+    const text = cleanup(
+      await transcribeWithGemini(input.audioBase64, input.language, input.context ?? "", input.glossary ?? []),
+      input.language,
+    );
+    if (text) alternatives.push(text);
+  }
+
+  for (let index = 0; index < attempts.length && hasOpenAI; index++) {
     const form = new FormData();
 
-    form.append("model", "openai/gpt-4o-transcribe");
     form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
     form.append("temperature", String(attempts[index]));
     if (input.language === "lo") form.append("prompt", laoPrompt(input.context ?? "", input.glossary ?? [], index > 0));
@@ -283,11 +287,7 @@ export async function transcribeAudioServer(input: {
     }
 
     try {
-      const response = await fetch("https://ai.gateway.lovable.dev/v1/audio/transcriptions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: form,
-      });
+      const response = await openaiTranscribe(form);
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         const error = new Error(`Transcription failed [${response.status}]: ${body.slice(0, 300)}`);
