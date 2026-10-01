@@ -32,7 +32,14 @@ type ChatContent =
       | { type: "input_audio"; input_audio: { data: string; format: "wav" } }
     )[];
 
-/** Gemini chat completion; returns the first choice's text. */
+/** Used when the configured model name is unknown to the Gemini API. */
+const GEMINI_FALLBACK_MODEL = "gemini-2.5-flash";
+
+/**
+ * Gemini chat completion; returns the first choice's text. If the configured
+ * model does not exist for this API key, retries once with a stable model so
+ * a wrong model name degrades quality instead of silently dropping Gemini.
+ */
 export async function geminiChat(
   model: string,
   messages: { role: "system" | "user"; content: ChatContent }[],
@@ -40,17 +47,30 @@ export async function geminiChat(
 ): Promise<string> {
   const apiKey = geminiKey();
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
-  const response = await fetch(`${GEMINI_BASE}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages }),
-  });
-  if (!response.ok) {
+  const models = model === GEMINI_FALLBACK_MODEL ? [model] : [model, GEMINI_FALLBACK_MODEL];
+  let lastError: Error | null = null;
+  for (const candidate of models) {
+    const response = await fetch(`${GEMINI_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: candidate, messages }),
+    });
+    if (response.ok) {
+      const payload = (await response.json()) as {
+        choices?: { message?: { content?: string } }[];
+      };
+      return (payload.choices?.[0]?.message?.content ?? "").trim();
+    }
     const body = await response.text().catch(() => "");
-    throw new Error(`${label} failed [${response.status}]: ${body.slice(0, 300)}`);
+    lastError = new Error(
+      `${label} failed [${response.status}] (${candidate}): ${body.slice(0, 300)}`,
+    );
+    const unknownModel =
+      response.status === 404 || (response.status === 400 && /model/i.test(body));
+    if (!unknownModel) break;
+    console.error(`[gemini] model ${candidate} unavailable, trying fallback`, body.slice(0, 300));
   }
-  const payload = (await response.json()) as { choices?: { message?: { content?: string } }[] };
-  return (payload.choices?.[0]?.message?.content ?? "").trim();
+  throw lastError ?? new Error(`${label} failed`);
 }
 
 /** OpenAI audio transcription. The form must not include `model`. */

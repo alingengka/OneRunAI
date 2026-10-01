@@ -184,7 +184,22 @@ function Studio() {
     setEnabled: setAudioEnabled,
     setPack: setAudioPack,
   } = useAudioFeedback();
-  const transcribe = useServerFn(transcribeAudio);
+  const transcribeFn = useServerFn(transcribeAudio);
+  // Surface engine failures (e.g. a bad API key) once instead of silently
+  // returning lower-quality subtitles.
+  const warnedRef = useRef(new Set<string>());
+  const transcribe = useCallback(
+    async (args: Parameters<typeof transcribeFn>[0]) => {
+      const res = await transcribeFn(args);
+      for (const warning of res.warnings ?? []) {
+        if (warnedRef.current.has(warning)) continue;
+        warnedRef.current.add(warning);
+        toast.warning(warning, { duration: 12000 });
+      }
+      return res;
+    },
+    [transcribeFn],
+  );
   const translate = useServerFn(translateLines);
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
