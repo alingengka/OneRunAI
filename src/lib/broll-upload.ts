@@ -8,7 +8,12 @@ export type UploadedAsset = { url: string; type: "image" | "video" };
 /** อัปโหลดสื่อของผู้ใช้เองเข้าคลังไฟล์ แล้วคืนลิงก์ที่ใช้ได้ยาว 1 ปี */
 export async function uploadBrollAsset(file: File): Promise<UploadedAsset> {
   const type: "image" | "video" = file.type.startsWith("video/") ? "video" : "image";
-  const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+  const ext =
+    file.name
+      .split(".")
+      .pop()
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]/g, "") || "bin";
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("กรุณาเข้าสู่ระบบก่อนอัปโหลด");
   // Storage policies only allow writes inside the user's own folder.
