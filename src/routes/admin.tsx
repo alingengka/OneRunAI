@@ -20,6 +20,7 @@ import {
 } from "@/lib/account.functions";
 import { formatKip, PLAN_LABELS } from "@/lib/account-shared";
 import { useAccount, useSession } from "@/lib/auth";
+import { UsageSummary } from "@/components/admin/UsageSummary";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "ผู้ดูแลระบบ — OneRunAI" }] }),
@@ -67,14 +68,18 @@ function AdminPage() {
       </header>
       <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <h1 className="mb-6 text-xl font-bold">ผู้ดูแลระบบ</h1>
-        <Tabs defaultValue="pending">
+        <Tabs defaultValue="usage">
           <TabsList className="flex h-auto flex-wrap">
+            <TabsTrigger value="usage">สรุปการใช้งาน</TabsTrigger>
             <TabsTrigger value="pending">สลิปรอตรวจ</TabsTrigger>
             <TabsTrigger value="approved">อนุมัติแล้ว</TabsTrigger>
             <TabsTrigger value="rejected">ไม่อนุมัติ</TabsTrigger>
             <TabsTrigger value="settings">ตั้งค่าการรับเงิน</TabsTrigger>
             <TabsTrigger value="promo">โค้ดส่วนลด</TabsTrigger>
           </TabsList>
+          <TabsContent value="usage">
+            <UsageSummary />
+          </TabsContent>
           <TabsContent value="pending">
             <PaymentList status="pending" />
           </TabsContent>
