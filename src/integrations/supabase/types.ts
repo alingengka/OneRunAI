@@ -14,13 +14,218 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      app_settings: {
+        Row: {
+          id: number
+          payment_qr_url: string | null
+          bank_name: string | null
+          account_name: string | null
+          account_number: string | null
+          contact: string | null
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          payment_qr_url?: string | null
+          bank_name?: string | null
+          account_name?: string | null
+          account_number?: string | null
+          contact?: string | null
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          payment_qr_url?: string | null
+          bank_name?: string | null
+          account_name?: string | null
+          account_number?: string | null
+          contact?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          id: string
+          user_id: string
+          plan: string
+          promo_code: string | null
+          amount_kip: number
+          slip_path: string
+          status: string
+          admin_note: string | null
+          created_at: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          plan: string
+          promo_code?: string | null
+          amount_kip: number
+          slip_path: string
+          status?: string
+          admin_note?: string | null
+          created_at?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          plan?: string
+          promo_code?: string | null
+          amount_kip?: number
+          slip_path?: string
+          status?: string
+          admin_note?: string | null
+          created_at?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+        }
+        Relationships: []
+      }
+      plans: {
+        Row: {
+          id: string
+          name: string
+          price_kip: number
+          duration_days: number
+          quota_seconds: number
+          sort_order: number
+          active: boolean
+        }
+        Insert: {
+          id: string
+          name: string
+          price_kip?: number
+          duration_days: number
+          quota_seconds: number
+          sort_order?: number
+          active?: boolean
+        }
+        Update: {
+          id?: string
+          name?: string
+          price_kip?: number
+          duration_days?: number
+          quota_seconds?: number
+          sort_order?: number
+          active?: boolean
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          id: string
+          email: string | null
+          trial_ends_at: string
+          plan: string | null
+          paid_until: string | null
+          is_admin: boolean
+          created_at: string
+        }
+        Insert: {
+          id: string
+          email?: string | null
+          trial_ends_at?: string
+          plan?: string | null
+          paid_until?: string | null
+          is_admin?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string | null
+          trial_ends_at?: string
+          plan?: string | null
+          paid_until?: string | null
+          is_admin?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      promo_codes: {
+        Row: {
+          code: string
+          monthly_price_kip: number | null
+          yearly_price_kip: number | null
+          expires_at: string | null
+          max_uses: number | null
+          used_count: number
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          code: string
+          monthly_price_kip?: number | null
+          yearly_price_kip?: number | null
+          expires_at?: string | null
+          max_uses?: number | null
+          used_count?: number
+          active?: boolean
+          created_at?: string
+        }
+        Update: {
+          code?: string
+          monthly_price_kip?: number | null
+          yearly_price_kip?: number | null
+          expires_at?: string | null
+          max_uses?: number | null
+          used_count?: number
+          active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      usage_events: {
+        Row: {
+          id: number
+          user_id: string
+          seconds: number
+          kind: string
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          user_id: string
+          seconds: number
+          kind: string
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          user_id?: string
+          seconds?: number
+          kind?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      account_status: {
+        Args: { uid: string }
+        Returns: {
+          status: string
+          plan: string | null
+          ends_at: string | null
+          quota_seconds: number
+          used_seconds: number
+        }[]
+      }
+      approve_payment: {
+        Args: { payment_id: string; admin_id: string }
+        Returns: undefined
+      }
+      consume_ai_seconds: {
+        Args: { uid: string; secs: number; usage_kind: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never

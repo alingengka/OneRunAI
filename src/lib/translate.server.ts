@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GEMINI_TRANSLATE_MODEL, geminiChat, geminiKey } from "./ai-providers.server";
 
 export const translateLinesInputValidator = (data: unknown) =>
   z.object({
@@ -73,48 +74,27 @@ function readTranslations(raw: string, expected: TranslationItem[]): string[] | 
 }
 
 async function requestTranslation(
-  apiKey: string,
   items: TranslationItem[],
   target: TranslationInput["target"],
 ): Promise<string[] | null> {
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
+  const content = await geminiChat(GEMINI_TRANSLATE_MODEL, [
+    {
+      role: "system",
+      content:
+        `Translate every item into ${LANGUAGE_NAMES[target]}. Preserve each id exactly. ` +
+        "Return only JSON in this shape: {\"translations\":[{\"id\":\"line_0\",\"text\":\"translation\"}]}. " +
+        "Return one item for every input item in the same order. Do not merge, split, omit, or renumber items.",
     },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages: [
-        {
-          role: "system",
-          content:
-            `Translate every item into ${LANGUAGE_NAMES[target]}. Preserve each id exactly. ` +
-            "Return only JSON in this shape: {\"translations\":[{\"id\":\"line_0\",\"text\":\"translation\"}]}. " +
-            "Return one item for every input item in the same order. Do not merge, split, omit, or renumber items.",
-        },
-        { role: "user", content: JSON.stringify({ items }) },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Translation failed [${response.status}]: ${body.slice(0, 300)}`);
-  }
-
-  const payload = (await response.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  return readTranslations(payload.choices?.[0]?.message?.content ?? "", items);
+    { role: "user", content: JSON.stringify({ items }) },
+  ], "Translation");
+  return readTranslations(content, items);
 }
 
 async function translateBatch(
-  apiKey: string,
   items: TranslationItem[],
   target: TranslationInput["target"],
 ): Promise<string[]> {
-  const translated = await requestTranslation(apiKey, items, target);
+  const translated = await requestTranslation(items, target);
   if (translated) return translated;
 
   if (items.length === 1) {
@@ -123,15 +103,14 @@ async function translateBatch(
 
   const middle = Math.ceil(items.length / 2);
   const [left, right] = await Promise.all([
-    translateBatch(apiKey, items.slice(0, middle), target),
-    translateBatch(apiKey, items.slice(middle), target),
+    translateBatch(items.slice(0, middle), target),
+    translateBatch(items.slice(middle), target),
   ]);
   return [...left, ...right];
 }
 
 export async function translateLinesHandler({ data }: { data: TranslationInput }) {
-  const apiKey = process.env["LOVABLE_API_KEY"];
-  if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+  if (!geminiKey()) throw new Error("ยังไม่ได้ตั้งค่า GEMINI_API_KEY สำหรับแปลซับ");
 
   const output = new Array<string>(data.lines.length);
   const items: TranslationItem[] = [];
@@ -142,7 +121,7 @@ export async function translateLinesHandler({ data }: { data: TranslationInput }
   });
 
   if (items.length) {
-    const translated = await translateBatch(apiKey, items, data.target);
+    const translated = await translateBatch(items, data.target);
     items.forEach((item, index) => {
       const originalIndex = Number(item.id.slice("line_".length));
       output[originalIndex] = translated[index] ?? data.lines[originalIndex] ?? "";
