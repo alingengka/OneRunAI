@@ -17,6 +17,8 @@ export type TranscriptionResult = {
   /** Real word timings from ElevenLabs Scribe, present whenever Scribe answered. */
   words?: TimedWord[];
   wordSource?: "scribe" | null;
+  /** Engines that failed while others succeeded; shown to the user once. */
+  warnings?: string[];
 };
 
 function laoPrompt(context: string, glossary: string[], strict: boolean): string {
@@ -234,6 +236,12 @@ export async function transcribeAudioServer(input: {
   const transliterated = new Set<string>();
   let scribeTiming: TimedWord[] = [];
   let lastError: Error | null = null;
+  const warnings: string[] = [];
+  const warn = (engine: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[transcribe] ${engine} failed:`, message);
+    warnings.push(`${engine} ใช้งานไม่ได้ ซับอาจไม่ครบหรือไม่แม่น: ${message.slice(0, 160)}`);
+  };
 
   if (input.language === "lo") {
     const [scribeResult, geminiResult] = await Promise.allSettled([
@@ -253,6 +261,7 @@ export async function transcribeAudioServer(input: {
       }
     } else {
       lastError = scribeResult.reason instanceof Error ? scribeResult.reason : new Error("ElevenLabs transcription failed");
+      warn("ElevenLabs", lastError);
     }
 
     if (geminiResult.status === "fulfilled") {
@@ -260,6 +269,7 @@ export async function transcribeAudioServer(input: {
       if (text && !alternatives.includes(text)) alternatives.push(text);
     } else if (hasGemini) {
       lastError = geminiResult.reason instanceof Error ? geminiResult.reason : new Error("Gemini transcription failed");
+      warn("Gemini", lastError);
     }
   }
 
@@ -307,7 +317,7 @@ export async function transcribeAudioServer(input: {
 
   if (!alternatives.length) {
     if (lastError) throw lastError;
-    return { text: "", alternatives: [], agreement: 0, words: scribeTiming, wordSource: scribeTiming.length ? "scribe" : null };
+    return { text: "", alternatives: [], agreement: 0, words: scribeTiming, wordSource: scribeTiming.length ? "scribe" : null, warnings };
   }
   const bestLatin = Math.max(0, ...alternatives.map((text) => latinWords(text).length));
   const ranked = alternatives
@@ -327,5 +337,6 @@ export async function transcribeAudioServer(input: {
     agreement: ranked[0]?.score ?? 0,
     words: scribeTiming,
     wordSource: scribeTiming.length ? "scribe" : null,
+    warnings,
   };
 }
