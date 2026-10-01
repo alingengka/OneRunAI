@@ -265,6 +265,10 @@ on conflict (id) do nothing;
 -- B-roll: signed-in users only, each in their own folder.
 drop policy if exists "broll assets readable" on storage.objects;
 drop policy if exists "broll assets uploadable" on storage.objects;
+drop policy if exists "broll own read" on storage.objects;
+drop policy if exists "broll own upload" on storage.objects;
+drop policy if exists "slip own read" on storage.objects;
+drop policy if exists "slip own upload" on storage.objects;
 create policy "broll own read" on storage.objects for select to authenticated
   using (bucket_id = 'broll-assets' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "broll own upload" on storage.objects for insert to authenticated
