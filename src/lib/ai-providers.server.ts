@@ -67,17 +67,26 @@ export async function geminiChat(
   model: string,
   messages: { role: "system" | "user"; content: ChatContent }[],
   label: string,
+  options: { temperature?: number; retries?: number } = {},
 ): Promise<string> {
   const apiKey = geminiKey();
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
   const models = model === GEMINI_FALLBACK_MODEL ? [model] : [model, GEMINI_FALLBACK_MODEL];
   let lastError: Error | null = null;
   for (const candidate of models) {
-    const response = await fetchWithRetry(`${GEMINI_BASE}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: candidate, messages }),
-    });
+    const response = await fetchWithRetry(
+      `${GEMINI_BASE}/chat/completions`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: candidate,
+          messages,
+          ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+        }),
+      },
+      options.retries,
+    );
     if (response.ok) {
       const payload = (await response.json()) as {
         choices?: { message?: { content?: string } }[];
