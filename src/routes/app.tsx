@@ -1351,6 +1351,42 @@ function Studio() {
     }
   };
 
+  // Space bar plays / pauses, except while typing in a text field.
+  const togglePlayRef = useRef(togglePlay);
+  togglePlayRef.current = togglePlay;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.code !== "Space" && event.key !== " ") return;
+      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
+      ) {
+        return;
+      }
+      // Also covers a focused button, which would otherwise be clicked again.
+      event.preventDefault();
+      togglePlayRef.current();
+    };
+    // A focused button activates on Space keyup; swallow that too.
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space" && event.key !== " ") return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
+      ) {
+        return;
+      }
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
   const remap = useCallback(
     (t: number) => (outputSegments.length ? mapToTrimmed(t, outputSegments) : t),
     [outputSegments],
