@@ -31,13 +31,13 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "OneRunAI — ใส่ซับลาวให้คลิปไวรัลด้วย AI" },
+      { title: "OneRunAI — ใส่ซับลาวให้คลิปไวรัลด้วย OneRun" },
       {
         name: "description",
         content:
           "AI ถอดเสียงภาษาลาวเป็นซับทีละคำ ตัดช่วงเงียบ ใส่สไตล์ สติกเกอร์ และ B-roll แล้วส่งออกพร้อมโพสต์ TikTok, Reels, Shorts ทดลองใช้ฟรี 5 วัน",
       },
-      { property: "og:title", content: "OneRunAI — ใส่ซับลาวให้คลิปไวรัลด้วย AI" },
+      { property: "og:title", content: "OneRunAI — ใส่ซับลาวให้คลิปไวรัลด้วย OneRun" },
       {
         property: "og:description",
         content: "ซับลาวแม่นยำ ตัดช่วงเงียบ สไตล์ไวรัล ส่งออกพร้อมโพสต์ ทดลองใช้ฟรี 5 วัน",
@@ -324,10 +324,10 @@ function Landing() {
             <h1 className="mt-6 font-landing text-[2.6rem] font-black leading-[1.08] tracking-tight sm:text-6xl">
               ใส่ซับลาวให้คลิป
               <br />
-              <span className="bg-gradient-to-r from-white via-violet-100 to-violet-300 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-white via-violet-200 to-violet-500 bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(167,139,250,0.55)]">
                 ไวรัล
               </span>{" "}
-              ภายใน 5 นาที
+              <span className="whitespace-nowrap">ด้วย OneRun</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-white/65 sm:text-lg">
               อัปโหลดคลิป แล้วให้ AI ถอดเสียงลาวเป็นซับทีละคำ ตัดช่วงเงียบ ใส่สไตล์ สติกเกอร์ และ
