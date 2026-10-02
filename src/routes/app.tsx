@@ -113,6 +113,7 @@ import {
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt, type MotionKind } from "@/lib/media/motion";
+import { primeFirstFrame } from "@/lib/media/first-frame";
 import {
   addSceneElement,
   buildScenes,
@@ -2581,9 +2582,10 @@ function Studio() {
               {videoUrl ? (
                 <video
                   ref={videoRef}
-                  // "#t=0.001" makes iOS Safari paint the first frame instead of a blank box
-                  src={`${videoUrl}#t=0.001`}
+                  src={videoUrl}
                   preload="auto"
+                  // iOS Safari shows a blank box until a video has played once
+                  onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
                   className="h-full w-full object-cover will-change-transform"
                   style={{
                     transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,

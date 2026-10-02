@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { brollAt } from "@/lib/media/broll";
+import { primeFirstFrame } from "@/lib/media/first-frame";
 import type { Scene, SceneElement } from "@/lib/scenes";
 
 type Props = {
@@ -42,6 +43,10 @@ export function BrollOverlay({ scenes, sceneElements, time, playing }: Props) {
           muted
           loop
           playsInline
+          preload="auto"
+          onLoadedData={(e) => {
+            if (!playing) primeFirstFrame(e.currentTarget);
+          }}
         />
       ) : (
         <img src={url} alt="B-roll" className="h-full w-full object-cover" />
