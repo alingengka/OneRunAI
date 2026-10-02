@@ -29,8 +29,59 @@ type Props = {
 
 const strokeWidth = { none: 0, small: 1, medium: 2, large: 3 } as const;
 
-function PresetPreview({ preset, text }: { preset: CaptionStyle; text: string }) {
+/** Two-line sample for podcast-style presets: a short lead-in, then the key words. */
+const TWO_LINE_SAMPLE: Record<string, [string, string]> = {
+  lo: ["ຂໍແຄ່", "ຫາເງິນ"],
+  th: ["ขอแค่", "ทำเงิน"],
+  en: ["Microsoft", "Success"],
+};
+
+function PresetPreview({
+  preset,
+  text,
+  language,
+}: {
+  preset: CaptionStyle;
+  text: string;
+  language?: string | undefined;
+}) {
   const shadow = strokeWidth[preset.shadow];
+
+  if (preset.splitLines === 2) {
+    const [lead, key] = TWO_LINE_SAMPLE[language ?? "th"] ?? TWO_LINE_SAMPLE["th"]!;
+    const second = preset.lineStyles?.[1];
+    return (
+      <span
+        className="flex w-full flex-col items-start px-4 text-left font-bold leading-tight"
+        style={{
+          fontFamily: preset.fontFamily,
+          textShadow: "0 2px 6px rgba(0,0,0,0.85)",
+        }}
+      >
+        <span className="text-lg text-white">{lead}</span>
+        <span
+          style={{
+            color: second?.color ?? preset.color,
+            fontSize: `${1.125 * (second?.scale ?? 1)}rem`,
+            fontWeight: 900,
+          }}
+        >
+          {key}
+        </span>
+      </span>
+    );
+  }
+
+  if (preset.plate) {
+    return (
+      <span
+        className="w-4/5 truncate rounded-sm px-2 py-0.5 text-left text-lg font-bold"
+        style={{ background: preset.plateColor, color: preset.color, fontFamily: preset.fontFamily }}
+      >
+        {text}
+      </span>
+    );
+  }
 
   return (
     <span
@@ -227,7 +278,7 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
                   className="absolute inset-0 z-10 cursor-pointer"
                   aria-label={`ใช้สไตล์ ${preset.name}`}
                 />
-                <PresetPreview preset={preset} text={sampleText} />
+                <PresetPreview preset={preset} text={sampleText} language={language} />
                 {null}
 
                 {mode === "mine" && (

@@ -2266,6 +2266,15 @@ function Studio() {
             </div>
           )}
 
+          {(tab === "styles" || tab === "customize") && (
+            <div className="mb-5">
+              <CaptionLayoutControls
+                style={style}
+                onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+              />
+            </div>
+          )}
+
           {tab === "styles" && (
             <StylePicker
               activeId={style.id}
@@ -2276,6 +2285,12 @@ function Studio() {
                 setStyle((current) => ({
                   ...preset,
                   captionMode: current.captionMode ?? preset.captionMode,
+                  joinWords: current.joinWords ?? preset.joinWords,
+                  // presets on the default Latin font keep the font picked for the language
+                  fontFamily:
+                    preset.fontFamily === baseStyle.fontFamily
+                      ? current.fontFamily
+                      : preset.fontFamily,
                 }));
                 void play(preset.animation);
                 toast.success(`ใช้สไตล์ ${preset.name}`);
@@ -2339,10 +2354,6 @@ function Studio() {
 
           {tab === "text" && (
             <div className="space-y-5">
-              <CaptionLayoutControls
-                style={style}
-                onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-              />
               <CaptionList
                 groups={groups}
                 words={words}
