@@ -175,6 +175,8 @@ export function splitEmphasis(
 }
 
 
+export type CaptionMode = "sentence" | "word" | "fixed";
+
 export type CaptionStyle = {
   id: string;
   name: string;
@@ -200,6 +202,12 @@ export type CaptionStyle = {
   posY: number;
   posX: number;
   wordsPerGroup: number;
+  /**
+   * How words are grouped on screen: "sentence" shows a whole phrase (split
+   * at pauses and punctuation), "word" one word at a time, "fixed" exactly
+   * `wordsPerGroup` words. Older saved styles have no value; see captionModeOf.
+   */
+  captionMode?: CaptionMode | undefined;
   /** words per rendered line (0 = all on one line) */
   wordsPerLine: number;
   textAlign: "left" | "center" | "right";
@@ -211,6 +219,16 @@ export type CaptionStyle = {
   plateColor: string;
   /** ระยะห่างระหว่างบรรทัด (เท่าของขนาดฟอนต์) */
   lineGap?: number;
+  /** extra space between letters, in em */
+  letterSpacing?: number | undefined;
+  /** 0–1 opacity of the whole caption */
+  opacity?: number | undefined;
+  /** rotation of the caption block, in degrees */
+  rotation?: number | undefined;
+  /** 0–1 opacity of the background plate (default 0.9) */
+  plateOpacity?: number | undefined;
+  /** plate corner radius, in em (default 0.22) */
+  plateRadius?: number | undefined;
   /** สไตล์เฉพาะบรรทัดที่ 1,2,3… (index เริ่มที่ 0) */
   lineStyles?: Record<number, LineStyle>;
 };
@@ -633,3 +651,75 @@ export function groupWords(words: Word[], perGroup: number): CaptionGroup[] {
   return groups;
 }
 
+
+export function captionModeOf(style: Pick<CaptionStyle, "captionMode" | "wordsPerGroup">): CaptionMode {
+  return style.captionMode ?? (style.wordsPerGroup === 1 ? "word" : "sentence");
+}
+
+const SENTENCE_END = /[.!?…,;:。、ฯ]$/;
+
+/**
+ * Groups words into spoken phrases: a new caption starts after a pause, after
+ * punctuation, or when the line would get too long to read at a glance.
+ */
+export function groupSentences(
+  words: Word[],
+  options: { pause?: number; maxWords?: number; maxChars?: number } = {},
+): CaptionGroup[] {
+  const pause = options.pause ?? 0.45;
+  const maxWords = options.maxWords ?? 8;
+  const maxChars = options.maxChars ?? 32;
+  const groups: CaptionGroup[] = [];
+  let current: Word[] = [];
+  let counted = 0;
+  let chars = 0;
+  let last: Word | null = null;
+
+  const flush = () => {
+    const visible = current.filter((w) => w.text !== LINE_BREAK);
+    if (visible.length) {
+      groups.push({ start: visible[0]!.start, end: visible[visible.length - 1]!.end, words: [...current] });
+    }
+    current = [];
+    counted = 0;
+    chars = 0;
+  };
+
+  for (const word of words) {
+    if (word.text === LINE_BREAK) {
+      current.push(word);
+      continue;
+    }
+    const length = word.text.length;
+    const breakHere =
+      last !== null &&
+      counted > 0 &&
+      (word.start - last.end >= pause ||
+        SENTENCE_END.test(last.text) ||
+        counted >= maxWords ||
+        chars + length > maxChars);
+    if (breakHere) flush();
+    current.push(word);
+    counted++;
+    chars += length;
+    last = word;
+  }
+  flush();
+  return groups;
+}
+
+export function groupCaptions(words: Word[], style: Pick<CaptionStyle, "captionMode" | "wordsPerGroup">): CaptionGroup[] {
+  const mode = captionModeOf(style);
+  if (mode === "word") return groupWords(words, 1);
+  if (mode === "fixed") return groupWords(words, style.wordsPerGroup);
+  return groupSentences(words);
+}
+
+/** Hex color (#rgb or #rrggbb) with an alpha, as rgba(). */
+export function withAlpha(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean.slice(0, 6);
+  const value = Number.parseInt(full, 16);
+  if (!Number.isFinite(value)) return hex;
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${Math.max(0, Math.min(1, alpha))})`;
+}

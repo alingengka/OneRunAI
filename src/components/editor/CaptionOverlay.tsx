@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth } from "@/lib/captions";
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { RotateCw } from "lucide-react";
+import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth, withAlpha } from "@/lib/captions";
 
 
 type Props = {
@@ -12,15 +13,33 @@ type Props = {
   onPositionChange?: (position: { posX: number; posY: number }) => void;
   /** edit the current caption text inline; "\n" separates rows */
   onEditText?: (text: string) => void;
+  /** resize / rotate from the on-video handles */
+  onTransform?: (patch: { size?: number; rotation?: number }) => void;
+  /** show the resize and rotate handles (hidden while playing) */
+  showHandles?: boolean;
 };
+
+type Gesture =
+  | { kind: "resize"; cx: number; cy: number; startDist: number; startSize: number }
+  | { kind: "rotate"; cx: number; cy: number };
+
+/** Snaps an angle to the nearest quarter turn when it is within 4°. */
+function snapAngle(deg: number): number {
+  const normalized = ((deg + 540) % 360) - 180;
+  for (const target of [-180, -90, 0, 90, 180]) {
+    if (Math.abs(normalized - target) <= 4) return target === -180 ? 180 : target;
+  }
+  return Math.round(normalized);
+}
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const boldStroke = (fontSize: number) => `${Math.max(1, Math.round(fontSize * 0.035))}px currentColor`;
 
-export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText }: Props) {
+export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText, onTransform, showHandles }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  const [gesture, setGesture] = useState<Gesture | null>(null);
 
   useEffect(() => {
     if (!editing) setDraft("");
@@ -83,7 +102,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
   const speed = Math.max(0.25, style.animationSpeed ?? 1);
   const p = clamp01((time - group.start) / (0.18 / speed));
 
-  let containerTransform = "translate(-50%, -50%)";
+  const rotation = style.rotation ?? 0;
+  let containerTransform = `translate(-50%, -50%)${rotation ? ` rotate(${rotation}deg)` : ""}`;
   let containerOpacity = 1;
 
   if (anim === "pop") {
@@ -119,6 +139,44 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
   const maxY = safeArea ? 74 : 95;
   const posX = clamp(style.posX, minX, maxX);
   const posY = clamp(style.posY, minY, maxY);
+
+  const beginGesture = (event: ReactPointerEvent<HTMLElement>, kind: Gesture["kind"]) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const box = event.currentTarget.parentElement?.getBoundingClientRect();
+    if (!box) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const cx = box.left + box.width / 2;
+    const cy = box.top + box.height / 2;
+    setGesture(
+      kind === "resize"
+        ? {
+            kind,
+            cx,
+            cy,
+            startDist: Math.max(8, Math.hypot(event.clientX - cx, event.clientY - cy)),
+            startSize: style.size,
+          }
+        : { kind, cx, cy },
+    );
+  };
+  const moveGesture = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!gesture || !onTransform) return;
+    event.stopPropagation();
+    const dx = event.clientX - gesture.cx;
+    const dy = event.clientY - gesture.cy;
+    if (gesture.kind === "resize") {
+      const size = (gesture.startSize * Math.hypot(dx, dy)) / gesture.startDist;
+      onTransform({ size: Math.round(clamp(size, 2, 16) * 10) / 10 });
+    } else {
+      // the handle sits above the text, so straight up is 0°
+      onTransform({ rotation: snapAngle((Math.atan2(dy, dx) * 180) / Math.PI + 90) });
+    }
+  };
+  const endGesture = (event: ReactPointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    setGesture(null);
+  };
 
   if (editing && onEditText) {
     return (
@@ -179,7 +237,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         left: `${posX}%`,
         top: `${posY}%`,
         transform: containerTransform,
-        width,
+        // centered text hugs its lines so the handles frame the words, not the whole row
+        ...((style.textAlign ?? "center") === "center" ? { width: "max-content", maxWidth: width } : { width }),
         textAlign: style.textAlign ?? "center",
         lineHeight: 1.15,
         fontFamily: style.fontFamily,
@@ -189,7 +248,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         color: style.color,
         textShadow,
         textTransform: style.uppercase ? "uppercase" : "none",
-        opacity: containerOpacity,
+        opacity: containerOpacity * (style.opacity ?? 1),
+        letterSpacing: style.letterSpacing ? `${style.letterSpacing}em` : undefined,
         overflowWrap: "break-word",
         wordBreak: "break-word",
       }}
@@ -224,7 +284,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
               display: "inline-block",
               maxWidth: "100%",
               background: style.plate
-                ? style.plateColor
+                ? withAlpha(style.plateColor, style.plateOpacity ?? 0.9)
                 : anim === "highlight"
                   ? `linear-gradient(to top, ${ACCENT_PRIMARY_HEX} ${(1 - Math.pow(1 - p, 3)) * 100}%, transparent ${(1 - Math.pow(1 - p, 3)) * 100}%)`
                   : undefined,
@@ -232,7 +292,11 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                 style.plate || anim === "highlight"
                   ? `${fontSize * 0.12}px ${fontSize * 0.28}px`
                   : undefined,
-              borderRadius: style.plate || anim === "highlight" ? fontSize * 0.22 : undefined,
+              borderRadius: style.plate
+                ? fontSize * (style.plateRadius ?? 0.22)
+                : anim === "highlight"
+                  ? fontSize * 0.22
+                  : undefined,
               marginTop: li > 0 ? fontSize * gap : undefined,
             }}
           >
@@ -308,6 +372,41 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         );
       })}
       {visibleWords.length === 0 && null}
+      {onTransform && (showHandles || gesture) && (
+        <>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-1.5 rounded-md border border-dashed border-white/80 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+          />
+          <span
+            role="button"
+            aria-label="ลากเพื่อหมุนข้อความ"
+            title="ลากเพื่อหมุน (ดับเบิลคลิกเพื่อตั้งตรง)"
+            onPointerDown={(event) => beginGesture(event, "rotate")}
+            onPointerMove={moveGesture}
+            onPointerUp={endGesture}
+            onPointerCancel={endGesture}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              onTransform({ rotation: 0 });
+            }}
+            className="absolute -top-9 left-1/2 grid h-7 w-7 -translate-x-1/2 cursor-grab touch-none place-items-center rounded-full bg-white text-black shadow-md"
+            style={{ textShadow: "none" }}
+          >
+            <RotateCw className="h-3.5 w-3.5" />
+          </span>
+          <span
+            role="button"
+            aria-label="ลากเพื่อย่อหรือขยายข้อความ"
+            title="ลากเพื่อย่อ/ขยาย"
+            onPointerDown={(event) => beginGesture(event, "resize")}
+            onPointerMove={moveGesture}
+            onPointerUp={endGesture}
+            onPointerCancel={endGesture}
+            className="absolute -bottom-3 -right-3 h-6 w-6 cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
+          />
+        </>
+      )}
     </div>
   );
 }

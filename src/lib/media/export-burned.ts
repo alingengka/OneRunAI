@@ -73,6 +73,8 @@ export async function exportBurnedVideo(
     scenes?: MotionScene[];
     sceneElements?: MotionElement[];
     resolution?: ExportResolution;
+    /** Requested frame rate; real-time capture may still lower it. */
+    fps?: number;
   } = {},
 ): Promise<{ blob: Blob; ext: "mp4" | "webm"; width: number; height: number; fps: number; plannedFps: number; fpsAdapted: boolean; frames: number; painted: number; chunks: number; expectedDuration: number; segments: ExportSegmentDiagnostic[]; frameStats: { avgMs: number; p95Ms: number; maxMs: number; maxAtSec: number; overBudget: number; budgetMs: number } }> {
 
@@ -142,7 +144,7 @@ export async function exportBurnedVideo(
     // 4K canvas วาดช้ากว่ามาก จับที่ 24fps เพื่อไม่ให้เฟรมตกจนภาพกระตุก
     // 4K: การวัดจริงพบว่าเบราว์เซอร์วาด+เข้ารหัส 8.3 ล้านพิกเซลได้ ~6-12fps
     // จึงตั้งเป้าที่ 15fps (เดินสม่ำเสมอ) แทน 24/30fps ที่เฟรมหลุดเป็นช่วง ๆ
-    const plannedFps = width * height >= 3840 * 2160 * 0.8 ? 15 : 30;
+    const plannedFps = width * height >= 3840 * 2160 * 0.8 ? 15 : Math.min(options.fps ?? 30, 30);
     let fps = plannedFps;
     let frameBudget = 1000 / fps;
     // จับเฟรมเอง (captureStream(0) + requestFrame) แทนการให้เบราว์เซอร์ดูดที่ fps

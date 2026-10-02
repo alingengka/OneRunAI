@@ -28,6 +28,7 @@ import {
   type CaptionStyle,
   type LineStyle,
   type TextEmphasis,
+  withAlpha,
 } from "../captions";
 
 export type ExportResolution = "source" | "4k" | "1080" | "720";
@@ -250,6 +251,12 @@ export function createBurnRenderer(
   const fontSize = (style.size / 100) * height;
   const baseGap = (style.lineGap ?? 0.08) * fontSize;
   const lineHeight = fontSize * 1.18;
+  /** Canvas letterSpacing (Chrome, Edge, Safari 17+); ignored where unsupported. */
+  const letterSpacing = style.letterSpacing ? `${style.letterSpacing * fontSize}px` : "0px";
+  const setSpacing = () => {
+    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = letterSpacing;
+  };
+  const baseAlpha = Math.max(0.05, Math.min(1, style.opacity ?? 1));
 
   /** ความกว้างสูงสุดของข้อความ (ให้ตรงกับพรีวิวที่กว้าง 88% ของเฟรม) */
   const maxTextWidth = width * 0.88;
@@ -269,6 +276,7 @@ export function createBurnRenderer(
       const weight = emphasizedWeight(ls.fontWeight ?? style.fontWeight, native.bold);
       const font = `${native.italic ? "italic " : ""}${weight} ${fontSize}px ${family}`;
       ctx.font = font;
+      setSpacing();
       const space = ctx.measureText(" ").width;
       const pad = emphasisPad(fontSize, synthetic);
       const gap = (ls.gap ?? 0) * fontSize;
@@ -299,6 +307,8 @@ export function createBurnRenderer(
 
     const blockHeight = metrics.reduce((n, m, i) => n + lineHeight + (i ? baseGap + m.gap : 0), 0);
     const layout: GroupLayout = { lines, metrics, blockHeight };
+    // Measuring set the caption spacing; other overlays draw without it.
+    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
     layoutCache.set(group, layout);
     return layout;
   };
@@ -322,7 +332,17 @@ export function createBurnRenderer(
 
     ctx.textBaseline = "middle";
     const centerX = (style.posX / 100) * width;
-    let y = (style.posY / 100) * height - blockHeight / 2 + lineHeight / 2;
+    const centerY = (style.posY / 100) * height;
+    let y = centerY - blockHeight / 2 + lineHeight / 2;
+
+    ctx.save();
+    setSpacing();
+    ctx.globalAlpha = baseAlpha;
+    if (style.rotation) {
+      ctx.translate(centerX, centerY);
+      ctx.rotate((style.rotation * Math.PI) / 180);
+      ctx.translate(-centerX, -centerY);
+    }
 
     // สไลด์2: เลื่อนทั้งบล็อกเข้าจากด้านข้าง (คำยังถูกวาดครบทุกคำ)
     const slid = anim === "slideUp2";
@@ -344,10 +364,16 @@ export function createBurnRenderer(
             : centerX - m.total / 2;
 
       if (style.plate) {
-        ctx.fillStyle = style.plateColor;
-        ctx.globalAlpha = 0.9;
-        ctx.fillRect(left - fontSize * 0.28, y - lineHeight * 0.6, m.total + fontSize * 0.56, lineHeight * 1.2);
-        ctx.globalAlpha = 1;
+        ctx.fillStyle = withAlpha(style.plateColor, style.plateOpacity ?? 0.9);
+        ctx.beginPath();
+        ctx.roundRect(
+          left - fontSize * 0.28,
+          y - lineHeight * 0.6,
+          m.total + fontSize * 0.56,
+          lineHeight * 1.2,
+          fontSize * (style.plateRadius ?? 0.22),
+        );
+        ctx.fill();
       }
 
       // ไฮไลต์: แถบสีม่วงธีมเลื่อนขึ้นมาจากด้านล่างของบรรทัด
@@ -355,11 +381,11 @@ export function createBurnRenderer(
         const bh = lineHeight * 1.12 * ease;
         const bottom = y + lineHeight * 0.56;
         ctx.fillStyle = ACCENT_PRIMARY_HEX;
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = 0.85 * baseAlpha;
         ctx.beginPath();
         ctx.roundRect(left - fontSize * 0.24, bottom - bh, m.total + fontSize * 0.48, bh, fontSize * 0.18);
         ctx.fill();
-        ctx.globalAlpha = 1;
+        ctx.globalAlpha = baseAlpha;
       }
 
       let x = left;
@@ -371,7 +397,7 @@ export function createBurnRenderer(
         const wordProgress = clamp01((time - word.start) / (0.14 / speed));
         if (highlighted && style.highlight === "box") {
           ctx.fillStyle = style.highlightColor;
-          ctx.globalAlpha = 1;
+          ctx.globalAlpha = baseAlpha;
           const r = fontSize * 0.16;
           const bx = x - fontSize * 0.12;
           const by = y - lineHeight * 0.56;
@@ -461,6 +487,7 @@ export function createBurnRenderer(
     });
 
     if (slid) ctx.restore();
+    ctx.restore();
   };
 
 

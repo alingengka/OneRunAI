@@ -1,4 +1,6 @@
 import {
+  type TouchList as ReactTouchList,
+  type TouchEvent as ReactTouchEvent,
   useEffect,
   useMemo,
   useRef,
@@ -27,7 +29,12 @@ type Props = {
 };
 
 const MIN_WORD = 0.05;
-const ZOOMS = [40, 60, 80, 110, 150, 200, 260];
+/** Pixels per second limits; zoom is continuous between them. */
+const MIN_PPS = 24;
+const MAX_PPS = 480;
+const BUTTON_STEP = 1.35;
+
+const clampPps = (value: number) => Math.min(MAX_PPS, Math.max(MIN_PPS, value));
 
 type Drag = { index: number; edge: "start" | "end"; originX: number; start: number; end: number };
 
@@ -45,10 +52,72 @@ export function WordTrack({
   className,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState(compact ? 1 : 3);
+  const [pps, setPps] = useState(compact ? 60 : 110);
   const [drag, setDrag] = useState<Drag | null>(null);
-  const pps = ZOOMS[zoom] ?? 110;
   const width = Math.max(1, duration) * pps;
+  const ppsRef = useRef(pps);
+  ppsRef.current = pps;
+  const pinchRef = useRef<{ distance: number; pps: number } | null>(null);
+
+  /** Zooms around a point of the visible track so the time under it stays put. */
+  const zoomAt = (nextPps: number, anchorX?: number) => {
+    const el = scrollRef.current;
+    const current = ppsRef.current;
+    const target = clampPps(nextPps);
+    if (!el || target === current) return;
+    const x = anchorX ?? el.clientWidth / 2;
+    const anchorTime = (el.scrollLeft + x) / current;
+    ppsRef.current = target;
+    setPps(target);
+    requestAnimationFrame(() => {
+      el.scrollLeft = Math.max(0, anchorTime * target - x);
+    });
+  };
+
+  // Trackpad pinch (Mac and Windows send it as ctrl+wheel) and the mouse
+  // wheel zoom; sideways swipes and shift+wheel still scroll the track.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      const pinch = event.ctrlKey || event.metaKey;
+      const vertical = Math.abs(event.deltaY) > Math.abs(event.deltaX) && !event.shiftKey;
+      if (!pinch && !vertical) return;
+      event.preventDefault();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+      const delta = event.deltaY * unit;
+      const factor = Math.exp(-delta * (pinch ? 0.01 : 0.0025));
+      zoomAt(ppsRef.current * factor, event.clientX - el.getBoundingClientRect().left);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+    // zoomAt only reads refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Two-finger pinch on touch screens.
+  const touchDistance = (touches: ReactTouchList) => {
+    const a = touches[0];
+    const b = touches[1];
+    return a && b ? Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) : 0;
+  };
+  const onTouchStart = (event: ReactTouchEvent) => {
+    if (event.touches.length === 2) {
+      pinchRef.current = { distance: touchDistance(event.touches), pps: ppsRef.current };
+    }
+  };
+  const onTouchMove = (event: ReactTouchEvent) => {
+    const pinch = pinchRef.current;
+    const el = scrollRef.current;
+    if (!pinch || event.touches.length !== 2 || !el || !pinch.distance) return;
+    const a = event.touches[0]!;
+    const b = event.touches[1]!;
+    const midX = (a.clientX + b.clientX) / 2 - el.getBoundingClientRect().left;
+    zoomAt((pinch.pps * touchDistance(event.touches)) / pinch.distance, midX);
+  };
+  const onTouchEnd = (event: ReactTouchEvent) => {
+    if (event.touches.length < 2) pinchRef.current = null;
+  };
 
   const tickStep = pps >= 110 ? 1 : pps >= 60 ? 2 : 5;
   const ticks = useMemo(() => {
@@ -58,28 +127,29 @@ export function WordTrack({
   }, [duration, tickStep]);
 
   // Keep the playhead in view while the video plays or is scrubbed.
+  // Zooming alone does not re-center, so the zoom anchor stays where it is.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || drag) return;
-    const x = time * pps;
+    const x = time * ppsRef.current;
     if (x < el.scrollLeft + 24 || x > el.scrollLeft + el.clientWidth - 64) {
       el.scrollLeft = Math.max(0, x - el.clientWidth * 0.35);
     }
-  }, [time, pps, drag]);
+  }, [time, drag]);
 
   // Bring a newly selected word into view (e.g. picked from the caption list).
   useEffect(() => {
     const el = scrollRef.current;
     const word = selected != null ? words[selected] : undefined;
     if (!el || !word) return;
-    const left = word.start * pps;
-    const right = word.end * pps;
+    const left = word.start * ppsRef.current;
+    const right = word.end * ppsRef.current;
     if (left < el.scrollLeft || right > el.scrollLeft + el.clientWidth) {
       el.scrollLeft = Math.max(0, left - el.clientWidth * 0.35);
     }
     // Only when the selection changes, not on every edit of the words.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, pps]);
+  }, [selected]);
 
   const bounds = (index: number) => {
     let prevEnd = 0;
@@ -149,7 +219,8 @@ export function WordTrack({
         <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border px-3">
           <span className="text-sm font-semibold">ไทม์ไลน์คำ</span>
           <span className="hidden truncate text-xs text-muted-foreground md:inline">
-            คลิกคำเพื่อเลือก · ลากขอบคำที่เลือกเพื่อปรับเวลา · ลายทาง = ช่วงเงียบที่ถูกตัด
+            คลิกคำเพื่อเลือก · ลากขอบคำเพื่อปรับเวลา · เลื่อนลูกกลิ้ง/บีบนิ้วบนแทร็กแพดเพื่อซูม ·
+            ลายทาง = ช่วงเงียบที่ถูกตัด
           </span>
           <div className="ml-auto flex items-center gap-1">
             <Button
@@ -157,8 +228,8 @@ export function WordTrack({
               variant="ghost"
               className="h-8 w-8"
               aria-label="ซูมออก"
-              disabled={zoom <= 0}
-              onClick={() => setZoom((z) => Math.max(0, z - 1))}
+              disabled={pps <= MIN_PPS}
+              onClick={() => zoomAt(pps / BUTTON_STEP)}
             >
               <ZoomOut className="h-4 w-4" />
             </Button>
@@ -167,8 +238,8 @@ export function WordTrack({
               variant="ghost"
               className="h-8 w-8"
               aria-label="ซูมเข้า"
-              disabled={zoom >= ZOOMS.length - 1}
-              onClick={() => setZoom((z) => Math.min(ZOOMS.length - 1, z + 1))}
+              disabled={pps >= MAX_PPS}
+              onClick={() => zoomAt(pps * BUTTON_STEP)}
             >
               <ZoomIn className="h-4 w-4" />
             </Button>
@@ -177,7 +248,11 @@ export function WordTrack({
       )}
       <div
         ref={scrollRef}
-        className="relative min-w-0 overflow-x-auto overflow-y-hidden overscroll-x-contain"
+        className="relative min-w-0 touch-pan-x overflow-x-auto overflow-y-hidden overscroll-x-contain"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        onTouchCancel={onTouchEnd}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}

@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import {
   animationOptions,
+  captionModeOf,
   fontOptions,
   sampleTextForLanguage,
   type CaptionStyle,
@@ -157,6 +158,48 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
         />
       </Control>
 
+      <div className="grid grid-cols-2 gap-4">
+        <Control label="ระยะห่างตัวอักษร" value={`${Math.round((style.letterSpacing ?? 0) * 100)}`}>
+          <Slider
+            value={[style.letterSpacing ?? 0]}
+            min={-0.05}
+            max={0.5}
+            step={0.01}
+            onValueChange={([value]) => onChange({ letterSpacing: value ?? 0 })}
+          />
+        </Control>
+        <Control label="ความทึบ" value={`${Math.round((style.opacity ?? 1) * 100)}%`}>
+          <Slider
+            value={[style.opacity ?? 1]}
+            min={0.1}
+            max={1}
+            step={0.05}
+            onValueChange={([value]) => onChange({ opacity: value ?? 1 })}
+          />
+        </Control>
+      </div>
+
+      <Control label="หมุน" value={`${Math.round(style.rotation ?? 0)}°`}>
+        <div className="flex items-center gap-3">
+          <Slider
+            value={[style.rotation ?? 0]}
+            min={-180}
+            max={180}
+            step={1}
+            onValueChange={([value]) => onChange({ rotation: value ?? 0 })}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!style.rotation}
+            onClick={() => onChange({ rotation: 0 })}
+          >
+            ตั้งตรง
+          </Button>
+        </div>
+      </Control>
+
       <Control label="รูปแบบตัวอักษร">
         <div className="grid grid-cols-4 gap-2">
           <Button
@@ -275,13 +318,27 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
               </Control>
             </div>
 
-            <Control label="Karaoke" value={`${style.wordsPerGroup} คำ`}>
+            <Control
+              label="จำนวนคำต่อซับ"
+              value={
+                captionModeOf(style) === "sentence"
+                  ? "ทั้งประโยค"
+                  : captionModeOf(style) === "word"
+                    ? "ทีละคำ"
+                    : `${style.wordsPerGroup} คำ`
+              }
+            >
               <Slider
-                value={[style.wordsPerGroup]}
+                value={[captionModeOf(style) === "word" ? 1 : style.wordsPerGroup]}
                 min={1}
                 max={8}
                 step={1}
-                onValueChange={([value]) => onChange({ wordsPerGroup: value ?? 1 })}
+                onValueChange={([value]) =>
+                  onChange({
+                    wordsPerGroup: value ?? 1,
+                    captionMode: (value ?? 1) === 1 ? "word" : "fixed",
+                  })
+                }
               />
             </Control>
             <Control
@@ -375,6 +432,34 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
                 />
               </Control>
             </div>
+            {style.plate && (
+              <div className="grid grid-cols-2 gap-4">
+                <Control
+                  label="ความทึบพื้นหลัง"
+                  value={`${Math.round((style.plateOpacity ?? 0.9) * 100)}%`}
+                >
+                  <Slider
+                    value={[style.plateOpacity ?? 0.9]}
+                    min={0.1}
+                    max={1}
+                    step={0.05}
+                    onValueChange={([value]) => onChange({ plateOpacity: value ?? 0.9 })}
+                  />
+                </Control>
+                <Control
+                  label="ความมนของมุม"
+                  value={`${Math.round((style.plateRadius ?? 0.22) * 100)}`}
+                >
+                  <Slider
+                    value={[style.plateRadius ?? 0.22]}
+                    min={0}
+                    max={0.8}
+                    step={0.02}
+                    onValueChange={([value]) => onChange({ plateRadius: value ?? 0.22 })}
+                  />
+                </Control>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <Control label="ไฮไลต์คำ">
                 <Segmented
