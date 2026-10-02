@@ -138,7 +138,7 @@ export function targetSize(
   };
 }
 
-type StaticWord = { text: string; start: number; end: number; keyword: boolean };
+type StaticWord = { text: string; start: number; end: number; keyword: boolean; color?: string | undefined };
 type StaticLine = { words: StaticWord[] };
 
 /**
@@ -161,6 +161,7 @@ function layoutGroupStatic(group: CaptionGroup, style: CaptionStyle): StaticLine
       start: word.start,
       end: word.end,
       keyword: isKeyword(word.text),
+      color: word.color,
     });
   }
   const filled = lines.filter((line) => line.words.length);
@@ -479,7 +480,7 @@ export function createBurnRenderer(
           ctx.shadowOffsetY = blur ? blur * 0.25 : 0;
         }
 
-        const baseColor = m.ls.color ?? style.color;
+        const baseColor = word.color ?? m.ls.color ?? style.color;
         const karaokeColor = style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor;
         const karaokeLike = anim === "karaoke" || anim === "karaokePlus" || anim === "karaoke2";
         ctx.fillStyle =

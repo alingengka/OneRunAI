@@ -212,6 +212,75 @@ export function WordTrack({
   };
 
   const blockHeight = compact ? 34 : 40;
+  const handlers = useRef({ onSelect, onSeek });
+  handlers.current = { onSelect, onSeek };
+
+  const wordBlocks = useMemo(
+    () =>
+      words.map((word, index) => {
+        if (word.text === LINE_BREAK) return null;
+        const isSelected = selected === index;
+        const start = drag?.index === index ? drag.start : word.start;
+        const end = drag?.index === index ? drag.end : word.end;
+        const w = Math.max(6, (end - start) * pps - 2);
+        return (
+          <div
+            key={`${index}-${word.start}`}
+            className="absolute top-0 h-full"
+            style={{ left: start * pps, width: w }}
+          >
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => {
+                onSelect(index);
+                onSeek(word.start);
+              }}
+              title={
+                typeof word.confidence === "number"
+                  ? `${word.text} · ความมั่นใจ ${Math.round(word.confidence * 100)}%`
+                  : word.text
+              }
+              className={cn(
+                "h-full w-full overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-xs transition-colors",
+                isSelected
+                  ? "border-2 border-amber-400 bg-amber-400/15 text-amber-800 dark:text-amber-100"
+                  : "border-border bg-secondary text-foreground hover:border-primary/60",
+                !isSelected &&
+                  word.confidenceLabel === "low" &&
+                  "border-amber-500/70 text-amber-700 dark:text-amber-200",
+              )}
+            >
+              {word.text}
+            </button>
+            {isSelected && (
+              <>
+                <span
+                  aria-hidden="true"
+                  title="ลากเพื่อปรับเวลาเริ่มของคำ"
+                  onPointerDown={(event) => beginDrag(event, index, "start")}
+                  className="absolute -left-1.5 top-0 h-full w-3 cursor-ew-resize touch-none"
+                >
+                  <span className="absolute left-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-amber-400" />
+                </span>
+                <span
+                  aria-hidden="true"
+                  title="ลากเพื่อปรับเวลาจบของคำ"
+                  onPointerDown={(event) => beginDrag(event, index, "end")}
+                  className="absolute -right-1.5 top-0 h-full w-3 cursor-ew-resize touch-none"
+                >
+                  <span className="absolute right-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-amber-400" />
+                </span>
+              </>
+            )}
+          </div>
+        );
+      }),
+    // Word blocks only change with the words, selection, drag or zoom — not with
+    // the playhead, which moves every frame while the video plays.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [words, selected, drag, pps, blockHeight],
+  );
 
   return (
     <div data-word-track="" className={cn("flex min-w-0 flex-col", className)}>
@@ -293,65 +362,7 @@ export function WordTrack({
                 }}
               />
             ))}
-            {words.map((word, index) => {
-              if (word.text === LINE_BREAK) return null;
-              const isSelected = selected === index;
-              const start = drag?.index === index ? drag.start : word.start;
-              const end = drag?.index === index ? drag.end : word.end;
-              const w = Math.max(6, (end - start) * pps - 2);
-              return (
-                <div
-                  key={`${index}-${word.start}`}
-                  className="absolute top-0 h-full"
-                  style={{ left: start * pps, width: w }}
-                >
-                  <button
-                    type="button"
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={() => {
-                      onSelect(index);
-                      onSeek(word.start);
-                    }}
-                    title={
-                      typeof word.confidence === "number"
-                        ? `${word.text} · ความมั่นใจ ${Math.round(word.confidence * 100)}%`
-                        : word.text
-                    }
-                    className={cn(
-                      "h-full w-full overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-xs transition-colors",
-                      isSelected
-                        ? "border-2 border-amber-400 bg-amber-400/15 text-amber-800 dark:text-amber-100"
-                        : "border-border bg-secondary text-foreground hover:border-primary/60",
-                      !isSelected &&
-                        word.confidenceLabel === "low" &&
-                        "border-amber-500/70 text-amber-700 dark:text-amber-200",
-                    )}
-                  >
-                    {word.text}
-                  </button>
-                  {isSelected && (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        title="ลากเพื่อปรับเวลาเริ่มของคำ"
-                        onPointerDown={(event) => beginDrag(event, index, "start")}
-                        className="absolute -left-1.5 top-0 h-full w-3 cursor-ew-resize touch-none"
-                      >
-                        <span className="absolute left-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-amber-400" />
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        title="ลากเพื่อปรับเวลาจบของคำ"
-                        onPointerDown={(event) => beginDrag(event, index, "end")}
-                        className="absolute -right-1.5 top-0 h-full w-3 cursor-ew-resize touch-none"
-                      >
-                        <span className="absolute right-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-amber-400" />
-                      </span>
-                    </>
-                  )}
-                </div>
-              );
-            })}
+            {wordBlocks}
           </div>
 
           <div

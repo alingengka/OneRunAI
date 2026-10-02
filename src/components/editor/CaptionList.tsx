@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { CornerDownLeft, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,13 +7,15 @@ import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover"
 import { cn } from "@/lib/utils";
 import { LINE_BREAK, type CaptionGroup, type Word } from "@/lib/captions";
 import { normalizeWordTimes } from "@/lib/caption-editing";
+import { ColorSwatches } from "./ColorSwatches";
 
 type Props = {
   groups: CaptionGroup[];
   /** Full word list; groups hold the same word objects. */
   words: Word[];
   duration: number;
-  time: number;
+  /** index of the caption shown at the playhead, -1 for none */
+  activeIndex: number;
   selected: number | null;
   onSelect: (index: number | null) => void;
   onSeek: (time: number) => void;
@@ -28,11 +30,11 @@ function fmtTime(t: number) {
 }
 
 /** Caption lines with per-word editing in a popover (Submagic-style). */
-export function CaptionList({
+function CaptionListView({
   groups,
   words,
   duration,
-  time,
+  activeIndex,
   selected,
   onSelect,
   onSeek,
@@ -77,7 +79,7 @@ export function CaptionList({
   return (
     <div ref={listRef} className="space-y-1.5">
       {groups.map((group, gi) => {
-        const active = time >= group.start && time <= group.end;
+        const active = gi === activeIndex;
         return (
           <div
             key={`${gi}-${group.start}`}
@@ -145,7 +147,20 @@ export function CaptionList({
                             : undefined
                         }
                       >
-                        {word.text}
+                        <span
+                          style={
+                            word.color
+                              ? {
+                                  textDecorationLine: "underline",
+                                  textDecorationColor: word.color,
+                                  textDecorationThickness: 3,
+                                  textUnderlineOffset: 6,
+                                }
+                              : undefined
+                          }
+                        >
+                          {word.text}
+                        </span>
                       </button>
                     </PopoverAnchor>
                     {isSelected && selectedWord && (
@@ -220,6 +235,15 @@ export function CaptionList({
                             />
                           </div>
                         </div>
+                        <div className="space-y-1.5">
+                          <span className="text-xs text-muted-foreground">สีของคำนี้</span>
+                          <ColorSwatches
+                            label="สีของคำนี้"
+                            value={selectedWord.color}
+                            resetLabel="ตามสไตล์"
+                            onChange={(color) => editWord(index, { color })}
+                          />
+                        </div>
                         <div className="grid gap-1 border-t border-border pt-2">
                           <Button
                             variant="ghost"
@@ -289,3 +313,15 @@ export function CaptionList({
     </div>
   );
 }
+
+/**
+ * Re-renders only when the captions, selection or active line change, not
+ * on every playback frame. Handlers come from the editor and only matter
+ * together with those values, so a stale handler is never called with
+ * stale data.
+ */
+export const CaptionList = memo(CaptionListView, (prev, next) =>
+  (Object.keys(next) as (keyof Props)[]).every(
+    (key) => typeof next[key] === "function" || prev[key] === next[key],
+  ),
+);

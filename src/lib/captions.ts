@@ -9,6 +9,8 @@ export type Word = {
   /** 0–1 evidence score from transcript agreement and acoustic boundary fit. */
   confidence?: number;
   confidenceLabel?: WordConfidence;
+  /** color picked for this word only (overrides the caption color) */
+  color?: string | undefined;
 };
 export type CaptionGroup = { start: number; end: number; words: Word[] };
 

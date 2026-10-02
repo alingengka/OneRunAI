@@ -141,7 +141,10 @@ import { OneRunLogo } from "@/components/brand/OneRunLogo";
 import { isAccountError } from "@/lib/account-shared";
 import { runInOrderPool } from "@/lib/pool";
 import { AccessGate } from "@/components/account/AccessGate";
-import { CaptionLayoutControls } from "@/components/editor/CaptionLayoutControls";
+import {
+  CaptionColorControls,
+  CaptionLayoutControls,
+} from "@/components/editor/CaptionLayoutControls";
 import { ExportMenu, loadExportPreset, type ExportType } from "@/components/editor/ExportMenu";
 import { StickerOverlay } from "@/components/editor/StickerOverlay";
 import { StickerPanel } from "@/components/editor/StickerPanel";
@@ -446,6 +449,7 @@ function Studio() {
   }, [videoUrl]);
 
   // playback clock + silence skipping
+  const lastClockRef = useRef(0);
   useEffect(() => {
     let raf = 0;
     const tick = () => {
@@ -459,7 +463,13 @@ function Studio() {
             v.currentTime = next ? next.start : v.duration;
           }
         }
-        setTime(v.currentTime);
+        // ~30 updates a second is smooth for captions; phones run requestAnimationFrame
+        // at 120Hz, and re-rendering the editor that often made playback stutter.
+        const now = v.currentTime;
+        if (v.paused || Math.abs(now - lastClockRef.current) >= 1 / 30) {
+          lastClockRef.current = now;
+          setTime(now);
+        }
       }
       raf = requestAnimationFrame(tick);
     };
@@ -1340,6 +1350,42 @@ function Studio() {
       setPlaying(false);
     }
   };
+
+  // Space bar plays / pauses, except while typing in a text field.
+  const togglePlayRef = useRef(togglePlay);
+  togglePlayRef.current = togglePlay;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.code !== "Space" && event.key !== " ") return;
+      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
+      ) {
+        return;
+      }
+      // Also covers a focused button, which would otherwise be clicked again.
+      event.preventDefault();
+      togglePlayRef.current();
+    };
+    // A focused button activates on Space keyup; swallow that too.
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space" && event.key !== " ") return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
+      ) {
+        return;
+      }
+      event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
 
   const remap = useCallback(
     (t: number) => (outputSegments.length ? mapToTrimmed(t, outputSegments) : t),
@@ -2272,6 +2318,15 @@ function Studio() {
                 style={style}
                 onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
               />
+              <div className="mt-4">
+                <CaptionColorControls
+                  style={style}
+                  onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                อยากให้บางคำเป็นสีอื่น: ไปที่ ซับไตเติล → แตะคำ → เลือก “สีของคำนี้”
+              </p>
             </div>
           )}
 
@@ -2358,7 +2413,7 @@ function Studio() {
                 groups={groups}
                 words={words}
                 duration={duration}
-                time={time}
+                activeIndex={activeGroupIndex}
                 selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
                 onSelect={setSelectedWord}
                 onSeek={seekTo}

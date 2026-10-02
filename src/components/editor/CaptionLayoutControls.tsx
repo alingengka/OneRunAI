@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { captionModeOf, type CaptionStyle } from "@/lib/captions";
+import { ColorSwatches } from "./ColorSwatches";
 
 type Props = {
   style: CaptionStyle;
@@ -56,6 +57,47 @@ function Segmented({
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/** Accent: the big second line of two-line styles, otherwise the highlight color. */
+function accentPatch(style: CaptionStyle, color: string): Partial<CaptionStyle> {
+  if (style.splitLines === 2) {
+    const lines = { ...(style.lineStyles ?? {}) };
+    lines[1] = { ...(lines[1] ?? {}), color };
+    return { lineStyles: lines };
+  }
+  return {
+    highlightColor: color,
+    highlight: style.highlight === "none" ? "color" : style.highlight,
+  };
+}
+
+/** Quick text and accent colors at the top of the Style tab. */
+export function CaptionColorControls({ style, onChange }: Props) {
+  const accent = style.splitLines === 2 ? style.lineStyles?.[1]?.color : style.highlightColor;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-1.5">
+        <span className="text-xs text-muted-foreground">สีตัวอักษร</span>
+        <ColorSwatches
+          label="สีตัวอักษร"
+          value={style.color}
+          onChange={(color) => onChange({ color: color ?? "#ffffff" })}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <span className="text-xs text-muted-foreground">
+          {style.splitLines === 2 ? "สีบรรทัดคำเด่น" : "สีคำที่กำลังพูด (ไฮไลต์)"}
+        </span>
+        <ColorSwatches
+          label="สีคำเด่น"
+          value={style.highlight === "none" && style.splitLines !== 2 ? undefined : accent}
+          resetLabel={style.splitLines === 2 ? undefined : "ปิด"}
+          onChange={(color) => onChange(color ? accentPatch(style, color) : { highlight: "none" })}
+        />
       </div>
     </div>
   );
