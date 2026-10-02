@@ -1499,6 +1499,8 @@ function Studio() {
               accept="video/*,audio/*"
               onChange={(e) => {
                 const f = e.target.files?.[0];
+                // Clear the input so choosing the same file again still fires onChange.
+                e.target.value = "";
                 if (f) void onPickFile(f);
               }}
             />
@@ -1506,9 +1508,11 @@ function Studio() {
           <Button
             variant="secondary"
             onClick={() => fileInputRef.current?.click()}
-            className="hidden sm:inline-flex"
+            className="px-3 sm:px-4"
+            aria-label="อัปโหลดคลิป"
           >
-            <Upload className="mr-2 h-4 w-4" /> อัปโหลดคลิป
+            <Upload className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">อัปโหลดคลิป</span>
           </Button>
           <Button variant="secondary" onClick={saveNow} className="hidden md:inline-flex">
             <Save className="mr-2 h-4 w-4" /> บันทึก
@@ -2540,7 +2544,9 @@ function Studio() {
               {videoUrl ? (
                 <video
                   ref={videoRef}
-                  src={videoUrl}
+                  // "#t=0.001" makes iOS Safari paint the first frame instead of a blank box
+                  src={`${videoUrl}#t=0.001`}
+                  preload="auto"
                   className="h-full w-full object-cover will-change-transform"
                   style={{
                     transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,
