@@ -18,6 +18,7 @@ import {
   Waves,
   Wand2,
   Maximize2,
+  X,
   Save,
   Volume2,
   VolumeX,
@@ -272,6 +273,15 @@ function Studio() {
   const [playing, setPlaying] = useState(false);
   const [frameHeight, setFrameHeight] = useState(0);
   const [frameWidth, setFrameWidth] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
   const [stickers, setStickers] = useState<Sticker[]>([]);
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
 
@@ -497,7 +507,8 @@ function Studio() {
       play("success");
       return { buffer, segs };
     } catch (e) {
-      toast.error("อ่านเสียงจากไฟล์นี้ไม่ได้ ลองไฟล์ MP4/WebM ที่มีเสียง");
+      const noSpeech = e instanceof Error && e.message.startsWith("ไม่พบช่วงเสียงพูด");
+      toast.error(noSpeech ? e.message : "อ่านเสียงจากไฟล์นี้ไม่ได้ ลองไฟล์ MP4/WebM ที่มีเสียง");
       throw e;
     } finally {
       setAnalyzing(false);
@@ -1527,8 +1538,8 @@ function Studio() {
       </header>
 
       {job && (
-        <div className="mx-auto w-full max-w-[1500px] shrink-0 px-4 pt-4 sm:px-6">
-          <div className="flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3">
+        <div className="mx-auto w-full max-w-[1500px] shrink-0 px-2 pt-2 sm:px-6 sm:pt-4">
+          <div className="flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 px-3 py-1.5 sm:p-3">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
             <div className="min-w-0 flex-1">
               <div className="flex justify-between text-xs font-medium">
@@ -1549,7 +1560,7 @@ function Studio() {
         </div>
       )}
 
-      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.75rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[176px_minmax(0,1fr)_minmax(320px,400px)] lg:gap-4 lg:p-4 lg:pb-3">
+      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[176px_minmax(0,1fr)_minmax(320px,400px)] lg:gap-4 lg:p-4 lg:pb-3">
         {/* Desktop menu */}
         <nav
           aria-label="เมนูเครื่องมือ"
@@ -1582,8 +1593,8 @@ function Studio() {
 
         {/* Controls panel */}
         <section className="studio-panel order-3 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-3 sm:p-5 lg:order-none">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-bold">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 empty:hidden sm:mb-4">
+            <h2 className="hidden text-lg font-bold sm:block">
               {SECTIONS.find((s) => s.id === sectionOf(tab))?.label}
             </h2>
             {(sectionOf(tab) === "captions" || sectionOf(tab) === "scenes") && (
@@ -2488,9 +2499,43 @@ function Studio() {
                 aria-label="เปิดพรีวิว TikTok"
               />
             </div>
+            {expanded && (
+              <>
+                <div className="fixed inset-0 z-[65] bg-black" aria-hidden="true" />
+                <div className="fixed inset-x-0 top-0 z-[80] flex items-center justify-between gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="h-11 w-11 rounded-full bg-black/60 text-white hover:bg-black/80"
+                    onClick={togglePlay}
+                    aria-label={playing ? "หยุด" : "เล่น"}
+                  >
+                    {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                  </Button>
+                  <span className="rounded-full bg-black/60 px-3 py-1 font-mono text-xs text-white">
+                    {fmt(time)} / {fmt(duration)}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="h-11 w-11 rounded-full bg-black/60 text-white hover:bg-black/80"
+                    onClick={() => setExpanded(false)}
+                    aria-label="ออกจากเต็มจอ"
+                  >
+                    <X className="h-5 w-5" />
+                  </Button>
+                </div>
+              </>
+            )}
             <div
               ref={frameRef}
-              className={`relative mx-auto max-w-full overflow-hidden rounded-xl bg-preview shadow-primary-lg ring-1 ring-primary/20 ${tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]"} h-[30dvh] w-auto lg:h-[min(600px,calc(100dvh-480px))]`}
+              className={cn(
+                "mx-auto max-w-full overflow-hidden bg-preview",
+                tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]",
+                expanded
+                  ? "fixed left-1/2 top-1/2 z-[70] h-[100dvh] w-auto max-w-[100vw] -translate-x-1/2 -translate-y-1/2"
+                  : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh] lg:h-[min(600px,calc(100dvh-480px))]",
+              )}
             >
               {videoUrl ? (
                 <video
@@ -2582,53 +2627,56 @@ function Studio() {
                 />
               </div>
 
-              <Slider
-                value={[time]}
-                min={0}
-                max={Math.max(duration, 0.1)}
-                step={0.01}
-                onValueChange={([v]) => {
-                  if (videoRef.current) videoRef.current.currentTime = v ?? 0;
-                }}
-              />
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="icon"
-                    variant="secondary"
-                    onClick={togglePlay}
-                    disabled={!videoUrl}
-                    aria-label={playing ? "หยุด" : "เล่น"}
-                  >
-                    {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => {
-                      const next = !muted;
-                      setMuted(next);
-                      if (videoRef.current) videoRef.current.muted = next;
-                    }}
-                    disabled={!videoUrl}
-                    aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}
-                  >
-                    {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => void frameRef.current?.requestFullscreen?.()}
-                    disabled={!videoUrl}
-                    aria-label="เต็มหน้าจอ"
-                  >
-                    <Maximize2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {fmt(time)} / {fmt(duration)}
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="h-10 w-10 shrink-0"
+                  onClick={togglePlay}
+                  disabled={!videoUrl}
+                  aria-label={playing ? "หยุด" : "เล่น"}
+                >
+                  {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                </Button>
+                <Slider
+                  className="min-w-0 flex-1"
+                  value={[time]}
+                  min={0}
+                  max={Math.max(duration, 0.1)}
+                  step={0.01}
+                  aria-label="ตำแหน่งวิดีโอ"
+                  onValueChange={([v]) => {
+                    if (videoRef.current) videoRef.current.currentTime = v ?? 0;
+                  }}
+                />
+                <span className="shrink-0 font-mono text-[11px] text-muted-foreground sm:text-xs">
+                  {fmt(time)}
+                  <span className="hidden sm:inline"> / {fmt(duration)}</span>
                 </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-10 w-10 shrink-0"
+                  onClick={() => {
+                    const next = !muted;
+                    setMuted(next);
+                    if (videoRef.current) videoRef.current.muted = next;
+                  }}
+                  disabled={!videoUrl}
+                  aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}
+                >
+                  {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-10 w-10 shrink-0"
+                  onClick={() => setExpanded(true)}
+                  disabled={!videoUrl}
+                  aria-label="ขยายเต็มจอ"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
               </div>
             </div>
           </div>
@@ -2679,7 +2727,7 @@ function Studio() {
       {/* Phone: bottom toolbar */}
       <nav
         aria-label="เมนูเครื่องมือ"
-        className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >
         {SECTIONS.map(({ id, short, tab: target, icon: Icon }) => {
           const current = sectionOf(tab) === id;

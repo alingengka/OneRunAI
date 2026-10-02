@@ -211,7 +211,7 @@ export function WordTrack({
     onSeek(Math.max(0, Math.min(duration, t)));
   };
 
-  const blockHeight = compact ? 36 : 40;
+  const blockHeight = compact ? 34 : 40;
 
   return (
     <div data-word-track="" className={cn("flex min-w-0 flex-col", className)}>
@@ -257,7 +257,7 @@ export function WordTrack({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        <div className="relative px-0" style={{ width, height: compact ? 64 : 92 }}>
+        <div className="relative px-0" style={{ width, height: compact ? 52 : 92 }}>
           {!compact && (
             <div className="absolute inset-x-0 top-0 h-6" onPointerDown={seekFromEvent}>
               {ticks.map((t) => (
@@ -277,7 +277,7 @@ export function WordTrack({
 
           <div
             className="absolute inset-x-0"
-            style={{ top: compact ? 12 : 30, height: blockHeight }}
+            style={{ top: compact ? 9 : 30, height: blockHeight }}
             onPointerDown={seekFromEvent}
           >
             {cuts.map((cut, i) => (
@@ -361,7 +361,7 @@ export function WordTrack({
           />
         </div>
       </div>
-      {!words.length && (
+      {!words.length && !compact && (
         <p className="px-3 pb-3 text-xs text-muted-foreground">
           ยังไม่มีซับ — กด “สร้างซับด้วย AI” ในเมนูเครื่องมือ AI แล้วคำจะขึ้นที่นี่
         </p>
