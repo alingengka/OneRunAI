@@ -335,7 +335,7 @@ function Landing() {
             <Phone
               look="podcast"
               scene="linear-gradient(180deg,#4c1d95,#1e1b4b 50%,#0b0a12)"
-              lines={[["ຂໍແຄ່"], ["ຫາເງິນ"]]}
+              lines={[["ໃສ່ຊັບ"], ["ໂຄດງ່າຍ"]]}
               className="relative z-10 -translate-y-[4%]"
             />
           </Reveal>
