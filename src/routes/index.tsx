@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -24,9 +24,10 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { getPricing } from "@/lib/account.functions";
-import { formatKip, formatMinutes } from "@/lib/account-shared";
+import { formatKip } from "@/lib/account-shared";
 import { useSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { initialLang, LANDING_COPY, LANGS, saveLang, type Lang } from "@/lib/landing-i18n";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -50,89 +51,11 @@ export const Route = createFileRoute("/")({
 /** Code shown on the pricing card; prices match the promo row in the database. */
 const PROMO = { code: "ONERUN", monthlyKip: 99_000, yearlyKip: 990_000 };
 
-const NAV = [
-  { href: "#features", label: "ฟีเจอร์" },
-  { href: "#how", label: "วิธีใช้" },
-  { href: "#pricing", label: "ราคา" },
-  { href: "#faq", label: "คำถาม" },
-];
-
-const FEATURES = [
-  {
-    icon: Captions,
-    title: "ซับภาษาลาวแม่นยำ",
-    text: "AI หลายตัวช่วยกันถอดเสียงลาวเป็นอักษรลาวทีละคำ คำอังกฤษที่พูดปนก็ไม่หลุด",
-    wide: true,
-  },
-  {
-    icon: Scissors,
-    title: "ตัดช่วงเงียบอัตโนมัติ",
-    text: "ลบช่วงพูดเว้นว่างให้คลิปกระชับ จังหวะไวแบบคลิปไวรัล",
-  },
-  {
-    icon: Palette,
-    title: "สไตล์ซับพร้อมใช้",
-    text: "Podcast สองบรรทัด ไฮไลต์คำ แถบสี และเปลี่ยนสีทีละคำได้",
-  },
-  {
-    icon: Smile,
-    title: "อิโมจิและ Motion Graphic",
-    text: "อิโมจิเคลื่อนไหว ลูกศร ปุ่ม Follow และสติกเกอร์ของคุณเอง",
-  },
-  {
-    icon: Film,
-    title: "B-roll ฟรีในคลิกเดียว",
-    text: "AI แนะนำคำค้น แล้วเลือกวิดีโอและรูปฟรีใส่ในซีนได้ทันที",
-  },
-  {
-    icon: Languages,
-    title: "แปลซับหลายภาษา",
-    text: "แปลเป็นไทย ลาว หรืออังกฤษในคลิกเดียว เข้าถึงคนดูได้กว้างขึ้น",
-  },
-  {
-    icon: Download,
-    title: "ส่งออกถึง 4K",
-    text: "เลือกความละเอียดและ FPS พร้อมซับหรือไม่มีซับ หรือส่งต่อเข้า CapCut",
-    wide: true,
-  },
-];
-
-const STEPS = [
-  { icon: Upload, title: "อัปโหลดคลิป", text: "เลือกไฟล์จากมือถือหรือคอม รองรับ MP4 และ MOV" },
-  {
-    icon: Wand2,
-    title: "AI ใส่ซับให้",
-    text: "ถอดเสียงลาว ตัดช่วงเงียบ และจัดจังหวะคำให้อัตโนมัติ",
-  },
-  {
-    icon: Sparkles,
-    title: "แต่งแล้วส่งออก",
-    text: "เลือกสไตล์ ใส่สติกเกอร์และ B-roll แล้วโพสต์ได้เลย",
-  },
-];
-
-const FAQ = [
-  {
-    q: "ทดลองใช้ฟรีต้องผูกบัตรไหม?",
-    a: "ไม่ต้องครับ สมัครด้วยอีเมลแล้วใช้ได้ทุกฟีเจอร์ 5 วัน หมดแล้วเลือกได้ว่าจะสมัครต่อหรือไม่",
-  },
-  {
-    q: "ชำระเงินยังไง?",
-    a: "สแกน QR โอนผ่านแอปธนาคาร แล้วอัปโหลดสลิปในหน้าชำระเงิน ทีมงานตรวจสอบแล้วเปิดสิทธิ์ให้",
-  },
-  {
-    q: "รองรับภาษาอะไรบ้าง?",
-    a: "ถอดเสียงภาษาลาวเป็นหลัก รองรับไทยและอังกฤษ และแปลซับเป็นภาษาอื่นได้ในคลิกเดียว",
-  },
-  {
-    q: "ใช้บนมือถือได้ไหม?",
-    a: "ได้ครับ เปิดผ่านเบราว์เซอร์บน iPhone หรือ Android ได้เลย ไม่ต้องลงแอป",
-  },
-  {
-    q: "นาทีถอดเสียงคืออะไร?",
-    a: "คือความยาวเสียงที่ให้ AI ถอดเป็นซับ ทดลองใช้ได้ 30 นาที แพ็กเกจรายเดือนและรายปีได้ 300 นาทีต่อเดือน",
-  },
-];
+const NAV_HREFS = ["#features", "#how", "#pricing", "#faq"] as const;
+const FEATURE_ICONS = [Captions, Scissors, Palette, Smile, Film, Languages, Download];
+/** Bento cards that span two columns. */
+const WIDE_FEATURES = new Set([0, 6]);
+const STEP_ICONS = [Upload, Wand2, Sparkles];
 
 /** Fades content up as it scrolls into view (shown at once when motion is reduced). */
 function Reveal({
@@ -252,9 +175,23 @@ function Landing() {
   const yearly = pricing.data?.plans.find((plan) => plan.id === "yearly");
   const trial = pricing.data?.trial;
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
+  const [lang, setLang] = useState<Lang>("th");
+  useEffect(() => setLang(initialLang()), []);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+  const pickLang = (next: Lang) => {
+    setLang(next);
+    saveLang(next);
+  };
+  const t = LANDING_COPY[lang];
+  const nav = [t.nav.features, t.nav.how, t.nav.pricing, t.nav.faq].map((label, i) => ({
+    href: NAV_HREFS[i] ?? "#",
+    label,
+  }));
 
   const trialDays = trial?.durationDays ?? 5;
-  const startLabel = session ? "เปิดแอป" : `ทดลองใช้ฟรี ${trialDays} วัน`;
+  const startLabel = session ? t.openApp : t.tryFree(trialDays);
   const startLink = (className: string, children: ReactNode = startLabel) =>
     session ? (
       <Link to="/app" className={className}>
@@ -269,7 +206,8 @@ function Landing() {
   const paid = billing === "monthly" ? monthly : yearly;
   const paidPrice = paid?.priceKip ?? (billing === "monthly" ? 199_000 : 1_990_000);
   const promoPrice = billing === "monthly" ? PROMO.monthlyKip : PROMO.yearlyKip;
-  const quota = formatMinutes(paid?.quotaSeconds ?? 18_000);
+  const minutesOf = (seconds: number) => t.minutes(Math.max(0, Math.floor(seconds / 60)));
+  const quota = minutesOf(paid?.quotaSeconds ?? 18_000);
 
   return (
     <div className="dark">
@@ -284,10 +222,10 @@ function Landing() {
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 rounded-full border border-white/10 bg-black/50 py-2 pl-3 pr-2 backdrop-blur-xl">
             <OneRunLogo className="[&>span:first-child]:h-8 [&>span:first-child]:w-8 [&>span+span]:text-lg" />
             <nav
-              aria-label="เมนูหลัก"
+              aria-label={t.navLabel}
               className="hidden items-center gap-1 rounded-full bg-white/5 p-1 md:flex"
             >
-              {NAV.map((item) => (
+              {nav.map((item) => (
                 <a
                   key={item.href}
                   href={item.href}
@@ -298,17 +236,39 @@ function Landing() {
               ))}
             </nav>
             <div className="flex items-center gap-1 sm:gap-2">
+              <div
+                role="radiogroup"
+                aria-label={t.langLabel}
+                className="flex rounded-full bg-white/5 p-0.5 ring-1 ring-white/10"
+              >
+                {LANGS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="radio"
+                    lang={item.id}
+                    aria-checked={lang === item.id}
+                    onClick={() => pickLang(item.id)}
+                    className={cn(
+                      "h-7 rounded-full px-2 text-xs font-semibold transition sm:px-2.5",
+                      lang === item.id ? "bg-white text-black" : "text-white/60 hover:text-white",
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
               {!session && (
                 <Link
                   to="/login"
-                  className="rounded-full px-3 py-2 text-sm text-white/80 hover:text-white"
+                  className="hidden rounded-full px-3 py-2 text-sm text-white/80 hover:text-white sm:inline-flex"
                 >
-                  เข้าสู่ระบบ
+                  {t.login}
                 </Link>
               )}
               {startLink(
-                "rounded-full bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/90",
-                session ? "เปิดแอป" : "เริ่มฟรี",
+                "whitespace-nowrap rounded-full bg-white px-3 py-2 text-sm font-semibold text-black transition hover:bg-white/90 sm:px-4",
+                session ? t.openApp : t.startFree,
               )}
             </div>
           </div>
@@ -318,18 +278,23 @@ function Landing() {
         <section className="relative mx-auto grid max-w-6xl items-center gap-10 px-4 pb-20 pt-14 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pt-20">
           <Reveal>
             <p className="inline-flex items-center gap-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-violet-300" /> AI Subtitle
-              สำหรับคนทำคอนเทนต์ภาษาลาว
+              <span className="h-1.5 w-1.5 rounded-full bg-violet-300" /> {t.hero.badge}
             </p>
             <h1 className="mt-6 font-landing text-[2.6rem] font-black leading-[1.08] tracking-tight sm:text-6xl">
-              ใส่ซับลาวให้คลิป
+              {t.hero.line1.map((chunk, i) => (
+                <Fragment key={chunk}>
+                  {i > 0 && <wbr />}
+                  <span className="whitespace-nowrap">{chunk}</span>
+                </Fragment>
+              ))}
               <br />
-              <span className="onerun-viral bg-clip-text text-transparent">ไวรัล</span>{" "}
-              <span className="whitespace-nowrap">ด้วย OneRun</span>
+              <span className="onerun-viral bg-clip-text text-transparent">
+                {t.hero.accent}
+              </span>{" "}
+              {t.hero.tail}
             </h1>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-white/65 sm:text-lg">
-              อัปโหลดคลิป แล้วให้ AI ถอดเสียงลาวเป็นซับทีละคำ ตัดช่วงเงียบ ใส่สไตล์ สติกเกอร์ และ
-              B-roll ให้พร้อมโพสต์ TikTok, Reels และ Shorts
+              {t.hero.subtitle}
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               {startLink(
@@ -342,12 +307,10 @@ function Landing() {
                 href="#how"
                 className="inline-flex h-12 items-center justify-center rounded-full border border-white/15 px-7 font-semibold text-white/90 transition hover:bg-white/5"
               >
-                ดูวิธีใช้
+                {t.hero.howButton}
               </a>
             </div>
-            <p className="mt-4 text-xs text-white/45">
-              ไม่ต้องผูกบัตร · ใช้ผ่านเบราว์เซอร์ได้ทั้งมือถือและคอม
-            </p>
+            <p className="mt-4 text-xs text-white/45">{t.hero.note}</p>
           </Reveal>
 
           <Reveal
@@ -392,54 +355,60 @@ function Landing() {
         {/* features */}
         <section id="features" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-24 sm:px-6">
           <Reveal className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold text-violet-300">ฟีเจอร์</p>
+            <p className="text-sm font-semibold text-violet-300">{t.features.eyebrow}</p>
             <h2 className="mt-3 font-landing text-3xl font-black sm:text-5xl">
-              ทุกอย่างที่คลิปสั้นต้องมี
+              {t.features.title}
             </h2>
-            <p className="mt-4 text-white/60">
-              ไม่ต้องสลับหลายแอป ใส่ซับ แต่งคลิป และส่งออกได้ในที่เดียว
-            </p>
+            <p className="mt-4 text-white/60">{t.features.subtitle}</p>
           </Reveal>
           <div className="mt-14 grid gap-4 md:grid-cols-3">
-            {FEATURES.map(({ icon: Icon, title, text, wide }, i) => (
-              <Reveal key={title} delay={i * 60} className={cn(wide && "md:col-span-2")}>
-                <div className="h-full rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-7 transition hover:border-violet-400/40">
-                  <span className="grid h-11 w-11 place-items-center rounded-2xl bg-violet-500/15 text-violet-300 ring-1 ring-violet-400/20">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <h3 className="mt-5 text-lg font-bold">{title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-white/60">{text}</p>
-                </div>
-              </Reveal>
-            ))}
+            {t.features.items.map(({ title, text }, i) => {
+              const Icon = FEATURE_ICONS[i] ?? Sparkles;
+              return (
+                <Reveal
+                  key={i}
+                  delay={i * 60}
+                  className={cn(WIDE_FEATURES.has(i) && "md:col-span-2")}
+                >
+                  <div className="h-full rounded-3xl border border-white/10 bg-gradient-to-b from-white/[0.07] to-white/[0.02] p-7 transition hover:border-violet-400/40">
+                    <span className="grid h-11 w-11 place-items-center rounded-2xl bg-violet-500/15 text-violet-300 ring-1 ring-violet-400/20">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <h3 className="mt-5 text-lg font-bold">{title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-white/60">{text}</p>
+                  </div>
+                </Reveal>
+              );
+            })}
           </div>
         </section>
 
         {/* how it works */}
         <section id="how" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-24 sm:px-6">
           <Reveal className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold text-violet-300">วิธีใช้</p>
-            <h2 className="mt-3 font-landing text-3xl font-black sm:text-5xl">
-              3 ขั้นตอน คลิปพร้อมโพสต์
-            </h2>
+            <p className="text-sm font-semibold text-violet-300">{t.how.eyebrow}</p>
+            <h2 className="mt-3 font-landing text-3xl font-black sm:text-5xl">{t.how.title}</h2>
           </Reveal>
           <div className="mt-14 grid gap-4 md:grid-cols-3">
-            {STEPS.map(({ icon: Icon, title, text }, i) => (
-              <Reveal key={title} delay={i * 100}>
-                <div className="relative h-full overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-7">
-                  <span className="absolute -right-2 -top-6 font-landing text-[7rem] font-black leading-none text-white/[0.04]">
-                    {i + 1}
-                  </span>
-                  <span className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-b from-[#a977d0] to-[#542a7e] text-white">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <h3 className="mt-5 text-lg font-bold">
-                    {i + 1}. {title}
-                  </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-white/60">{text}</p>
-                </div>
-              </Reveal>
-            ))}
+            {t.how.steps.map(({ title, text }, i) => {
+              const Icon = STEP_ICONS[i] ?? Sparkles;
+              return (
+                <Reveal key={i} delay={i * 100}>
+                  <div className="relative h-full overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] p-7">
+                    <span className="absolute -right-2 -top-6 font-landing text-[7rem] font-black leading-none text-white/[0.04]">
+                      {i + 1}
+                    </span>
+                    <span className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-b from-[#a977d0] to-[#542a7e] text-white">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <h3 className="mt-5 text-lg font-bold">
+                      {i + 1}. {title}
+                    </h3>
+                    <p className="mt-2 text-sm leading-relaxed text-white/60">{text}</p>
+                  </div>
+                </Reveal>
+              );
+            })}
           </div>
         </section>
 
@@ -455,19 +424,17 @@ function Landing() {
             Pricing
           </div>
           <Reveal className="relative text-center">
-            <p className="text-sm font-semibold text-violet-300">ราคา</p>
-            <h2 className="mt-3 font-landing text-3xl font-black sm:text-5xl">
-              เริ่มฟรี จ่ายเมื่อพร้อม
-            </h2>
+            <p className="text-sm font-semibold text-violet-300">{t.pricing.eyebrow}</p>
+            <h2 className="mt-3 font-landing text-3xl font-black sm:text-5xl">{t.pricing.title}</h2>
             <div
               role="radiogroup"
-              aria-label="รอบการชำระ"
+              aria-label={t.pricing.cycleLabel}
               className="mx-auto mt-8 inline-flex rounded-full border border-white/10 bg-white/5 p-1"
             >
               {(
                 [
-                  ["monthly", "รายเดือน"],
-                  ["yearly", "รายปี"],
+                  ["monthly", t.pricing.monthly],
+                  ["yearly", t.pricing.yearly],
                 ] as const
               ).map(([value, label]) => (
                 <button
@@ -489,7 +456,7 @@ function Landing() {
                         billing === value ? "text-emerald-600" : "text-emerald-400",
                       )}
                     >
-                      ฟรี 2 เดือน
+                      {t.pricing.twoMonthsFree}
                     </span>
                   )}
                 </button>
@@ -500,19 +467,15 @@ function Landing() {
           <div className="relative mt-12 grid gap-5 md:grid-cols-2">
             <Reveal>
               <div className="h-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
-                <p className="text-sm text-white/60">ทดลองใช้</p>
-                <p className="mt-2 font-landing text-5xl font-black">ฟรี</p>
-                <p className="mt-1 text-sm text-white/50">{trialDays} วัน · ไม่ต้องผูกบัตร</p>
+                <p className="text-sm text-white/60">{t.pricing.trialLabel}</p>
+                <p className="mt-2 font-landing text-5xl font-black">{t.pricing.free}</p>
+                <p className="mt-1 text-sm text-white/50">{t.pricing.trialNote(trialDays)}</p>
                 {startLink(
                   "mt-7 flex h-11 items-center justify-center rounded-full border border-white/15 font-semibold transition hover:bg-white/5",
-                  session ? "เปิดแอป" : "เริ่มทดลองฟรี",
+                  session ? t.openApp : t.pricing.trialButton,
                 )}
                 <ul className="mt-7 space-y-3 text-sm text-white/75">
-                  {[
-                    `AI ถอดเสียงรวม ${formatMinutes(trial?.quotaSeconds ?? 1800)}`,
-                    "ใช้ได้ทุกฟีเจอร์",
-                    "ส่งออกวิดีโอพร้อมซับ",
-                  ].map((point) => (
+                  {t.pricing.trialPoints(minutesOf(trial?.quotaSeconds ?? 1800)).map((point) => (
                     <li key={point} className="flex gap-2.5">
                       <Check className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" /> {point}
                     </li>
@@ -524,32 +487,27 @@ function Landing() {
             <Reveal delay={120}>
               <div className="relative h-full rounded-3xl bg-white p-8 text-black shadow-[0_30px_80px_-20px_rgba(168,85,247,0.6)]">
                 <span className="absolute right-6 top-6 rounded-full bg-gradient-to-b from-[#a977d0] to-[#542a7e] px-3 py-1 text-xs font-bold text-white">
-                  ยอดนิยม
+                  {t.pricing.popular}
                 </span>
                 <p className="text-sm text-black/60">
-                  Pro {billing === "monthly" ? "รายเดือน" : "รายปี"}
+                  Pro {billing === "monthly" ? t.pricing.monthly : t.pricing.yearly}
                 </p>
                 <p className="mt-2 font-landing text-4xl font-black sm:text-5xl">
                   {formatKip(promoPrice)}
                 </p>
                 <p className="mt-1 text-sm text-black/55">
-                  <span className="line-through">{formatKip(paidPrice)}</span> · ใช้โค้ด{" "}
+                  <span className="line-through">{formatKip(paidPrice)}</span> · {t.pricing.useCode}{" "}
                   <span className="rounded bg-violet-100 px-1.5 py-0.5 font-bold text-violet-700">
                     {PROMO.code}
                   </span>{" "}
-                  {billing === "monthly" ? "ต่อเดือน" : "ต่อปี"}
+                  {billing === "monthly" ? t.pricing.perMonth : t.pricing.perYear}
                 </p>
                 {startLink(
                   "mt-7 flex h-11 items-center justify-center rounded-full bg-black font-semibold text-white transition hover:bg-black/85",
-                  session ? "เปิดแอป" : `ทดลองฟรี ${trialDays} วันก่อน`,
+                  session ? t.openApp : t.pricing.proButton(trialDays),
                 )}
                 <ul className="mt-7 space-y-3 text-sm text-black/75">
-                  {[
-                    `AI ถอดเสียง ${quota} ต่อเดือน`,
-                    "ทุกฟีเจอร์: สไตล์ สติกเกอร์ B-roll",
-                    "ส่งออกถึง 4K ไม่มีลายน้ำ",
-                    "ชำระผ่าน QR ธนาคาร",
-                  ].map((point) => (
+                  {t.pricing.proPoints(quota).map((point) => (
                     <li key={point} className="flex gap-2.5">
                       <Check className="mt-0.5 h-4 w-4 shrink-0 text-violet-600" /> {point}
                     </li>
@@ -563,7 +521,7 @@ function Landing() {
         {/* faq */}
         <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-4 py-24 sm:px-6">
           <Reveal className="text-center">
-            <h2 className="font-landing text-3xl font-black sm:text-4xl">คำถามที่พบบ่อย</h2>
+            <h2 className="font-landing text-3xl font-black sm:text-4xl">{t.faqTitle}</h2>
           </Reveal>
           <Reveal className="mt-10">
             <Accordion
@@ -571,12 +529,8 @@ function Landing() {
               collapsible
               className="rounded-3xl border border-white/10 bg-white/[0.03] px-6"
             >
-              {FAQ.map((item, i) => (
-                <AccordionItem
-                  key={item.q}
-                  value={`q${i}`}
-                  className="border-white/10 last:border-b-0"
-                >
+              {t.faq.map((item, i) => (
+                <AccordionItem key={i} value={`q${i}`} className="border-white/10 last:border-b-0">
                   <AccordionTrigger className="text-left text-base font-semibold hover:no-underline">
                     {item.q}
                   </AccordionTrigger>
@@ -602,11 +556,9 @@ function Landing() {
                 className="absolute -bottom-24 -right-16 h-64 w-64 rounded-full bg-[#a776cf]/25 blur-3xl"
               />
               <h2 className="relative font-landing text-3xl font-black sm:text-5xl">
-                พร้อมทำคลิปไวรัลหรือยัง?
+                {t.cta.title}
               </h2>
-              <p className="relative mx-auto mt-4 max-w-xl text-white/65">
-                อัปโหลดคลิปแรกวันนี้ ใช้เวลาไม่ถึง 5 นาที แล้วโพสต์ได้เลย
-              </p>
+              <p className="relative mx-auto mt-4 max-w-xl text-white/65">{t.cta.text}</p>
               {startLink(
                 "relative mt-8 inline-flex h-12 items-center justify-center gap-2 rounded-full bg-white px-8 font-semibold text-black transition hover:bg-white/90",
                 <>
@@ -623,13 +575,15 @@ function Landing() {
             <div>
               <OneRunLogo />
               <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/50">
-                เครื่องมือ AI ใส่ซับลาวและตัดคลิปสั้น สำหรับครีเอเตอร์ ร้านค้า และแบรนด์ในลาว
+                {t.footer.tagline}
               </p>
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">เมนู</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
+                {t.footer.menu}
+              </p>
               <ul className="mt-4 space-y-2 text-sm text-white/65">
-                {NAV.map((item) => (
+                {nav.map((item) => (
                   <li key={item.href}>
                     <a href={item.href} className="hover:text-white">
                       {item.label}
@@ -640,22 +594,22 @@ function Landing() {
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/40">
-                บัญชี
+                {t.footer.account}
               </p>
               <ul className="mt-4 space-y-2 text-sm text-white/65">
                 <li>
                   <Link to="/login" className="hover:text-white">
-                    เข้าสู่ระบบ
+                    {t.login}
                   </Link>
                 </li>
                 <li>
                   <Link to="/login" search={{ mode: "signup" }} className="hover:text-white">
-                    สมัครใช้งาน
+                    {t.signup}
                   </Link>
                 </li>
                 <li>
                   <Link to="/billing" className="hover:text-white">
-                    ชำระเงิน
+                    {t.billingLink}
                   </Link>
                 </li>
               </ul>
@@ -663,7 +617,7 @@ function Landing() {
           </div>
           <div className="mx-auto flex max-w-6xl flex-col gap-2 border-t border-white/5 px-4 py-6 text-xs text-white/35 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <span>© {new Date().getFullYear()} OneRunAI</span>
-            <span>อิโมจิเคลื่อนไหว: Google Noto Emoji (CC BY 4.0)</span>
+            <span>{t.footer.emojiCredit}</span>
           </div>
         </footer>
       </main>
