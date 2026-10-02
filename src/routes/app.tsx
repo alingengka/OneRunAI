@@ -141,6 +141,9 @@ import { isAccountError } from "@/lib/account-shared";
 import { runInOrderPool } from "@/lib/pool";
 import { AccessGate } from "@/components/account/AccessGate";
 import { ExportMenu, loadExportPreset, type ExportType } from "@/components/editor/ExportMenu";
+import { StickerOverlay } from "@/components/editor/StickerOverlay";
+import { StickerPanel } from "@/components/editor/StickerPanel";
+import { suggestEmojiStickers, type Sticker } from "@/lib/media/stickers";
 import { AccountMenu } from "@/components/account/AccountMenu";
 
 export const Route = createFileRoute("/app")({
@@ -172,7 +175,16 @@ function GatedStudio() {
   );
 }
 
-type Tab = "tools" | "styles" | "customize" | "text" | "accuracy" | "scenes" | "audio" | "export";
+type Tab =
+  | "tools"
+  | "styles"
+  | "customize"
+  | "text"
+  | "accuracy"
+  | "scenes"
+  | "stickers"
+  | "audio"
+  | "export";
 
 /** Editor menu: each section opens its default tab; some sections hold sub-tabs. */
 type Section = "ai" | "captions" | "style" | "scenes" | "audio" | "export";
@@ -181,7 +193,7 @@ const SECTIONS: { id: Section; label: string; short: string; tab: Tab; icon: Luc
   { id: "ai", label: "เครื่องมือ AI", short: "AI", tab: "tools", icon: Sparkles },
   { id: "captions", label: "ซับไตเติล", short: "ซับ", tab: "text", icon: Captions },
   { id: "style", label: "สไตล์", short: "สไตล์", tab: "styles", icon: Palette },
-  { id: "scenes", label: "ซีน & B-roll", short: "ซีน", tab: "scenes", icon: Clapperboard },
+  { id: "scenes", label: "ซีน & สติกเกอร์", short: "ซีน", tab: "scenes", icon: Clapperboard },
   { id: "audio", label: "เสียง", short: "เสียง", tab: "audio", icon: Music2 },
   { id: "export", label: "ส่งออก", short: "ส่งออก", tab: "export", icon: Download },
 ];
@@ -190,6 +202,7 @@ function sectionOf(tab: Tab): Section {
   if (tab === "tools") return "ai";
   if (tab === "text" || tab === "accuracy") return "captions";
   if (tab === "styles" || tab === "customize") return "style";
+  if (tab === "stickers") return "scenes";
   return tab;
 }
 
@@ -258,6 +271,9 @@ function Studio() {
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [frameHeight, setFrameHeight] = useState(0);
+  const [frameWidth, setFrameWidth] = useState(0);
+  const [stickers, setStickers] = useState<Sticker[]>([]);
+  const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [transcript, setTranscript] = useState("");
@@ -408,7 +424,11 @@ function Studio() {
   useEffect(() => {
     const el = frameRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setFrameHeight(el.clientHeight));
+    const ro = new ResizeObserver(() => {
+      setFrameHeight(el.clientHeight);
+      setFrameWidth(el.clientWidth);
+      setFrameWidth(el.clientWidth);
+    });
     ro.observe(el);
     setFrameHeight(el.clientHeight);
     return () => ro.disconnect();
@@ -503,6 +523,7 @@ function Studio() {
       setSegments([]);
       setDropped([]);
       setSceneElements([]);
+      setStickers([]);
       setSplitPoints([]);
       setProjectName(f.name.replace(/\.[^.]+$/, ""));
     }
@@ -539,6 +560,7 @@ function Studio() {
       noiseReduction,
       dropped,
       sceneElements,
+      stickers,
       splitPoints,
       projectName,
       sfx,
@@ -558,6 +580,7 @@ function Studio() {
       noiseReduction,
       dropped,
       sceneElements,
+      stickers,
       splitPoints,
       projectName,
       sfx,
@@ -596,6 +619,7 @@ function Studio() {
     setNoiseReduction(p.noiseReduction ?? false);
     setDropped(p.dropped ?? []);
     setSceneElements(p.sceneElements ?? []);
+    setStickers(p.stickers ?? []);
     setSplitPoints(p.splitPoints ?? []);
     setProjectName(p.projectName ?? p.fileName.replace(/\.[^.]+$/, ""));
     restoredProjectRef.current = true;
@@ -1087,6 +1111,13 @@ function Studio() {
   };
 
   /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
+  const updateSticker = (id: string, patch: Partial<Sticker>) =>
+    setStickers((current) => current.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  const removeSticker = (id: string) => {
+    setStickers((current) => current.filter((s) => s.id !== id));
+    setSelectedSticker((current) => (current === id ? null : current));
+  };
+
   const exportFinalVideo = (type: ExportType = exportType) => {
     if (type === "srt") {
       exportSrt();
@@ -1115,6 +1146,7 @@ function Studio() {
         sceneElements,
         resolution,
         fps: exportFps,
+        stickers,
       };
       const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
 
@@ -1554,13 +1586,22 @@ function Studio() {
             <h2 className="text-lg font-bold">
               {SECTIONS.find((s) => s.id === sectionOf(tab))?.label}
             </h2>
-            {sectionOf(tab) === "captions" && (
-              <div role="group" aria-label="มุมมองซับ" className="flex rounded-lg bg-secondary p-1">
+            {(sectionOf(tab) === "captions" || sectionOf(tab) === "scenes") && (
+              <div
+                role="group"
+                aria-label="มุมมองย่อย"
+                className="flex rounded-lg bg-secondary p-1"
+              >
                 {(
-                  [
-                    ["text", "แก้คำ"],
-                    ["accuracy", "ความแม่นยำ & คลังคำ"],
-                  ] as [Tab, string][]
+                  (sectionOf(tab) === "captions"
+                    ? [
+                        ["text", "แก้คำ"],
+                        ["accuracy", "ความแม่นยำ & คลังคำ"],
+                      ]
+                    : [
+                        ["scenes", "ซีน & B-roll"],
+                        ["stickers", "สติกเกอร์"],
+                      ]) as [Tab, string][]
                 ).map(([key, label]) => (
                   <button
                     key={key}
@@ -1756,7 +1797,7 @@ function Studio() {
                         </p>
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => setTab("scenes")}>
+                    <Button size="sm" variant="outline" onClick={() => setTab("stickers")}>
                       แก้ไข
                     </Button>
                   </div>
@@ -1973,6 +2014,37 @@ function Studio() {
                 <Download className="h-4 w-4" /> ไปที่หน้า Export
               </Button>
             </div>
+          )}
+
+          {tab === "stickers" && (
+            <StickerPanel
+              stickers={stickers}
+              time={time}
+              duration={duration}
+              selectedId={selectedSticker}
+              onSelect={(id) => {
+                setSelectedSticker(id);
+                const picked = stickers.find((s) => s.id === id);
+                if (picked && (time < picked.start || time > picked.end))
+                  seekTo(picked.start + 0.05);
+              }}
+              onAdd={(sticker) => {
+                setStickers((current) => [...current, sticker]);
+                setSelectedSticker(sticker.id);
+              }}
+              onChange={updateSticker}
+              onRemove={removeSticker}
+              onAutoEmoji={() => {
+                const suggested = suggestEmojiStickers(visibleWords);
+                if (!suggested.length) {
+                  toast.info("ไม่พบคำที่เข้ากับอิโมจิในซับ ลองเลือกเพิ่มเองได้เลย");
+                  return;
+                }
+                setStickers((current) => [...current, ...suggested]);
+                toast.success(`ใส่อิโมจิแล้ว ${suggested.length} จุด`);
+              }}
+              canAuto={visibleWords.length > 0}
+            />
           )}
 
           {tab === "scenes" && (
@@ -2460,7 +2532,7 @@ function Studio() {
                   }
                   onEditText={(text) => editActiveGroupText(text)}
                   onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-                  showHandles={!playing}
+                  showHandles={!playing && !(tab === "stickers" && selectedSticker)}
                 />
               )}
               <ViralTextOverlay
@@ -2469,6 +2541,19 @@ function Studio() {
                 time={time}
                 height={frameHeight}
               />
+              {stickers.length > 0 && (
+                <StickerOverlay
+                  stickers={stickers}
+                  time={time}
+                  width={frameWidth}
+                  height={frameHeight}
+                  selectedId={selectedSticker}
+                  onSelect={setSelectedSticker}
+                  onChange={updateSticker}
+                  onRemove={removeSticker}
+                  interactive={!playing}
+                />
+              )}
               {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
             {videoUrl && (

@@ -3,6 +3,7 @@ import type { CaptionStyle, Word } from "./captions";
 import type { SoundPack } from "./audio-system";
 import type { SceneElement } from "./scenes";
 import type { LexRule } from "./lao-glossary";
+import type { Sticker } from "./media/stickers";
 
 const KEY = "shortcut-studio-project-v1";
 
@@ -22,6 +23,7 @@ export type SavedProject = {
   noiseReduction?: boolean;
   dropped?: string[];
   sceneElements?: SceneElement[];
+  stickers?: Sticker[];
   splitPoints?: number[];
   projectName?: string;
   sfx?: { enabled: boolean; volume: number; pack: SoundPack };

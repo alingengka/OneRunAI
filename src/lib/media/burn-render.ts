@@ -13,6 +13,7 @@ import {
 } from "./motion";
 import { viralTextWindow } from "../scenes";
 import { coverRect, sourceSize, type BrollTrack } from "./broll";
+import type { Sticker, StickerLayer } from "./stickers";
 import {
   ACCENT_PRIMARY_HEX,
   ACCENT_SECONDARY_HEX,
@@ -215,6 +216,9 @@ export type BurnRenderOptions = {
   sceneElements?: MotionElement[] | undefined;
   /** สื่อ B-roll ที่โหลดไว้แล้ว ใช้วาดแทนเฟรมต้นฉบับ */
   brollTrack?: BrollTrack | undefined;
+  /** emoji and motion-graphic stickers, with a layer already prepared for them */
+  stickers?: Sticker[] | undefined;
+  stickerLayer?: StickerLayer | undefined;
 };
 
 const FADE = 0.08; // วินาทีของ cross-fade ภาพตรงรอยตัด
@@ -607,6 +611,7 @@ export function createBurnRenderer(
     }
     drawCaption(time);
     drawViralText(time);
+    if (options.stickers?.length) options.stickerLayer?.draw(ctx, options.stickers, time, width, height);
   };
 
   return { paint };

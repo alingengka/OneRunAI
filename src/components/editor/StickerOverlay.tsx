@@ -1,0 +1,197 @@
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { createStickerLayer, type Sticker, type StickerLayer } from "@/lib/media/stickers";
+
+type Props = {
+  stickers: Sticker[];
+  time: number;
+  /** frame size in CSS pixels */
+  width: number;
+  height: number;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  onChange: (id: string, patch: Partial<Sticker>) => void;
+  onRemove: (id: string) => void;
+  /** allow dragging and resizing (off while playing) */
+  interactive: boolean;
+};
+
+type Drag =
+  | { id: string; kind: "move"; frame: DOMRect }
+  | {
+      id: string;
+      kind: "resize";
+      cx: number;
+      cy: number;
+      startDist: number;
+      startSize: number;
+      frame: DOMRect;
+    };
+
+const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+/** Paints stickers on a canvas over the video, with drag and resize handles. */
+export function StickerOverlay({
+  stickers,
+  time,
+  width,
+  height,
+  selectedId,
+  onSelect,
+  onChange,
+  onRemove,
+  interactive,
+}: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const layerRef = useRef<StickerLayer | null>(null);
+  const [loaded, setLoaded] = useState(0);
+  const [drag, setDrag] = useState<Drag | null>(null);
+
+  useEffect(() => {
+    layerRef.current = createStickerLayer(384);
+    return () => layerRef.current?.destroy();
+  }, []);
+
+  useEffect(() => {
+    if (!stickers.length) return;
+    let cancelled = false;
+    void layerRef.current?.prepare(stickers).then(() => {
+      if (!cancelled) setLoaded((n) => n + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [stickers]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const layer = layerRef.current;
+    if (!canvas || !layer || !width || !height) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = Math.round(width * dpr);
+    const h = Math.round(height * dpr);
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    layer.draw(ctx, stickers, time, w, h);
+  }, [stickers, time, width, height, loaded]);
+
+  const visible = stickers.filter((s) => time >= s.start && time <= s.end);
+
+  const begin = (event: ReactPointerEvent<HTMLElement>, sticker: Sticker, kind: Drag["kind"]) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const frame = canvasRef.current?.getBoundingClientRect();
+    if (!frame) return;
+    onSelect(sticker.id);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    if (kind === "move") setDrag({ id: sticker.id, kind, frame });
+    else {
+      const cx = frame.left + (sticker.x / 100) * frame.width;
+      const cy = frame.top + (sticker.y / 100) * frame.height;
+      setDrag({
+        id: sticker.id,
+        kind,
+        cx,
+        cy,
+        startDist: Math.max(8, Math.hypot(event.clientX - cx, event.clientY - cy)),
+        startSize: sticker.size,
+        frame,
+      });
+    }
+  };
+
+  const move = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!drag) return;
+    event.stopPropagation();
+    if (drag.kind === "move") {
+      onChange(drag.id, {
+        x: clamp(((event.clientX - drag.frame.left) / drag.frame.width) * 100, 0, 100),
+        y: clamp(((event.clientY - drag.frame.top) / drag.frame.height) * 100, 0, 100),
+      });
+    } else {
+      const dist = Math.hypot(event.clientX - drag.cx, event.clientY - drag.cy);
+      onChange(drag.id, {
+        size: Math.round(clamp((drag.startSize * dist) / drag.startDist, 4, 80)),
+      });
+    }
+  };
+
+  const end = (event: ReactPointerEvent<HTMLElement>) => {
+    event.stopPropagation();
+    setDrag(null);
+  };
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-20 h-full w-full"
+      />
+      {interactive &&
+        visible.map((sticker) => {
+          const box = (sticker.size / 100) * height;
+          const selected = sticker.id === selectedId;
+          return (
+            <div
+              key={sticker.id}
+              role="button"
+              tabIndex={0}
+              aria-label="สติกเกอร์ — ลากเพื่อย้าย"
+              onPointerDown={(event) => begin(event, sticker, "move")}
+              onPointerMove={move}
+              onPointerUp={end}
+              onPointerCancel={end}
+              onKeyDown={(event) => {
+                if (event.key === "Delete" || event.key === "Backspace") onRemove(sticker.id);
+              }}
+              className={cn(
+                "absolute z-40 cursor-move touch-none rounded-md",
+                selected
+                  ? "outline-dashed outline-2 outline-white/90"
+                  : "hover:outline-dashed hover:outline-1 hover:outline-white/60",
+              )}
+              style={{
+                left: `${sticker.x}%`,
+                top: `${sticker.y}%`,
+                width: box,
+                height: box,
+                transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
+              }}
+            >
+              {selected && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="ลบสติกเกอร์"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemove(sticker.id);
+                    }}
+                    className="absolute -right-3 -top-3 grid h-6 w-6 place-items-center rounded-full bg-white text-black shadow-md"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                  <span
+                    role="button"
+                    aria-label="ลากเพื่อย่อหรือขยายสติกเกอร์"
+                    onPointerDown={(event) => begin(event, sticker, "resize")}
+                    onPointerMove={move}
+                    onPointerUp={end}
+                    onPointerCancel={end}
+                    className="absolute -bottom-3 -right-3 h-6 w-6 cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
+                  />
+                </>
+              )}
+            </div>
+          );
+        })}
+    </>
+  );
+}
