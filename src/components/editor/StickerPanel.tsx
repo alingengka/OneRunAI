@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Clock, Sparkles, Trash2 } from "lucide-react";
+import { Clock, ImagePlus, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,12 @@ import {
   type GraphicId,
   type Sticker,
 } from "@/lib/media/stickers";
+import {
+  loadStickerLibrary,
+  saveStickerLibrary,
+  stickerFromFile,
+  type LibrarySticker,
+} from "@/lib/sticker-library";
 
 type Props = {
   stickers: Sticker[];
@@ -26,17 +33,25 @@ type Props = {
   canAuto: boolean;
 };
 
-/** Small looping preview of a motion graphic for the picker. */
-function GraphicThumb({ id, color }: { id: GraphicId; color: string }) {
+/** Small looping preview of a motion graphic or uploaded Lottie for the picker. */
+function GraphicThumb({
+  id,
+  color,
+  kind = "graphic",
+}: {
+  id: GraphicId | string;
+  color?: string;
+  kind?: "graphic" | "lottie";
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
-    const layer = createStickerLayer(64);
+    const layer = createStickerLayer(96);
     const sticker: Sticker = {
-      id,
-      kind: "graphic",
+      id: "thumb",
+      kind,
       asset: id,
       start: 0,
       end: 1e9,
@@ -46,6 +61,7 @@ function GraphicThumb({ id, color }: { id: GraphicId; color: string }) {
       rotation: 0,
       color,
     };
+    if (kind === "lottie") void layer.prepare([sticker]);
     let raf = 0;
     const started = performance.now();
     const tick = () => {
@@ -55,15 +71,22 @@ function GraphicThumb({ id, color }: { id: GraphicId; color: string }) {
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [id, color]);
+    return () => {
+      cancelAnimationFrame(raf);
+      layer.destroy();
+    };
+  }, [id, color, kind]);
   return <canvas ref={ref} width={96} height={96} className="h-12 w-12" aria-hidden="true" />;
 }
 
 const label = (sticker: Sticker) =>
   sticker.kind === "emoji"
     ? (EMOJIS.find((e) => e.code === sticker.asset)?.char ?? "🙂")
-    : (GRAPHICS.find((g) => g.id === sticker.asset)?.label ?? sticker.asset);
+    : sticker.kind === "image"
+      ? "รูปของฉัน"
+      : sticker.kind === "lottie"
+        ? "แอนิเมชันของฉัน"
+        : (GRAPHICS.find((g) => g.id === sticker.asset)?.label ?? sticker.asset);
 
 export function StickerPanel({
   stickers,
@@ -77,7 +100,33 @@ export function StickerPanel({
   onAutoEmoji,
   canAuto,
 }: Props) {
-  const [kind, setKind] = useState<"emoji" | "graphic">("emoji");
+  const [kind, setKind] = useState<"emoji" | "graphic" | "mine">("emoji");
+  const [library, setLibrary] = useState<LibrarySticker[]>([]);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  useEffect(() => setLibrary(loadStickerLibrary()), []);
+  const updateLibrary = (next: LibrarySticker[]) => {
+    if (!saveStickerLibrary(next)) {
+      toast.error("พื้นที่เก็บในเบราว์เซอร์เต็ม ลบสติกเกอร์เก่าบางอันก่อน");
+      return false;
+    }
+    setLibrary(next);
+    return true;
+  };
+  const onUpload = async (files: FileList | null) => {
+    if (!files?.length) return;
+    let added = 0;
+    let next = library;
+    for (const file of Array.from(files)) {
+      try {
+        const item = await stickerFromFile(file);
+        next = [item, ...next];
+        added++;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "เพิ่มสติกเกอร์ไม่สำเร็จ");
+      }
+    }
+    if (added && updateLibrary(next)) toast.success(`เพิ่มสติกเกอร์ของคุณแล้ว ${added} ชิ้น`);
+  };
   const add = (sticker: Omit<Sticker, "id" | "start" | "end">) => {
     const start = Math.max(0, Math.min(time, Math.max(0, duration - 0.5)));
     onAdd({
@@ -97,6 +146,7 @@ export function StickerPanel({
             [
               ["emoji", "อิโมจิ"],
               ["graphic", "Motion Graphic"],
+              ["mine", "ของฉัน"],
             ] as const
           ).map(([key, text]) => (
             <button
@@ -123,10 +173,75 @@ export function StickerPanel({
 
       <p className="text-xs text-muted-foreground">
         แตะเพื่อเพิ่มที่เวลาปัจจุบัน ({time.toFixed(1)} วิ) แล้วลากบนวิดีโอเพื่อย้าย ·
-        ลากจุดมุมเพื่อย่อ/ขยาย
+        ลากจุดมุมเพื่อย่อ/ขยาย · ลากปุ่มด้านบนเพื่อหมุน
       </p>
 
-      {kind === "emoji" ? (
+      {kind === "mine" ? (
+        <div className="space-y-3">
+          <input
+            ref={uploadRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,application/json,.json"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              void onUpload(event.target.files);
+              event.target.value = "";
+            }}
+          />
+          <Button variant="secondary" className="w-full" onClick={() => uploadRef.current?.click()}>
+            <ImagePlus className="mr-2 h-4 w-4" /> อัปโหลดสติกเกอร์ (PNG, JPG, WebP หรือ Lottie
+            .json)
+          </Button>
+          {library.length ? (
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
+              {library.map((item) => (
+                <div key={item.id} className="relative">
+                  <button
+                    type="button"
+                    aria-label={`เพิ่มสติกเกอร์ ${item.name}`}
+                    title={item.name}
+                    onClick={() =>
+                      add({
+                        kind: item.kind,
+                        asset: item.asset,
+                        x: 50,
+                        y: 40,
+                        size: 24,
+                        rotation: 0,
+                      })
+                    }
+                    className="grid aspect-square w-full place-items-center rounded-lg border border-border bg-preview p-1.5 transition hover:border-primary/60 active:scale-95"
+                  >
+                    {item.kind === "image" ? (
+                      <img
+                        src={item.asset}
+                        alt=""
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    ) : (
+                      <GraphicThumb id={item.asset} kind="lottie" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`ลบ ${item.name} ออกจากคลัง`}
+                    onClick={() => updateLibrary(library.filter((x) => x.id !== item.id))}
+                    className="absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full bg-background text-muted-foreground shadow ring-1 ring-border hover:text-destructive"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+              ยังไม่มีสติกเกอร์ของคุณ — อัปโหลดรูปโลโก้ รูปสินค้า หรือไฟล์ Lottie จาก LottieFiles
+              แล้วใช้ซ้ำได้ทุกโปรเจกต์
+            </p>
+          )}
+        </div>
+      ) : kind === "emoji" ? (
         <div className="grid grid-cols-8 gap-1 sm:grid-cols-10">
           {EMOJIS.map((emoji) => (
             <button
@@ -200,6 +315,20 @@ export function StickerPanel({
                     className="h-8 w-10 cursor-pointer p-0.5"
                   />
                 )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1 px-2 text-xs"
+                  aria-label="หมุนสติกเกอร์ 15 องศา"
+                  title="หมุน 15° (ลากปุ่มหมุนบนวิดีโอได้ด้วย)"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onChange(sticker.id, { rotation: ((sticker.rotation + 15 + 180) % 360) - 180 });
+                  }}
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  {Math.round(sticker.rotation)}°
+                </Button>
                 <Button
                   size="icon"
                   variant="ghost"

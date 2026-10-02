@@ -1,6 +1,6 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { RotateCw } from "lucide-react";
-import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth, withAlpha } from "@/lib/captions";
+import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth, withAlpha, needsSpace } from "@/lib/captions";
 
 
 type Props = {
@@ -300,7 +300,10 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
               marginTop: li > 0 ? fontSize * gap : undefined,
             }}
           >
-            {line.map(({ word, i }) => {
+            {line.map(({ word, i }, wordInLine) => {
+              const prevWord = line[wordInLine - 1]?.word;
+              const gapBefore =
+                prevWord && needsSpace(prevWord.text, word.text, style.joinWords) ? fontSize * 0.25 : 0;
               const active = i === shownIndex;
               const spoken = time >= word.start;
 
@@ -339,7 +342,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                   key={`${word.start}-${i}`}
                   style={{
                     display: "inline-block",
-                    margin: `0 ${fontSize * 0.09}px`,
+                    marginLeft: gapBefore,
                     padding: boxed ? `0 ${fontSize * 0.1}px` : undefined,
                     borderRadius: boxed ? fontSize * 0.12 : undefined,
                     background: k2Fill

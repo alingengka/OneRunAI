@@ -219,6 +219,11 @@ export type CaptionStyle = {
   plateColor: string;
   /** ระยะห่างระหว่างบรรทัด (เท่าของขนาดฟอนต์) */
   lineGap?: number;
+  /**
+   * Thai and Lao words sit together without spaces, as they are written
+   * (default). false puts a gap between every word.
+   */
+  joinWords?: boolean | undefined;
   /** extra space between letters, in em */
   letterSpacing?: number | undefined;
   /** 0–1 opacity of the whole caption */
@@ -248,7 +253,7 @@ export const baseStyle: CaptionStyle = {
   strokeColor: "#000000",
   shadow: "small",
   shadowColor: "#000000",
-  highlight: "color",
+  highlight: "none",
   highlightColor: "#ffd400",
   highlightTextColor: "#111111",
   posY: 68,
@@ -722,4 +727,31 @@ export function withAlpha(hex: string, alpha: number): string {
   const value = Number.parseInt(full, 16);
   if (!Number.isFinite(value)) return hex;
   return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${Math.max(0, Math.min(1, alpha))})`;
+}
+
+const THAI_LAO_CHAR = /[\u0E00-\u0EFF]/;
+
+/** Whether a space belongs between two caption words. */
+export function needsSpace(prev: string, next: string, joinWords: boolean | undefined = true): boolean {
+  if (joinWords === false) return true;
+  const last = prev.slice(-1);
+  const first = next.charAt(0);
+  return !(THAI_LAO_CHAR.test(last) && THAI_LAO_CHAR.test(first));
+}
+
+/** Caption words as written text: Thai/Lao joined, other words spaced; LINE_BREAK becomes "\n". */
+export function joinCaptionWords(words: Word[], joinWords: boolean | undefined = true): string {
+  let out = "";
+  let prev = "";
+  for (const word of words) {
+    if (word.text === LINE_BREAK) {
+      out += "\n";
+      prev = "";
+      continue;
+    }
+    if (prev && needsSpace(prev, word.text, joinWords)) out += " ";
+    out += word.text;
+    prev = word.text;
+  }
+  return out.trim();
 }

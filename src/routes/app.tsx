@@ -141,6 +141,7 @@ import { OneRunLogo } from "@/components/brand/OneRunLogo";
 import { isAccountError } from "@/lib/account-shared";
 import { runInOrderPool } from "@/lib/pool";
 import { AccessGate } from "@/components/account/AccessGate";
+import { CaptionLayoutControls } from "@/components/editor/CaptionLayoutControls";
 import { ExportMenu, loadExportPreset, type ExportType } from "@/components/editor/ExportMenu";
 import { StickerOverlay } from "@/components/editor/StickerOverlay";
 import { StickerPanel } from "@/components/editor/StickerPanel";
@@ -1499,6 +1500,8 @@ function Studio() {
               accept="video/*,audio/*"
               onChange={(e) => {
                 const f = e.target.files?.[0];
+                // Clear the input so choosing the same file again still fires onChange.
+                e.target.value = "";
                 if (f) void onPickFile(f);
               }}
             />
@@ -1506,9 +1509,11 @@ function Studio() {
           <Button
             variant="secondary"
             onClick={() => fileInputRef.current?.click()}
-            className="hidden sm:inline-flex"
+            className="px-3 sm:px-4"
+            aria-label="อัปโหลดคลิป"
           >
-            <Upload className="mr-2 h-4 w-4" /> อัปโหลดคลิป
+            <Upload className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">อัปโหลดคลิป</span>
           </Button>
           <Button variant="secondary" onClick={saveNow} className="hidden md:inline-flex">
             <Save className="mr-2 h-4 w-4" /> บันทึก
@@ -2334,40 +2339,10 @@ function Studio() {
 
           {tab === "text" && (
             <div className="space-y-5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-muted-foreground">แสดงซับบนวิดีโอ</span>
-                <div
-                  role="radiogroup"
-                  aria-label="แสดงซับบนวิดีโอ"
-                  className="flex rounded-lg bg-secondary p-1"
-                >
-                  {(
-                    [
-                      ["sentence", "ทั้งประโยค"],
-                      ["word", "ทีละคำ"],
-                    ] as const
-                  ).map(([mode, label]) => {
-                    const on = captionModeOf(style) === mode;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="radio"
-                        aria-checked={on}
-                        onClick={() => setStyle((current) => ({ ...current, captionMode: mode }))}
-                        className={cn(
-                          "h-9 rounded-md px-3 text-sm transition-colors",
-                          on
-                            ? "bg-background font-semibold text-foreground shadow-sm"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <CaptionLayoutControls
+                style={style}
+                onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+              />
               <CaptionList
                 groups={groups}
                 words={words}
@@ -2540,7 +2515,9 @@ function Studio() {
               {videoUrl ? (
                 <video
                   ref={videoRef}
-                  src={videoUrl}
+                  // "#t=0.001" makes iOS Safari paint the first frame instead of a blank box
+                  src={`${videoUrl}#t=0.001`}
+                  preload="auto"
                   className="h-full w-full object-cover will-change-transform"
                   style={{
                     transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,

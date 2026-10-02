@@ -21,6 +21,7 @@ import {
 
   LINE_BREAK,
   emphasizedWeight,
+  needsSpace,
   isKeyword,
   splitEmphasis,
   shadowBlur,
@@ -239,6 +240,8 @@ export function createBurnRenderer(
   const sortedGroups = [...groups].sort((a, b) => a.start - b.start);
   type LineMetric = {
     widths: number[];
+    /** gap before each word of the line (0 between joined Thai/Lao words) */
+    gaps: number[];
     space: number;
     total: number;
     weight: number | string;
@@ -289,22 +292,28 @@ export function createBurnRenderer(
       // ตัดบรรทัดตามความกว้างจริง เพื่อไม่ให้คำล้นออกนอกเฟรม (คำหายจากภาพ)
       let chunk: StaticWord[] = [];
       let chunkWidths: number[] = [];
+      let chunkGaps: number[] = [];
       let chunkTotal = 0;
       const flush = () => {
         if (!chunk.length) return;
         lines.push({ words: chunk });
-        metrics.push({ widths: chunkWidths, space, total: chunkTotal, weight, family, ls, gap, em: synthetic, font });
+        metrics.push({ widths: chunkWidths, gaps: chunkGaps, space, total: chunkTotal, weight, family, ls, gap, em: synthetic, font });
         chunk = [];
         chunkWidths = [];
+        chunkGaps = [];
         chunkTotal = 0;
       };
       line.words.forEach((word, wi) => {
         const w = wordWidths[wi]!;
-        const next = chunkTotal + (chunk.length ? space : 0) + w;
+        const before = (prev: StaticWord | undefined) =>
+          prev && needsSpace(prev.text, word.text, style.joinWords) ? space : 0;
+        const next = chunkTotal + before(chunk[chunk.length - 1]) + w;
         if (chunk.length && next > maxTextWidth) flush();
-        chunkTotal += (chunk.length ? space : 0) + w;
+        const g = before(chunk[chunk.length - 1]);
+        chunkTotal += g + w;
         chunk.push(word);
         chunkWidths.push(w);
+        chunkGaps.push(g);
       });
       flush();
     });
@@ -483,7 +492,7 @@ export function createBurnRenderer(
         ctx.shadowOffsetY = 0;
         ctx.shadowColor = "transparent";
         if (plusScale !== 1) ctx.restore();
-        x += w + m.space;
+        x += w + (m.gaps[wi + 1] ?? 0);
       });
 
 

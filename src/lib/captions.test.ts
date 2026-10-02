@@ -1,4 +1,11 @@
-import { captionModeOf, groupCaptions, groupSentences, type Word } from "./captions";
+import {
+  captionModeOf,
+  groupCaptions,
+  groupSentences,
+  joinCaptionWords,
+  needsSpace,
+  type Word,
+} from "./captions";
 
 function assert(condition: boolean, message: string) {
   if (!condition) throw new Error(message);
@@ -34,5 +41,18 @@ assert(
     .length === 3,
   "word mode",
 );
+
+// Thai and Lao words join; Latin words keep their spaces
+assert(
+  joinCaptionWords([w("ใคร", 0), w("ใคร", 0.3), w("ทุก", 0.6), w("วันนี้", 0.9)]) ===
+    "ใครใครทุกวันนี้",
+  "thai joined",
+);
+assert(
+  joinCaptionWords([w("ສະບາຍດີ", 0), w("OneRun", 0.3), w("AI", 0.6)]) === "ສະບາຍດີ OneRun AI",
+  "mixed spacing",
+);
+assert(joinCaptionWords([w("ใคร", 0), w("ทุก", 0.3)], false) === "ใคร ทุก", "spaced when asked");
+assert(!needsSpace("ກິນ", "ກາເຟ") && needsSpace("ກິນ", "coffee"), "needsSpace");
 
 console.log("caption grouping tests passed");

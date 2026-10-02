@@ -8,7 +8,7 @@ import {
   Scripts,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -122,14 +122,32 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/** Phones show toasts above the bottom toolbar so they never cover the header buttons. */
+function usePhoneLayout() {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 1023px)");
+    const update = () => setPhone(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return phone;
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const phone = usePhoneLayout();
 
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
-      <Toaster position="top-center" />
+      <Toaster
+        position={phone ? "bottom-center" : "top-center"}
+        mobileOffset={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
+        {...(phone ? { offset: { bottom: "5rem" } } : {})}
+      />
     </QueryClientProvider>
   );
 }

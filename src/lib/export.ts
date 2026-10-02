@@ -1,5 +1,5 @@
 import type { Segment } from "./media/audio";
-import type { CaptionGroup } from "./captions";
+import { joinCaptionWords, type CaptionGroup } from "./captions";
 
 export function keptDuration(segments: Segment[]): number {
   return segments.reduce((sum, s) => sum + (s.end - s.start), 0);
@@ -40,7 +40,7 @@ export function buildSrt(groups: CaptionGroup[], remap?: (t: number) => number):
   const f = remap ?? ((t: number) => t);
   return groups
     .map((g, i) => {
-      const text = g.words.map((w) => (w.text === "\u2028" ? "\n" : w.text)).join(" ").replace(/ ?\n ?/g, "\n");
+      const text = joinCaptionWords(g.words);
       return `${i + 1}\n${ts(f(g.start))} --> ${ts(Math.max(f(g.end), f(g.start) + 0.3))}\n${text}\n`;
     })
     .join("\n");
@@ -78,7 +78,7 @@ export function buildCutListJson(params: {
       captions: params.groups.map((g) => ({
         start: g.start,
         end: g.end,
-        text: g.words.map((w) => (w.text === "\u2028" ? "\n" : w.text)).join(" ").replace(/ ?\n ?/g, "\n"),
+        text: joinCaptionWords(g.words),
         words: g.words,
       })),
     },
