@@ -324,9 +324,7 @@ function Landing() {
             <h1 className="mt-6 font-landing text-[2.6rem] font-black leading-[1.08] tracking-tight sm:text-6xl">
               ใส่ซับลาวให้คลิป
               <br />
-              <span className="bg-gradient-to-r from-white via-violet-200 to-violet-500 bg-clip-text text-transparent drop-shadow-[0_0_18px_rgba(167,139,250,0.55)]">
-                ไวรัล
-              </span>{" "}
+              <span className="onerun-viral bg-clip-text text-transparent">ไวรัล</span>{" "}
               <span className="whitespace-nowrap">ด้วย OneRun</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-white/65 sm:text-lg">
@@ -335,7 +333,7 @@ function Landing() {
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               {startLink(
-                "inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 px-7 font-semibold text-white shadow-[0_10px_40px_-10px_rgba(168,85,247,0.8)] transition hover:brightness-110",
+                "inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-b from-[#a977d0] via-[#774a9f] to-[#542a7e] px-7 font-semibold text-white ring-1 ring-white/15 shadow-[0_10px_40px_-12px_rgba(167,118,207,0.85)] transition hover:brightness-110",
                 <>
                   {startLabel} <ArrowRight className="h-4 w-4" />
                 </>,
@@ -432,7 +430,7 @@ function Landing() {
                   <span className="absolute -right-2 -top-6 font-landing text-[7rem] font-black leading-none text-white/[0.04]">
                     {i + 1}
                   </span>
-                  <span className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white">
+                  <span className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-b from-[#a977d0] to-[#542a7e] text-white">
                     <Icon className="h-5 w-5" />
                   </span>
                   <h3 className="mt-5 text-lg font-bold">
@@ -525,7 +523,7 @@ function Landing() {
 
             <Reveal delay={120}>
               <div className="relative h-full rounded-3xl bg-white p-8 text-black shadow-[0_30px_80px_-20px_rgba(168,85,247,0.6)]">
-                <span className="absolute right-6 top-6 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 px-3 py-1 text-xs font-bold text-white">
+                <span className="absolute right-6 top-6 rounded-full bg-gradient-to-b from-[#a977d0] to-[#542a7e] px-3 py-1 text-xs font-bold text-white">
                   ยอดนิยม
                 </span>
                 <p className="text-sm text-black/60">
@@ -594,14 +592,14 @@ function Landing() {
         {/* final call to action */}
         <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
           <Reveal>
-            <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-violet-700/40 via-[#120d22] to-fuchsia-700/30 px-6 py-16 text-center">
+            <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-violet-700/40 via-[#120d22] to-[#421b6a]/60 px-6 py-16 text-center">
               <div
                 aria-hidden="true"
                 className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-violet-500/30 blur-3xl"
               />
               <div
                 aria-hidden="true"
-                className="absolute -bottom-24 -right-16 h-64 w-64 rounded-full bg-fuchsia-500/25 blur-3xl"
+                className="absolute -bottom-24 -right-16 h-64 w-64 rounded-full bg-[#a776cf]/25 blur-3xl"
               />
               <h2 className="relative font-landing text-3xl font-black sm:text-5xl">
                 พร้อมทำคลิปไวรัลหรือยัง?

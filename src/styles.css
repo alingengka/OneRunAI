@@ -435,3 +435,8 @@
 .font-landing {
   font-family: "Kanit", "Noto Sans Thai", "Noto Sans Lao", system-ui, sans-serif;
 }
+/* Landing hero accent word: light lavender to soft purple, like the brand swatch */
+.onerun-viral {
+  background-image: linear-gradient(180deg, #e9dbf2 0%, #c9abe1 50%, #a776cf 100%);
+  filter: drop-shadow(0 0 18px rgba(167, 118, 207, 0.45));
+}
