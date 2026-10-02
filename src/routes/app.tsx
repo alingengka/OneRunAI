@@ -27,8 +27,10 @@ import {
   Clapperboard,
   Type,
   Zap,
-  ArrowLeft,
   SlidersHorizontal,
+  Palette,
+  Music2,
+  type LucideIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -47,6 +49,8 @@ import { cn } from "@/lib/utils";
 import { CaptionOverlay } from "@/components/editor/CaptionOverlay";
 import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay";
 import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
+import { WordTrack } from "@/components/editor/WordTrack";
+import { CaptionList } from "@/components/editor/CaptionList";
 import { StyleControls } from "@/components/editor/StyleControls";
 import { StylePicker } from "@/components/editor/StylePicker";
 import {
@@ -98,7 +102,12 @@ import {
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { translateLines } from "@/lib/translate.functions";
 import { clearProject, loadProject, saveProject } from "@/lib/project-store";
-import { wordsToTranscript, buildRowWords, type SyncIssue } from "@/lib/caption-editing";
+import {
+  wordsToTranscript,
+  buildRowWords,
+  normalizeWordTimes,
+  type SyncIssue,
+} from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt, type MotionKind } from "@/lib/media/motion";
@@ -162,6 +171,25 @@ function GatedStudio() {
 }
 
 type Tab = "tools" | "styles" | "customize" | "text" | "accuracy" | "scenes" | "audio" | "export";
+
+/** Editor menu: each section opens its default tab; some sections hold sub-tabs. */
+type Section = "ai" | "captions" | "style" | "scenes" | "audio" | "export";
+
+const SECTIONS: { id: Section; label: string; short: string; tab: Tab; icon: LucideIcon }[] = [
+  { id: "ai", label: "เครื่องมือ AI", short: "AI", tab: "tools", icon: Sparkles },
+  { id: "captions", label: "ซับไตเติล", short: "ซับ", tab: "text", icon: Captions },
+  { id: "style", label: "สไตล์", short: "สไตล์", tab: "styles", icon: Palette },
+  { id: "scenes", label: "ซีน & B-roll", short: "ซีน", tab: "scenes", icon: Clapperboard },
+  { id: "audio", label: "เสียง", short: "เสียง", tab: "audio", icon: Music2 },
+  { id: "export", label: "ส่งออก", short: "ส่งออก", tab: "export", icon: Download },
+];
+
+function sectionOf(tab: Tab): Section {
+  if (tab === "tools") return "ai";
+  if (tab === "text" || tab === "accuracy") return "captions";
+  if (tab === "styles" || tab === "customize") return "style";
+  return tab;
+}
 
 type LangCode = "th" | "lo" | "en";
 
@@ -236,6 +264,7 @@ function Studio() {
   const [words, setWords] = useState<Word[]>([]);
   const [style, setStyle] = useState<CaptionStyle>(baseStyle);
   const [tab, setTab] = useState<Tab>("tools");
+  const [selectedWord, setSelectedWord] = useState<number | null>(null);
   const [languages, setLanguages] = useState<LangCode[]>(["th"]);
 
   const [captionsOn, setCaptionsOn] = useState(true);
@@ -1187,6 +1216,16 @@ function Studio() {
     setTranscript(wordsToTranscript(next));
   };
 
+  /** Retime one word from the bottom timeline (drag handles). */
+  const retimeWord = (index: number, start: number, end: number) => {
+    updateWords(
+      normalizeWordTimes(
+        words.map((word, i) => (i === index ? { ...word, start, end } : word)),
+        duration,
+      ),
+    );
+  };
+
   /** แก้ข้อความของบล็อกซับที่กำลังแสดงบนพรีวิว ("\n" = แยกแถว) */
   const editActiveGroupText = (text: string) => {
     if (!activeGroup) return;
@@ -1366,7 +1405,6 @@ function Studio() {
     toast.success("แบ่งซีนแล้ว");
   };
 
-
   return (
     <main className="studio-shell min-h-screen overflow-hidden bg-background text-foreground lg:flex lg:h-dvh lg:flex-col">
       <div
@@ -1451,75 +1489,71 @@ function Studio() {
         </div>
       )}
 
-      <div className="mx-auto grid min-w-0 w-full max-w-[1500px] gap-5 p-4 sm:p-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)] lg:overflow-hidden">
-        {/* Left: controls */}
-        <section className="studio-panel order-2 min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5 lg:order-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
-          <div className="mb-5 flex gap-1 overflow-x-auto rounded-lg bg-secondary p-1">
-            {(
-              [
-                ["tools", "คำบรรยาย"],
-                ["scenes", "Scenes"],
-                ["styles", "Caption Style"],
-                ["customize", "Customize"],
-                ["text", "Edit Text"],
-                ["accuracy", "Accuracy"],
-                ["audio", "Audio"],
-                ["export", "Export"],
-              ] as [Tab, string][]
-            ).map(([key, label]) => (
+      <div className="mx-auto grid min-w-0 w-full max-w-[1600px] gap-4 p-3 pb-24 sm:p-4 sm:pb-24 lg:min-h-0 lg:flex-1 lg:grid-cols-[176px_minmax(0,1fr)_minmax(320px,400px)] lg:overflow-hidden lg:pb-3">
+        {/* Desktop menu */}
+        <nav
+          aria-label="เมนูเครื่องมือ"
+          className="studio-panel hidden min-h-0 flex-col gap-1 rounded-xl border border-border bg-card p-2 lg:flex"
+        >
+          {SECTIONS.map(({ id, label, tab: target, icon: Icon }) => {
+            const current = sectionOf(tab) === id;
+            return (
               <button
-                key={key}
+                key={id}
+                type="button"
+                aria-current={current ? "page" : undefined}
                 onClick={() => {
-                  setTab(key);
+                  if (!current) setTab(target);
                   play("hover");
                 }}
                 className={cn(
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                  tab === key
-                    ? "bg-card text-foreground shadow-primary"
-                    : "text-muted-foreground hover:text-foreground",
+                  "flex h-11 items-center gap-3 rounded-lg px-3 text-left text-sm transition-colors",
+                  current
+                    ? "bg-accent font-semibold text-foreground"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
               >
+                <Icon className={cn("h-[18px] w-[18px] shrink-0", current && "text-primary")} />
                 {label}
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </nav>
 
+        {/* Controls panel */}
+        <section className="studio-panel order-3 min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-bold">
+              {SECTIONS.find((s) => s.id === sectionOf(tab))?.label}
+            </h2>
+            {sectionOf(tab) === "captions" && (
+              <div role="group" aria-label="มุมมองซับ" className="flex rounded-lg bg-secondary p-1">
+                {(
+                  [
+                    ["text", "แก้คำ"],
+                    ["accuracy", "ความแม่นยำ & คลังคำ"],
+                  ] as [Tab, string][]
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={tab === key}
+                    onClick={() => setTab(key)}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 text-sm transition-colors",
+                      tab === key
+                        ? "bg-card font-semibold text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {tab === "tools" && (
             <div className="space-y-8">
-              <nav className="grid grid-cols-3 gap-2 sm:gap-3" aria-label="ทางลัดเครื่องมือตัดต่อ">
-                <Button
-                  variant="outline"
-                  onClick={() => setTab("tools")}
-                  className="h-24 flex-col gap-2 border-primary/50 bg-primary/5 px-2 text-primary shadow-primary sm:h-28"
-                >
-                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/15">
-                    <Captions className="h-5 w-5" />
-                  </span>
-                  <span className="text-xs font-semibold text-foreground sm:text-sm">คำบรรยาย</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setTab("scenes")}
-                  className="h-24 flex-col gap-2 border-border bg-card px-2 hover:border-primary/50 hover:bg-primary/5 sm:h-28"
-                >
-                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary">
-                    <Clapperboard className="h-5 w-5" />
-                  </span>
-                  <span className="text-xs font-semibold sm:text-sm">แก้ซีน</span>
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setTab("export")}
-                  className="h-24 flex-col gap-2 border-border bg-card px-2 hover:border-primary/50 hover:bg-primary/5 sm:h-28"
-                >
-                  <span className="grid h-10 w-10 place-items-center rounded-lg bg-primary/10 text-primary">
-                    <Scissors className="h-5 w-5" />
-                  </span>
-                  <span className="text-xs font-semibold sm:text-sm">ตัดวิดีโอ</span>
-                </Button>
-              </nav>
-
               <section aria-labelledby="ai-tools-heading">
                 <div className="mb-1">
                   <h2 id="ai-tools-heading" className="text-base font-bold text-foreground">
@@ -2078,17 +2112,6 @@ function Studio() {
 
           {(tab === "styles" || tab === "customize") && (
             <div className="mb-5 flex items-center gap-2 border-b border-border">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => setTab("tools")}
-                aria-label="กลับไปหน้าคำบรรยาย"
-                title="กลับไปหน้าคำบรรยาย"
-                className="mb-1 shrink-0"
-              >
-                <ArrowLeft />
-              </Button>
               <div className="grid min-w-0 flex-1 grid-cols-2">
                 <Button
                   type="button"
@@ -2196,34 +2219,79 @@ function Studio() {
           )}
 
           {tab === "text" && (
-            <div className="space-y-6">
-              <WordTimelineEditor
+            <div className="space-y-5">
+              <CaptionList
+                groups={groups}
                 words={words}
                 duration={duration}
-                onChange={updateWords}
+                time={time}
+                selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
+                onSelect={setSelectedWord}
+                onSeek={seekTo}
                 onPreview={previewRange}
-                onRetryIssues={(issues) => void retrySyncIssues(issues)}
-                retrying={retryingSync}
+                onChange={updateWords}
+                onRetranscribe={(start, end) => void retranscribeRange(start, end)}
+                busy={retryingSync}
               />
-              <div className="border-t border-border pt-5">
-                <Label className="text-xs text-muted-foreground">
-                  แก้ทั้งข้อความ — การอัปเดตส่วนนี้จะคำนวณเวลาใหม่ทั้งคลิป
-                </Label>
-                <Textarea
-                  value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
-                  rows={12}
-                  placeholder="กด “สร้างซับด้วย AI” หรือพิมพ์ข้อความเองที่นี่..."
-                />
-                <div className="flex gap-2">
-                  <Button onClick={applyTranscriptEdit}>
-                    <Wand2 className="mr-2 h-4 w-4" /> อัปเดตซับ
-                  </Button>
-                  <span className="self-center text-xs text-muted-foreground">
-                    {words.length} คำ · {groups.length} บล็อก
+
+              {words.some((w) => w.confidenceLabel === "low" || w.confidenceLabel === "review") && (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                  <span className="min-w-0 flex-1">
+                    มี{" "}
+                    {
+                      words.filter(
+                        (w) => w.confidenceLabel === "low" || w.confidenceLabel === "review",
+                      ).length
+                    }{" "}
+                    คำที่ AI ไม่แน่ใจ (ขีดเส้นใต้สีเหลือง)
                   </span>
+                  <Button size="sm" variant="secondary" onClick={() => setTab("accuracy")}>
+                    ตรวจทีละคำ
+                  </Button>
                 </div>
-              </div>
+              )}
+
+              <Accordion type="multiple" className="border-t border-border">
+                <AccordionItem value="bulk-text">
+                  <AccordionTrigger className="text-sm">
+                    แก้ทั้งข้อความในครั้งเดียว
+                  </AccordionTrigger>
+                  <AccordionContent className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      การอัปเดตส่วนนี้จะคำนวณเวลาของคำใหม่ทั้งคลิป
+                    </p>
+                    <Textarea
+                      value={transcript}
+                      onChange={(e) => setTranscript(e.target.value)}
+                      rows={10}
+                      placeholder="กด “สร้างซับด้วย AI” หรือพิมพ์ข้อความเองที่นี่..."
+                    />
+                    <div className="flex gap-2">
+                      <Button onClick={applyTranscriptEdit}>
+                        <Wand2 className="mr-2 h-4 w-4" /> อัปเดตซับ
+                      </Button>
+                      <span className="self-center text-xs text-muted-foreground">
+                        {words.length} คำ · {groups.length} บล็อก
+                      </span>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+                <AccordionItem value="advanced-words">
+                  <AccordionTrigger className="text-sm">
+                    เครื่องมือคำขั้นสูง (แยก/รวมคำ, ตรวจซิงก์)
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <WordTimelineEditor
+                      words={words}
+                      duration={duration}
+                      onChange={updateWords}
+                      onPreview={previewRange}
+                      onRetryIssues={(issues) => void retrySyncIssues(issues)}
+                      retrying={retryingSync}
+                    />
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
           )}
 
@@ -2271,7 +2339,7 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 lg:order-2 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+        <section className="order-1 min-w-0 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
           <div className="studio-panel rounded-xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -2285,7 +2353,7 @@ function Studio() {
             </div>
             <div
               ref={frameRef}
-              className={`relative mx-auto w-full overflow-hidden rounded-xl bg-preview shadow-primary-lg ring-1 ring-primary/20 ${tiktokPreview ? "aspect-[886/1920] max-w-[314px]" : "aspect-[9/16] max-w-[340px]"}`}
+              className={`relative mx-auto w-full overflow-hidden rounded-xl bg-preview shadow-primary-lg ring-1 ring-primary/20 ${tiktokPreview ? "aspect-[886/1920] max-w-[230px] sm:max-w-[314px]" : "aspect-[9/16] max-w-[250px] sm:max-w-[340px]"} lg:h-[min(600px,calc(100dvh-480px))] lg:w-auto`}
             >
               {videoUrl ? (
                 <video
@@ -2412,7 +2480,75 @@ function Studio() {
             </div>
           </div>
         </section>
+
+        {/* Phone: word timeline right under the video */}
+        {duration > 0 && (
+          <div className="studio-panel order-2 min-w-0 overflow-hidden rounded-xl border border-border bg-card lg:hidden">
+            <WordTrack
+              words={words}
+              duration={duration}
+              time={time}
+              cuts={removeSilence ? silences : []}
+              selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
+              onSelect={(index) => {
+                setSelectedWord(index);
+                if (sectionOf(tab) !== "captions") setTab("text");
+              }}
+              onSeek={seekTo}
+              onRetime={retimeWord}
+              compact
+            />
+          </div>
+        )}
       </div>
+
+      {/* Desktop: word timeline across the bottom */}
+      {duration > 0 && (
+        <div className="mx-auto hidden w-full max-w-[1600px] shrink-0 px-4 pb-3 lg:block">
+          <div className="studio-panel overflow-hidden rounded-xl border border-border bg-card">
+            <WordTrack
+              words={words}
+              duration={duration}
+              time={time}
+              cuts={removeSilence ? silences : []}
+              selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
+              onSelect={(index) => {
+                setSelectedWord(index);
+                if (sectionOf(tab) !== "captions") setTab("text");
+              }}
+              onSeek={seekTo}
+              onRetime={retimeWord}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Phone: bottom toolbar */}
+      <nav
+        aria-label="เมนูเครื่องมือ"
+        className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+      >
+        {SECTIONS.map(({ id, short, tab: target, icon: Icon }) => {
+          const current = sectionOf(tab) === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-current={current ? "page" : undefined}
+              onClick={() => {
+                if (!current) setTab(target);
+              }}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 text-[11px]",
+                current ? "font-semibold text-primary" : "text-muted-foreground",
+              )}
+            >
+              <Icon className="h-5 w-5" />
+              {short}
+            </button>
+          );
+        })}
+      </nav>
     </main>
   );
 }

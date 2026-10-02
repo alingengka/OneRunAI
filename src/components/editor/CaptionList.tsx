@@ -1,0 +1,291 @@
+import { useEffect, useRef } from "react";
+import { CornerDownLeft, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { LINE_BREAK, type CaptionGroup, type Word } from "@/lib/captions";
+import { normalizeWordTimes } from "@/lib/caption-editing";
+
+type Props = {
+  groups: CaptionGroup[];
+  /** Full word list; groups hold the same word objects. */
+  words: Word[];
+  duration: number;
+  time: number;
+  selected: number | null;
+  onSelect: (index: number | null) => void;
+  onSeek: (time: number) => void;
+  onPreview: (start: number, end: number) => void;
+  onChange: (words: Word[]) => void;
+  onRetranscribe: (start: number, end: number) => void;
+  busy: boolean;
+};
+
+function fmtTime(t: number) {
+  return t.toFixed(2);
+}
+
+/** Caption lines with per-word editing in a popover (Submagic-style). */
+export function CaptionList({
+  groups,
+  words,
+  duration,
+  time,
+  selected,
+  onSelect,
+  onSeek,
+  onPreview,
+  onChange,
+  onRetranscribe,
+  busy,
+}: Props) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const selectedWord = selected != null ? words[selected] : undefined;
+
+  // Scroll the line holding the selected word into view.
+  useEffect(() => {
+    if (selected == null) return;
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-word-index="${selected}"]`);
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selected]);
+
+  const commit = (next: Word[]) => onChange(normalizeWordTimes(next, duration));
+
+  const editWord = (index: number, patch: Partial<Word>) => {
+    commit(words.map((word, i) => (i === index ? { ...word, ...patch } : word)));
+  };
+
+  const insertAfter = (index: number, word: Word) => {
+    commit([...words.slice(0, index + 1), word, ...words.slice(index + 1)]);
+  };
+
+  const removeAt = (index: number) => {
+    onChange(words.filter((_, i) => i !== index));
+    onSelect(null);
+  };
+
+  if (!groups.length) {
+    return (
+      <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+        ยังไม่มีซับ — อัปโหลดคลิปแล้วกด “สร้างซับด้วย AI” ในเมนูเครื่องมือ AI
+      </p>
+    );
+  }
+
+  return (
+    <div ref={listRef} className="space-y-1.5">
+      {groups.map((group, gi) => {
+        const active = time >= group.start && time <= group.end;
+        return (
+          <div
+            key={`${gi}-${group.start}`}
+            className={cn(
+              "rounded-xl border px-3 py-2.5 transition-colors",
+              active
+                ? "border-primary/50 bg-primary/10"
+                : "border-transparent hover:bg-secondary/60",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => onSeek(group.start)}
+              className="mb-1 font-mono text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              {fmtTime(group.start)} – {fmtTime(group.end)}
+            </button>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-base font-semibold leading-relaxed">
+              {group.words.map((word) => {
+                const index = words.indexOf(word);
+                if (index < 0) return null;
+                if (word.text === LINE_BREAK) {
+                  return (
+                    <button
+                      key={`br-${index}`}
+                      type="button"
+                      aria-label="ลบการขึ้นบรรทัดใหม่"
+                      title="ลบการขึ้นบรรทัดใหม่"
+                      onClick={() => removeAt(index)}
+                      className="rounded px-0.5 text-muted-foreground hover:text-destructive"
+                    >
+                      <CornerDownLeft className="h-3.5 w-3.5" />
+                    </button>
+                  );
+                }
+                const isSelected = selected === index;
+                return (
+                  <Popover
+                    key={`${index}-${word.start}`}
+                    open={isSelected}
+                    onOpenChange={(open) => {
+                      if (!open && isSelected) onSelect(null);
+                    }}
+                  >
+                    <PopoverAnchor asChild>
+                      <button
+                        type="button"
+                        data-word-index={index}
+                        onClick={() => {
+                          onSelect(index);
+                          onSeek(word.start);
+                        }}
+                        className={cn(
+                          "rounded-md px-1 transition-colors",
+                          isSelected
+                            ? "bg-amber-400/15 text-amber-800 outline outline-2 outline-amber-400 dark:text-amber-100"
+                            : "hover:bg-secondary",
+                          !isSelected &&
+                            word.confidenceLabel === "low" &&
+                            "underline decoration-amber-500 decoration-wavy underline-offset-[6px]",
+                        )}
+                        title={
+                          typeof word.confidence === "number"
+                            ? `ความมั่นใจ ${Math.round(word.confidence * 100)}%`
+                            : undefined
+                        }
+                      >
+                        {word.text}
+                      </button>
+                    </PopoverAnchor>
+                    {isSelected && selectedWord && (
+                      <PopoverContent
+                        align="start"
+                        className="w-80 space-y-3"
+                        onOpenAutoFocus={(event) => event.preventDefault()}
+                        onInteractOutside={(event) => {
+                          // Dragging the word's edges on the timeline keeps it selected.
+                          const target = event.target as HTMLElement | null;
+                          if (target?.closest("[data-word-track]")) event.preventDefault();
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold">แก้คำ</span>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            aria-label="ปิด"
+                            onClick={() => onSelect(null)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label
+                            htmlFor={`word-text-${index}`}
+                            className="text-xs text-muted-foreground"
+                          >
+                            ข้อความ
+                          </Label>
+                          <Input
+                            id={`word-text-${index}`}
+                            value={selectedWord.text}
+                            onChange={(event) => editWord(index, { text: event.target.value })}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`word-start-${index}`}
+                              className="text-xs text-muted-foreground"
+                            >
+                              เริ่ม (วินาที)
+                            </Label>
+                            <Input
+                              id={`word-start-${index}`}
+                              type="number"
+                              step="0.01"
+                              value={selectedWord.start.toFixed(2)}
+                              onChange={(event) =>
+                                editWord(index, { start: Number(event.target.value) })
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label
+                              htmlFor={`word-end-${index}`}
+                              className="text-xs text-muted-foreground"
+                            >
+                              จบ (วินาที)
+                            </Label>
+                            <Input
+                              id={`word-end-${index}`}
+                              type="number"
+                              step="0.01"
+                              value={selectedWord.end.toFixed(2)}
+                              onChange={(event) =>
+                                editWord(index, { end: Number(event.target.value) })
+                              }
+                            />
+                          </div>
+                        </div>
+                        <div className="grid gap-1 border-t border-border pt-2">
+                          <Button
+                            variant="ghost"
+                            className="justify-start"
+                            onClick={() => onPreview(selectedWord.start, selectedWord.end)}
+                          >
+                            <Play className="mr-2 h-4 w-4" /> ฟังคำนี้
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="justify-start"
+                            onClick={() =>
+                              insertAfter(index, {
+                                text: LINE_BREAK,
+                                start: selectedWord.end,
+                                end: selectedWord.end,
+                              })
+                            }
+                          >
+                            <CornerDownLeft className="mr-2 h-4 w-4" /> ขึ้นบรรทัดใหม่หลังคำนี้
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="justify-start"
+                            onClick={() => {
+                              const next = words[index + 1];
+                              const end = Math.min(
+                                next ? next.start : duration,
+                                selectedWord.end + 0.4,
+                              );
+                              insertAfter(index, {
+                                text: "คำใหม่",
+                                start: selectedWord.end,
+                                end: Math.max(end, selectedWord.end + 0.06),
+                              });
+                              onSelect(index + 1);
+                            }}
+                          >
+                            <Plus className="mr-2 h-4 w-4" /> เพิ่มคำหลังคำนี้
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="justify-start"
+                            disabled={busy}
+                            onClick={() => onRetranscribe(group.start, group.end)}
+                          >
+                            <RefreshCw className={cn("mr-2 h-4 w-4", busy && "animate-spin")} />
+                            ถอดเสียงบรรทัดนี้ใหม่
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            className="justify-start text-destructive hover:text-destructive"
+                            onClick={() => removeAt(index)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" /> ลบคำ
+                          </Button>
+                        </div>
+                      </PopoverContent>
+                    )}
+                  </Popover>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
