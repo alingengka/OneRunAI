@@ -73,8 +73,11 @@ export const searchKlipyMedia = createServerFn({ method: "POST" })
     const items: KlipyItem[] = [];
     for (const raw of payload.data?.data ?? []) {
       const preview = pickUrl(raw.file, ["gif", "webp"]);
-      const video = pickUrl(raw.file, ["mp4"]);
-      const url = video ?? preview;
+      // Stickers keep their transparent animated image; GIFs and clips use mp4.
+      const video = data.kind === "stickers" ? undefined : pickUrl(raw.file, ["mp4"]);
+      const sticker =
+        data.kind === "stickers" ? pickUrl(raw.file, ["webp", "gif", "png"]) : undefined;
+      const url = video ?? sticker ?? preview;
       if (!url || !preview) continue;
       items.push({
         id: String(raw.id ?? raw.slug ?? url),

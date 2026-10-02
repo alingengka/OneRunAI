@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Clock, ImagePlus, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { Clock, ImagePlus, Loader2, RotateCw, Search, Sparkles, Trash2, X } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { searchKlipyMedia, type KlipyItem } from "@/lib/klipy.functions";
+import { klipyCustomerId } from "@/lib/klipy-client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,9 +87,11 @@ const label = (sticker: Sticker) =>
     ? (EMOJIS.find((e) => e.code === sticker.asset)?.char ?? "🙂")
     : sticker.kind === "image"
       ? "รูปของฉัน"
-      : sticker.kind === "lottie"
-        ? "แอนิเมชันของฉัน"
-        : (GRAPHICS.find((g) => g.id === sticker.asset)?.label ?? sticker.asset);
+      : sticker.kind === "animated"
+        ? "สติกเกอร์ KLIPY"
+        : sticker.kind === "lottie"
+          ? "แอนิเมชันของฉัน"
+          : (GRAPHICS.find((g) => g.id === sticker.asset)?.label ?? sticker.asset);
 
 export function StickerPanel({
   stickers,
@@ -100,7 +105,29 @@ export function StickerPanel({
   onAutoEmoji,
   canAuto,
 }: Props) {
-  const [kind, setKind] = useState<"emoji" | "graphic" | "mine">("emoji");
+  const [kind, setKind] = useState<"emoji" | "graphic" | "klipy" | "mine">("emoji");
+  const searchKlipy = useServerFn(searchKlipyMedia);
+  const [klipyQuery, setKlipyQuery] = useState("");
+  const [klipyItems, setKlipyItems] = useState<KlipyItem[]>([]);
+  const [klipyLoading, setKlipyLoading] = useState(false);
+  const [klipyError, setKlipyError] = useState<string | null>(null);
+  const runKlipy = async () => {
+    const q = klipyQuery.trim();
+    if (!q) return;
+    setKlipyLoading(true);
+    setKlipyError(null);
+    try {
+      const result = await searchKlipy({
+        data: { query: q, kind: "stickers", customerId: klipyCustomerId() },
+      });
+      setKlipyItems(result.items);
+      if (!result.items.length) setKlipyError("ไม่พบสติกเกอร์ ลองคำอื่น (ภาษาอังกฤษได้ผลดีที่สุด)");
+    } catch (error) {
+      setKlipyError(error instanceof Error ? error.message : "ค้นหาไม่สำเร็จ");
+    } finally {
+      setKlipyLoading(false);
+    }
+  };
   const [library, setLibrary] = useState<LibrarySticker[]>([]);
   const uploadRef = useRef<HTMLInputElement>(null);
   useEffect(() => setLibrary(loadStickerLibrary()), []);
@@ -146,6 +173,7 @@ export function StickerPanel({
             [
               ["emoji", "อิโมจิ"],
               ["graphic", "Motion Graphic"],
+              ["klipy", "KLIPY"],
               ["mine", "ของฉัน"],
             ] as const
           ).map(([key, text]) => (
@@ -176,7 +204,62 @@ export function StickerPanel({
         ลากจุดมุมเพื่อย่อ/ขยาย · ลากปุ่มด้านบนเพื่อหมุน
       </p>
 
-      {kind === "mine" ? (
+      {kind === "klipy" ? (
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <Input
+              value={klipyQuery}
+              placeholder="ค้นหาสติกเกอร์ เช่น wow, love, money"
+              onChange={(event) => setKlipyQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void runKlipy();
+              }}
+            />
+            <Button onClick={() => void runKlipy()} disabled={klipyLoading || !klipyQuery.trim()}>
+              {klipyLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
+              ค้นหา
+            </Button>
+          </div>
+          {klipyError && <p className="text-xs text-destructive">{klipyError}</p>}
+          <div className="grid max-h-72 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-5">
+            {klipyItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                title={item.title}
+                aria-label={`เพิ่มสติกเกอร์ ${item.title}`}
+                onClick={() =>
+                  add({
+                    kind: "animated",
+                    asset: item.assetUrl,
+                    x: 50,
+                    y: 40,
+                    size: 24,
+                    rotation: 0,
+                  })
+                }
+                className="grid aspect-square place-items-center rounded-lg border border-border bg-preview p-1 transition hover:border-primary/60 active:scale-95"
+              >
+                <img
+                  src={item.previewUrl}
+                  alt=""
+                  loading="lazy"
+                  className="max-h-full max-w-full object-contain"
+                />
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            สติกเกอร์จาก KLIPY เป็นผลงานของผู้ใช้ทั่วไป บางชิ้นอาจมีลิขสิทธิ์
+            ตรวจสอบก่อนใช้เชิงพาณิชย์ · เคลื่อนไหวในไฟล์ Export บน Chrome/Edge/Android (Safari
+            จะเป็นภาพนิ่ง)
+          </p>
+        </div>
+      ) : kind === "mine" ? (
         <div className="space-y-3">
           <input
             ref={uploadRef}
