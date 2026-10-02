@@ -43,6 +43,7 @@ AI Short Video Editor: ถอดเสียงภาษาลาวเป็น
 | `ELEVENLABS_API_KEY` | แนะนำ (ถอดเสียงลาวแม่นที่สุด) | https://elevenlabs.io |
 | `OPENAI_API_KEY` | ไม่บังคับ | https://platform.openai.com |
 | `KLIPY_API_KEY` | ไม่บังคับ (ค้นหา GIF/B-roll) | https://partner.klipy.com |
+| `PIXABAY_API_KEY` | ไม่บังคับ (วิดีโอ/รูป B-roll ฟรี ใช้เชิงพาณิชย์ได้) | https://pixabay.com/api/docs/ |
 
 ### 3. Deploy บน Vercel
 

@@ -1,12 +1,13 @@
 /**
  * พร็อกซีอ่านไฟล์สื่อ B-roll ให้เป็น origin เดียวกับแอป
  * จำเป็นเพราะ canvas ที่วาดภาพข้ามโดเมนจะถูก "taint" แล้ว export ไม่ได้
- * อนุญาตเฉพาะโฮสต์ของ KLIPY และคลังไฟล์ของโปรเจกต์เท่านั้น
+ * อนุญาตเฉพาะโฮสต์ของ KLIPY, Pixabay และคลังไฟล์ของโปรเจกต์เท่านั้น
  */
 import { createFileRoute } from "@tanstack/react-router";
 
 function allowedHost(host: string): boolean {
   if (host === "klipy.com" || host.endsWith(".klipy.com")) return true;
+  if (host === "pixabay.com" || host.endsWith(".pixabay.com")) return true;
   const storage = process.env["SUPABASE_URL"];
   if (storage) {
     try {
@@ -36,9 +37,7 @@ export const Route = createFileRoute("/api/public/broll-media")({
         let upstream: Response;
         try {
           upstream = await fetch(parsed.toString(), {
-            headers: request.headers.has("range")
-              ? { range: request.headers.get("range")! }
-              : {},
+            headers: request.headers.has("range") ? { range: request.headers.get("range")! } : {},
           });
         } catch {
           return new Response("upstream unreachable", { status: 502 });

@@ -42,7 +42,7 @@ export type SceneElement = {
   /** B-roll: URL ของสื่อที่ใช้แทนภาพต้นฉบับ */
   assetUrl?: string | undefined;
   assetType?: "image" | "video" | undefined;
-  assetSource?: "upload" | "klipy" | undefined;
+  assetSource?: "upload" | "klipy" | "pixabay" | undefined;
   /** คำค้นหาล่าสุดที่ใช้กับคลังคลิป */
   searchQuery?: string | undefined;
 };
@@ -50,7 +50,7 @@ export type SceneElement = {
 export type SceneAssetPatch = {
   assetUrl?: string | undefined;
   assetType?: "image" | "video" | undefined;
-  assetSource?: "upload" | "klipy" | undefined;
+  assetSource?: "upload" | "klipy" | "pixabay" | undefined;
   searchQuery?: string | undefined;
 };
 

@@ -24,9 +24,20 @@ export function BrollEditor({ element, sceneText, onUpdateAsset }: Props) {
         <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-preview">
           {element.assetUrl ? (
             element.assetType === "video" ? (
-              <video src={element.assetUrl} className="h-full w-full object-cover" muted loop playsInline autoPlay />
+              <video
+                src={element.assetUrl}
+                className="h-full w-full object-cover"
+                muted
+                loop
+                playsInline
+                autoPlay
+              />
             ) : (
-              <img src={element.assetUrl} alt="สื่อ B-roll" className="h-full w-full object-cover" />
+              <img
+                src={element.assetUrl}
+                alt="สื่อ B-roll"
+                className="h-full w-full object-cover"
+              />
             )
           ) : (
             <ImageIcon className="h-5 w-5 text-muted-foreground" />
@@ -37,11 +48,18 @@ export function BrollEditor({ element, sceneText, onUpdateAsset }: Props) {
             {element.assetUrl
               ? element.assetSource === "klipy"
                 ? "คลิปจากคลัง KLIPY"
-                : "ไฟล์ที่คุณอัปโหลดเอง"
+                : element.assetSource === "pixabay"
+                  ? "คลิปฟรีจาก Pixabay (ใช้เชิงพาณิชย์ได้)"
+                  : "ไฟล์ที่คุณอัปโหลดเอง"
               : "ยังไม่ได้เลือกสื่อ"}
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" className="h-8 text-[11px]" onClick={() => setOpen(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-[11px]"
+              onClick={() => setOpen(true)}
+            >
               <Replace className="h-3.5 w-3.5" /> เปลี่ยนสื่อ
             </Button>
             {element.assetUrl && (
@@ -50,7 +68,11 @@ export function BrollEditor({ element, sceneText, onUpdateAsset }: Props) {
                 variant="ghost"
                 className="h-8 text-[11px]"
                 onClick={() =>
-                  onUpdateAsset({ assetUrl: undefined, assetType: undefined, assetSource: undefined })
+                  onUpdateAsset({
+                    assetUrl: undefined,
+                    assetType: undefined,
+                    assetSource: undefined,
+                  })
                 }
               >
                 <RotateCcw className="h-3.5 w-3.5" /> เอาสื่อออก
