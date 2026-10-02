@@ -77,8 +77,18 @@ export function StickerOverlay({
     if (!ctx) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    layer.draw(ctx, stickers, time, w, h);
-  }, [stickers, time, width, height, loaded]);
+    if (!interactive) {
+      layer.draw(ctx, stickers, time, w, h);
+      return;
+    }
+    // Paused: show each sticker fully animated in, even right at its start
+    // time, so a sticker just added is visible while it is being placed.
+    for (const sticker of stickers) {
+      if (time < sticker.start || time > sticker.end) continue;
+      const settled = Math.min(sticker.start + 0.8, (sticker.start + sticker.end) / 2);
+      layer.draw(ctx, [sticker], Math.max(time, settled), w, h);
+    }
+  }, [stickers, time, width, height, loaded, interactive]);
 
   const visible = stickers.filter((s) => time >= s.start && time <= s.end);
 
@@ -135,7 +145,8 @@ export function StickerOverlay({
       />
       {interactive &&
         visible.map((sticker) => {
-          const box = (sticker.size / 100) * height;
+          // at least a fingertip wide, so small stickers stay easy to grab on phones
+          const box = Math.max(44, (sticker.size / 100) * height);
           const selected = sticker.id === selectedId;
           return (
             <div
@@ -174,7 +185,7 @@ export function StickerOverlay({
                       event.stopPropagation();
                       onRemove(sticker.id);
                     }}
-                    className="absolute -right-3 -top-3 grid h-6 w-6 place-items-center rounded-full bg-white text-black shadow-md"
+                    className="absolute -right-3.5 -top-3.5 grid h-7 w-7 before:absolute before:-inset-3 before:content-[''] place-items-center rounded-full bg-white text-black shadow-md"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -185,7 +196,7 @@ export function StickerOverlay({
                     onPointerMove={move}
                     onPointerUp={end}
                     onPointerCancel={end}
-                    className="absolute -bottom-3 -right-3 h-6 w-6 cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
+                    className="absolute -bottom-3.5 -right-3.5 h-7 w-7 before:absolute before:-inset-3 before:content-[''] cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
                   />
                 </>
               )}

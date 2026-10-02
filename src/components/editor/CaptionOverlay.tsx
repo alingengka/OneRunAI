@@ -390,7 +390,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
               event.stopPropagation();
               onTransform({ rotation: 0 });
             }}
-            className="absolute -top-9 left-1/2 grid h-7 w-7 -translate-x-1/2 cursor-grab touch-none place-items-center rounded-full bg-white text-black shadow-md"
+            className="absolute -top-10 left-1/2 grid h-8 w-8 before:absolute before:-inset-3 before:content-[''] -translate-x-1/2 cursor-grab touch-none place-items-center rounded-full bg-white text-black shadow-md"
             style={{ textShadow: "none" }}
           >
             <RotateCw className="h-3.5 w-3.5" />
@@ -403,7 +403,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
             onPointerMove={moveGesture}
             onPointerUp={endGesture}
             onPointerCancel={endGesture}
-            className="absolute -bottom-3 -right-3 h-6 w-6 cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
+            className="absolute -bottom-3.5 -right-3.5 h-7 w-7 before:absolute before:-inset-3 before:content-[''] cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
           />
         </>
       )}
