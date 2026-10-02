@@ -140,6 +140,7 @@ import { OneRunLogo } from "@/components/brand/OneRunLogo";
 import { isAccountError } from "@/lib/account-shared";
 import { runInOrderPool } from "@/lib/pool";
 import { AccessGate } from "@/components/account/AccessGate";
+import { ExportMenu, loadExportPreset, type ExportType } from "@/components/editor/ExportMenu";
 import { AccountMenu } from "@/components/account/AccountMenu";
 
 export const Route = createFileRoute("/app")({
@@ -271,7 +272,16 @@ function Studio() {
   const [captionsOn, setCaptionsOn] = useState(true);
   const [removeSilence, setRemoveSilence] = useState(false);
   const [noiseReduction, setNoiseReduction] = useState(false);
-  const [resolution, setResolution] = useState<ExportResolution>("source");
+  const [resolution, setResolution] = useState<ExportResolution>("1080");
+  const [exportFps, setExportFps] = useState(30);
+  const [exportType, setExportType] = useState<ExportType>("captions");
+  useEffect(() => {
+    const preset = loadExportPreset();
+    if (!preset) return;
+    setResolution(preset.resolution);
+    setExportFps(preset.fps);
+    setExportType(preset.type);
+  }, []);
   const [tiktokPreview, setTiktokPreview] = useState(false);
   const [autoResync, setAutoResync] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -1077,7 +1087,11 @@ function Studio() {
   };
 
   /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
-  const exportFinalVideo = () => {
+  const exportFinalVideo = (type: ExportType = exportType) => {
+    if (type === "srt") {
+      exportSrt();
+      return;
+    }
     if (!videoUrl || !keepSegments.length) {
       toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน");
       return;
@@ -1095,11 +1109,12 @@ function Studio() {
         noiseReduction,
         noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
-        captions: captionsOn,
+        captions: type === "captions",
         signal,
         scenes,
         sceneElements,
         resolution,
+        fps: exportFps,
       };
       const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
 
@@ -1464,10 +1479,17 @@ function Studio() {
           >
             {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
-          <Button onClick={() => setTab("export")} className="px-3 sm:px-4" aria-label="ส่งออก">
-            <Download className="h-4 w-4 sm:mr-2" />{" "}
-            <span className="hidden sm:inline">ส่งออก</span>
-          </Button>
+          <ExportMenu
+            settings={{ resolution, fps: exportFps, type: exportType }}
+            onChange={(patch) => {
+              if (patch.resolution) setResolution(patch.resolution);
+              if (patch.fps) setExportFps(patch.fps);
+              if (patch.type) setExportType(patch.type);
+            }}
+            onExport={() => exportFinalVideo()}
+            busy={rendering}
+            disabled={exportType === "srt" ? !groups.length : !keepSegments.length}
+          />
           <AccountMenu />
         </div>
       </header>
@@ -2045,7 +2067,7 @@ function Studio() {
                 </div>
                 <Button
                   size="sm"
-                  onClick={exportFinalVideo}
+                  onClick={() => exportFinalVideo(captionsOn ? "captions" : "clean")}
                   disabled={rendering || !keepSegments.length}
                 >
                   {rendering ? (
@@ -2437,6 +2459,8 @@ function Studio() {
                     setStyle((current) => ({ ...current, posX, posY }))
                   }
                   onEditText={(text) => editActiveGroupText(text)}
+                  onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+                  showHandles={!playing}
                 />
               )}
               <ViralTextOverlay
@@ -2449,7 +2473,8 @@ function Studio() {
             </div>
             {videoUrl && (
               <p className="mt-2 hidden text-center text-xs text-muted-foreground lg:block">
-                ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)
+                ลากข้อความเพื่อย้าย · ลากจุดมุมเพื่อย่อ/ขยาย · ลากปุ่มด้านบนเพื่อหมุน ·
+                ดับเบิลคลิกเพื่อแก้ข้อความ
               </p>
             )}
 

@@ -219,6 +219,16 @@ export type CaptionStyle = {
   plateColor: string;
   /** ระยะห่างระหว่างบรรทัด (เท่าของขนาดฟอนต์) */
   lineGap?: number;
+  /** extra space between letters, in em */
+  letterSpacing?: number | undefined;
+  /** 0–1 opacity of the whole caption */
+  opacity?: number | undefined;
+  /** rotation of the caption block, in degrees */
+  rotation?: number | undefined;
+  /** 0–1 opacity of the background plate (default 0.9) */
+  plateOpacity?: number | undefined;
+  /** plate corner radius, in em (default 0.22) */
+  plateRadius?: number | undefined;
   /** สไตล์เฉพาะบรรทัดที่ 1,2,3… (index เริ่มที่ 0) */
   lineStyles?: Record<number, LineStyle>;
 };
@@ -703,4 +713,13 @@ export function groupCaptions(words: Word[], style: Pick<CaptionStyle, "captionM
   if (mode === "word") return groupWords(words, 1);
   if (mode === "fixed") return groupWords(words, style.wordsPerGroup);
   return groupSentences(words);
+}
+
+/** Hex color (#rgb or #rrggbb) with an alpha, as rgba(). */
+export function withAlpha(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean.slice(0, 6);
+  const value = Number.parseInt(full, 16);
+  if (!Number.isFinite(value)) return hex;
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${Math.max(0, Math.min(1, alpha))})`;
 }

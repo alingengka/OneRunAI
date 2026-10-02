@@ -191,6 +191,8 @@ export async function exportWebCodecsVideo(
     scenes?: MotionScene[];
     sceneElements?: MotionElement[];
     resolution?: ExportResolution;
+    /** Output frame rate; defaults to 30. */
+    fps?: number;
   } = {},
 ): Promise<WebCodecsExportResult> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
@@ -254,7 +256,7 @@ export async function exportWebCodecsVideo(
     });
 
     // ไม่ต้องลด fps ตามความสามารถเครื่องอีกแล้ว เพราะไม่ได้อัดตามเวลาจริง
-    const fps = 30;
+    const fps = options.fps && options.fps > 0 ? options.fps : 30;
     const frameDurationUs = 1e6 / fps;
     const bitrateOverride = (window as unknown as { __EXPORT_BITRATE?: number }).__EXPORT_BITRATE;
     const bitrate = bitrateOverride ?? Math.min(64_000_000, Math.max(8_000_000, Math.round(width * height * fps * 0.2)));
@@ -279,7 +281,8 @@ export async function exportWebCodecsVideo(
 
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
-      video: { codec: muxCodec, width, height, frameRate: fps },
+      // The muxer needs an integer timescale; 29.97fps uses 29970 ticks/s.
+      video: { codec: muxCodec, width, height, frameRate: Number.isInteger(fps) ? fps : Math.round(fps * 1000) },
       ...(audioBuffer && audioPick
         ? {
             audio: {
@@ -314,7 +317,7 @@ export async function exportWebCodecsVideo(
         const timestamp = Math.round(frameIndex * frameDurationUs);
         const frame = new VideoFrame(canvas, { timestamp, duration: Math.round(frameDurationUs) });
         // keyframe ทุก 2 วินาที เพื่อให้ seek ในไฟล์ผลลัพธ์ลื่น
-        encoder.encode(frame, { keyFrame: frameIndex % (fps * 2) === 0 });
+        encoder.encode(frame, { keyFrame: frameIndex % Math.round(fps * 2) === 0 });
         frame.close();
         frameIndex++;
         if (encoder.encodeQueueSize > 8) {
