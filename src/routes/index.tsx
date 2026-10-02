@@ -324,7 +324,7 @@ function Landing() {
             <h1 className="mt-6 font-landing text-[2.6rem] font-black leading-[1.08] tracking-tight sm:text-6xl">
               ใส่ซับลาวให้คลิป
               <br />
-              <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-amber-200 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-white via-violet-100 to-violet-300 bg-clip-text text-transparent">
                 ไวรัล
               </span>{" "}
               ภายใน 5 นาที
