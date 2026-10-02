@@ -5,7 +5,8 @@
  * the exported file, so both always match.
  */
 
-export type StickerKind = "emoji" | "graphic";
+/** "image" and "lottie" are the user's own uploads (data URL / Lottie JSON text). */
+export type StickerKind = "emoji" | "graphic" | "image" | "lottie";
 
 export type GraphicId =
   "arrow" | "circle" | "underline" | "sparkles" | "follow" | "heart" | "check" | "burst";
@@ -13,7 +14,7 @@ export type GraphicId =
 export type Sticker = {
   id: string;
   kind: StickerKind;
-  /** emoji code point file name (e.g. "1f525") or a GraphicId */
+  /** emoji code point (e.g. "1f525"), a GraphicId, an image data URL or Lottie JSON text */
   asset: string;
   /** source-video seconds */
   start: number;
@@ -409,24 +410,47 @@ function stickerEnvelope(sticker: Sticker, time: number): { alpha: number; scale
   const exit = clamp01(left / 0.18);
   return {
     alpha: Math.min(enter, exit),
-    scale: sticker.kind === "emoji" ? 0.6 + 0.4 * easeBack(local / 0.3) : 1,
+    scale: sticker.kind === "graphic" ? 1 : 0.6 + 0.4 * easeBack(local / 0.3),
   };
 }
 
 export function createStickerLayer(resolution = 512): StickerLayer {
   const players = new Map<string, Promise<EmojiPlayer | null>>();
   const ready = new Map<string, EmojiPlayer>();
+  const images = new Map<string, Promise<HTMLImageElement | null>>();
+  const readyImages = new Map<string, HTMLImageElement>();
 
-  const load = (code: string) => {
-    let pending = players.get(code);
+  const loadImage = (src: string) => {
+    let pending = images.get(src);
     if (!pending) {
+      pending = new Promise<HTMLImageElement | null>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          readyImages.set(src, img);
+          resolve(img);
+        };
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+      images.set(src, pending);
+    }
+    return pending;
+  };
+
+  /** `key` is an emoji code, or Lottie JSON text for an uploaded animation. */
+  const load = (key: string, kind: "emoji" | "lottie" = "emoji") => {
+    let pending = players.get(key);
+    if (!pending) {
+      const code = key;
       pending = (async () => {
         try {
           const [{ default: lottie }, data] = await Promise.all([
             import("lottie-web/build/player/lottie_light_canvas"),
-            fetch(emojiUrl(code)).then((r) =>
-              r.ok ? r.json() : Promise.reject(new Error(String(r.status))),
-            ),
+            kind === "lottie"
+              ? Promise.resolve(JSON.parse(key) as unknown)
+              : fetch(emojiUrl(code)).then((r) =>
+                  r.ok ? r.json() : Promise.reject(new Error(String(r.status))),
+                ),
           ]);
           const canvas = document.createElement("canvas");
           canvas.width = resolution;
@@ -446,11 +470,14 @@ export function createStickerLayer(resolution = 512): StickerLayer {
           ready.set(code, player);
           return player;
         } catch (error) {
-          console.error(`[stickers] emoji ${code} failed to load`, error);
+          console.error(
+            `[stickers] ${kind === "lottie" ? "lottie" : `emoji ${code}`} failed to load`,
+            error,
+          );
           return null;
         }
       })();
-      players.set(code, pending);
+      players.set(key, pending);
     }
     return pending;
   };
@@ -458,7 +485,13 @@ export function createStickerLayer(resolution = 512): StickerLayer {
   return {
     async prepare(stickers) {
       const codes = new Set(stickers.filter((s) => s.kind === "emoji").map((s) => s.asset));
-      await Promise.all([...codes].map(load));
+      const lotties = new Set(stickers.filter((s) => s.kind === "lottie").map((s) => s.asset));
+      const pics = new Set(stickers.filter((s) => s.kind === "image").map((s) => s.asset));
+      await Promise.all([
+        ...[...codes].map((code) => load(code)),
+        ...[...lotties].map((json) => load(json, "lottie")),
+        ...[...pics].map(loadImage),
+      ]);
     },
     draw(ctx, stickers, time, width, height) {
       for (const sticker of stickers) {
@@ -471,9 +504,19 @@ export function createStickerLayer(resolution = 512): StickerLayer {
         ctx.translate((sticker.x / 100) * width, (sticker.y / 100) * height);
         if (sticker.rotation) ctx.rotate((sticker.rotation * Math.PI) / 180);
         ctx.scale(scale, scale);
-        if (sticker.kind === "emoji") {
+        if (sticker.kind === "image") {
+          const img = readyImages.get(sticker.asset);
+          if (!img) void loadImage(sticker.asset);
+          else {
+            // fit inside the square box, keeping the picture's proportions
+            const ratio = img.naturalWidth / Math.max(1, img.naturalHeight);
+            const w = ratio >= 1 ? box : box * ratio;
+            const h = ratio >= 1 ? box / ratio : box;
+            ctx.drawImage(img, -w / 2, -h / 2, w, h);
+          }
+        } else if (sticker.kind === "emoji" || sticker.kind === "lottie") {
           const player = ready.get(sticker.asset);
-          if (!player) void load(sticker.asset);
+          if (!player) void load(sticker.asset, sticker.kind);
           else {
             const frames = Math.max(1, player.anim.totalFrames);
             const frame = Math.floor(((time - sticker.start) * player.anim.frameRate) % frames);
@@ -495,6 +538,8 @@ export function createStickerLayer(resolution = 512): StickerLayer {
       for (const player of ready.values()) player.anim.destroy();
       ready.clear();
       players.clear();
+      images.clear();
+      readyImages.clear();
     },
   };
 }

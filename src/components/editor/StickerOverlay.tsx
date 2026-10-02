@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { X } from "lucide-react";
+import { RotateCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createStickerLayer, type Sticker, type StickerLayer } from "@/lib/media/stickers";
 
@@ -27,7 +27,17 @@ type Drag =
       startDist: number;
       startSize: number;
       frame: DOMRect;
-    };
+    }
+  | { id: string; kind: "rotate"; cx: number; cy: number; frame: DOMRect };
+
+/** Snaps to the nearest quarter turn when within 4°. */
+function snapAngle(deg: number): number {
+  const normalized = ((deg + 540) % 360) - 180;
+  for (const target of [-180, -90, 0, 90, 180]) {
+    if (Math.abs(normalized - target) <= 4) return target === -180 ? 180 : target;
+  }
+  return Math.round(normalized);
+}
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
@@ -100,7 +110,15 @@ export function StickerOverlay({
     onSelect(sticker.id);
     event.currentTarget.setPointerCapture(event.pointerId);
     if (kind === "move") setDrag({ id: sticker.id, kind, frame });
-    else {
+    else if (kind === "rotate") {
+      setDrag({
+        id: sticker.id,
+        kind,
+        cx: frame.left + (sticker.x / 100) * frame.width,
+        cy: frame.top + (sticker.y / 100) * frame.height,
+        frame,
+      });
+    } else {
       const cx = frame.left + (sticker.x / 100) * frame.width;
       const cy = frame.top + (sticker.y / 100) * frame.height;
       setDrag({
@@ -123,6 +141,10 @@ export function StickerOverlay({
         x: clamp(((event.clientX - drag.frame.left) / drag.frame.width) * 100, 0, 100),
         y: clamp(((event.clientY - drag.frame.top) / drag.frame.height) * 100, 0, 100),
       });
+    } else if (drag.kind === "rotate") {
+      // the handle sits above the sticker, so straight up is 0°
+      const angle = (Math.atan2(event.clientY - drag.cy, event.clientX - drag.cx) * 180) / Math.PI;
+      onChange(drag.id, { rotation: snapAngle(angle + 90) });
     } else {
       const dist = Math.hypot(event.clientX - drag.cx, event.clientY - drag.cy);
       onChange(drag.id, {
@@ -198,6 +220,22 @@ export function StickerOverlay({
                     onPointerCancel={end}
                     className="absolute -bottom-3.5 -right-3.5 h-7 w-7 before:absolute before:-inset-3 before:content-[''] cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
                   />
+                  <span
+                    role="button"
+                    aria-label="ลากเพื่อหมุนสติกเกอร์"
+                    title="ลากเพื่อหมุน (ดับเบิลคลิกเพื่อตั้งตรง)"
+                    onPointerDown={(event) => begin(event, sticker, "rotate")}
+                    onPointerMove={move}
+                    onPointerUp={end}
+                    onPointerCancel={end}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      onChange(sticker.id, { rotation: 0 });
+                    }}
+                    className="absolute -top-10 left-1/2 grid h-8 w-8 -translate-x-1/2 cursor-grab touch-none place-items-center rounded-full bg-white text-black shadow-md before:absolute before:-inset-3 before:content-['']"
+                  >
+                    <RotateCw className="h-4 w-4" />
+                  </span>
                 </>
               )}
             </div>

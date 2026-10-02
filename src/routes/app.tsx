@@ -141,6 +141,7 @@ import { OneRunLogo } from "@/components/brand/OneRunLogo";
 import { isAccountError } from "@/lib/account-shared";
 import { runInOrderPool } from "@/lib/pool";
 import { AccessGate } from "@/components/account/AccessGate";
+import { CaptionLayoutControls } from "@/components/editor/CaptionLayoutControls";
 import { ExportMenu, loadExportPreset, type ExportType } from "@/components/editor/ExportMenu";
 import { StickerOverlay } from "@/components/editor/StickerOverlay";
 import { StickerPanel } from "@/components/editor/StickerPanel";
@@ -2338,40 +2339,10 @@ function Studio() {
 
           {tab === "text" && (
             <div className="space-y-5">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm text-muted-foreground">แสดงซับบนวิดีโอ</span>
-                <div
-                  role="radiogroup"
-                  aria-label="แสดงซับบนวิดีโอ"
-                  className="flex rounded-lg bg-secondary p-1"
-                >
-                  {(
-                    [
-                      ["sentence", "ทั้งประโยค"],
-                      ["word", "ทีละคำ"],
-                    ] as const
-                  ).map(([mode, label]) => {
-                    const on = captionModeOf(style) === mode;
-                    return (
-                      <button
-                        key={mode}
-                        type="button"
-                        role="radio"
-                        aria-checked={on}
-                        onClick={() => setStyle((current) => ({ ...current, captionMode: mode }))}
-                        className={cn(
-                          "h-9 rounded-md px-3 text-sm transition-colors",
-                          on
-                            ? "bg-background font-semibold text-foreground shadow-sm"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <CaptionLayoutControls
+                style={style}
+                onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+              />
               <CaptionList
                 groups={groups}
                 words={words}
