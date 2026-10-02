@@ -120,7 +120,7 @@
   --sidebar-accent-foreground: var(--text-primary);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--accent-secondary);
-  font-family: "Noto Sans Thai", "Inter", system-ui, sans-serif;
+  font-family: "Noto Sans Thai", "Noto Sans Lao", "Inter", system-ui, sans-serif;
 }
 
 
@@ -383,3 +383,60 @@
 .cap-demo-karaoke { animation-name: cap-karaoke }
 .cap-demo-karaoke2 { animation-name: cap-karaoke2 }
 .cap-demo-karaokePlus { animation-name: cap-karaoke-plus }
+
+/* ---- Landing page: captions appearing word by word in the phone mockups ---- */
+@keyframes onerun-word-in {
+  0% {
+    opacity: 0;
+    transform: translateY(30%) scale(0.85);
+  }
+  8%,
+  86% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+@keyframes onerun-karaoke {
+  0%,
+  6% {
+    color: #ffffff;
+  }
+  10%,
+  22% {
+    color: #ffd400;
+    transform: scale(1.12);
+  }
+  28%,
+  100% {
+    color: #ffffff;
+    transform: none;
+  }
+}
+.onerun-word {
+  margin-right: 0.12em;
+  animation-name: onerun-word-in;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+.onerun-karaoke {
+  animation-name: onerun-word-in, onerun-karaoke;
+}
+@media (prefers-reduced-motion: reduce) {
+  .onerun-word {
+    animation: none;
+    opacity: 1;
+  }
+}
+.font-landing {
+  font-family: "Kanit", "Noto Sans Thai", "Noto Sans Lao", system-ui, sans-serif;
+}
+/* Landing hero accent word: light lavender to soft purple, like the brand swatch */
+.onerun-viral {
+  background-image: linear-gradient(180deg, #e9dbf2 0%, #c9abe1 50%, #a776cf 100%);
+  filter: drop-shadow(0 0 18px rgba(167, 118, 207, 0.45));
+}
