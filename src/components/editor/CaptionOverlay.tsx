@@ -350,7 +350,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                     padding: boxed ? `0 ${fontSize * 0.1}px` : undefined,
                     borderRadius: boxed ? fontSize * 0.12 : undefined,
                     background: k2Fill
-                      ? `linear-gradient(to bottom, ${k2Color} ${wordProgress * 100}%, ${ls.color ?? style.color} ${wordProgress * 100}%)`
+                      ? `linear-gradient(to bottom, ${k2Color} ${wordProgress * 100}%, ${word.color ?? ls.color ?? style.color} ${wordProgress * 100}%)`
                       : boxed
                         ? style.highlightColor
                         : undefined,
@@ -362,7 +362,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                         ? style.highlightTextColor
                         : emphasize && (anim === "karaoke2" || style.highlight === "color")
                           ? (style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor)
-                          : undefined,
+                          : word.color,
                     transform: wordTransform,
                     transition:
                       anim === "none" ? undefined : `color ${Math.round(80 / speed)}ms linear`,
