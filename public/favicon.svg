@@ -1,0 +1,32 @@
+<svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="ringDark" x1="0%" y1="0%" x2="0%" y2="100%">
+<stop offset="0%" stop-color="#E9D5FF"/>
+<stop offset="30%" stop-color="#C084FC"/>
+<stop offset="65%" stop-color="#9333EA"/>
+<stop offset="100%" stop-color="#6D28D9"/>
+</linearGradient>
+<radialGradient id="ambientGlow" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#A855F7" stop-opacity="0.35"/>
+<stop offset="100%" stop-color="#A855F7" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="dotGlow" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+<stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="dotFill" cx="35%" cy="30%" r="75%">
+<stop offset="0%" stop-color="#FFFFFF"/>
+<stop offset="100%" stop-color="#F1EAFE"/>
+</radialGradient>
+<linearGradient id="sheen" x1="0%" y1="0%" x2="0%" y2="60%">
+<stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+<stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+</linearGradient>
+</defs>
+<rect x="0" y="0" width="360" height="360" rx="64" fill="#14121C"/>
+<circle cx="180" cy="180" r="170" fill="url(#ambientGlow)"/>
+<circle cx="230" cy="93" r="48" fill="url(#dotGlow)"/>
+<path d="M256.6 115.7 A100 100 0 1 1 197.36 81.52" fill="none" stroke="url(#ringDark)" stroke-width="22" stroke-linecap="round"/>
+<circle cx="230" cy="93" r="22" fill="url(#dotFill)"/>
+<rect x="0" y="0" width="360" height="360" rx="64" fill="url(#sheen)"/>
+</svg>
