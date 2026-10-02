@@ -15,6 +15,7 @@ import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
 import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
+import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 type Progress = (ratio: number) => void;
@@ -191,6 +192,7 @@ export async function exportWebCodecsVideo(
     scenes?: MotionScene[];
     sceneElements?: MotionElement[];
     resolution?: ExportResolution;
+    stickers?: Sticker[];
     /** Output frame rate; defaults to 30. */
     fps?: number;
   } = {},
@@ -224,6 +226,7 @@ export async function exportWebCodecsVideo(
   let encoder: VideoEncoder | null = null;
   let audioEncoder: AudioEncoder | null = null;
   let brollTrack: BrollTrack | null = null;
+  let stickerLayer: StickerLayer | null = null;
 
   try {
     await waitFor("loadedmetadata");
@@ -246,6 +249,10 @@ export async function exportWebCodecsVideo(
     ctx.imageSmoothingQuality = "high";
 
     brollTrack = await createBrollTrack(brollWindows(options.scenes, options.sceneElements));
+    if (options.stickers?.length) {
+      stickerLayer = createStickerLayer(Math.min(1024, Math.max(256, Math.round(height * 0.5))));
+      await stickerLayer.prepare(options.stickers);
+    }
 
     const renderer = createBurnRenderer(ctx, width, height, groups, style, {
       captions: options.captions,
@@ -253,6 +260,8 @@ export async function exportWebCodecsVideo(
       scenes: options.scenes,
       sceneElements: options.sceneElements,
       brollTrack,
+      stickers: options.stickers,
+      stickerLayer: stickerLayer ?? undefined,
     });
 
     // ไม่ต้องลด fps ตามความสามารถเครื่องอีกแล้ว เพราะไม่ได้อัดตามเวลาจริง
@@ -392,6 +401,7 @@ export async function exportWebCodecsVideo(
     video.removeAttribute("src");
     video.remove();
     try { brollTrack?.dispose(); } catch { /* ignore */ }
+    stickerLayer?.destroy();
     try { if (encoder && encoder.state !== "closed") encoder.close(); } catch { /* ignore */ }
     try { if (audioEncoder && audioEncoder.state !== "closed") audioEncoder.close(); } catch { /* ignore */ }
   }

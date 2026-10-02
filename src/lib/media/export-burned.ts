@@ -3,6 +3,7 @@ import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
 import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
+import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 export { targetSize };
@@ -73,6 +74,7 @@ export async function exportBurnedVideo(
     scenes?: MotionScene[];
     sceneElements?: MotionElement[];
     resolution?: ExportResolution;
+    stickers?: Sticker[];
     /** Requested frame rate; real-time capture may still lower it. */
     fps?: number;
   } = {},
@@ -114,6 +116,7 @@ export async function exportBurnedVideo(
   /** จำนวนเฟรมที่วาดจริง ใช้ตรวจเฟรมตกตอนเรนเดอร์ความละเอียดสูง */
   let painted = 0;
   let brollTrack: BrollTrack | null = null;
+  let stickerLayer: StickerLayer | null = null;
   /** สถิติเวลาวาดต่อเฟรม (ms) ใช้หาว่าเฟรมไหนช้าจนภาพกระตุก */
   const frameCosts: number[] = [];
   let frameCostTotal = 0;
@@ -209,6 +212,10 @@ export async function exportBurnedVideo(
 
     // ตัววาดร่วม (ซับ + motion + viral text) ใช้ชุดเดียวกับเส้นทาง WebCodecs
     brollTrack = await createBrollTrack(brollWindows(options.scenes, options.sceneElements));
+    if (options.stickers?.length) {
+      stickerLayer = createStickerLayer(Math.min(1024, Math.max(256, Math.round(height * 0.5))));
+      await stickerLayer.prepare(options.stickers);
+    }
 
     const renderer = createBurnRenderer(ctx, width, height, groups, style, {
       captions: options.captions,
@@ -216,6 +223,8 @@ export async function exportBurnedVideo(
       scenes: options.scenes,
       sceneElements: options.sceneElements,
       brollTrack,
+      stickers: options.stickers,
+      stickerLayer: stickerLayer ?? undefined,
     });
 
 
@@ -509,6 +518,7 @@ export async function exportBurnedVideo(
 
   } finally {
     try { brollTrack?.dispose(); } catch { /* ignore */ }
+    stickerLayer?.destroy();
     video.pause();
     video.remove();
     if (recorder && recorder.state !== "inactive") recorder.stop();

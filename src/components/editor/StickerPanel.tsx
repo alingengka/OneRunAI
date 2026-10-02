@@ -1,0 +1,268 @@
+import { useEffect, useRef, useState } from "react";
+import { Clock, Sparkles, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import {
+  EMOJIS,
+  GRAPHICS,
+  NOTO_CREDIT,
+  createStickerLayer,
+  newStickerId,
+  type GraphicId,
+  type Sticker,
+} from "@/lib/media/stickers";
+
+type Props = {
+  stickers: Sticker[];
+  time: number;
+  duration: number;
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  onAdd: (sticker: Sticker) => void;
+  onChange: (id: string, patch: Partial<Sticker>) => void;
+  onRemove: (id: string) => void;
+  onAutoEmoji: () => void;
+  canAuto: boolean;
+};
+
+/** Small looping preview of a motion graphic for the picker. */
+function GraphicThumb({ id, color }: { id: GraphicId; color: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    const layer = createStickerLayer(64);
+    const sticker: Sticker = {
+      id,
+      kind: "graphic",
+      asset: id,
+      start: 0,
+      end: 1e9,
+      x: 50,
+      y: 50,
+      size: 80,
+      rotation: 0,
+      color,
+    };
+    let raf = 0;
+    const started = performance.now();
+    const tick = () => {
+      const t = ((performance.now() - started) / 1000) % 2.2;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      layer.draw(ctx, [sticker], t + 0.001, canvas.width, canvas.height);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [id, color]);
+  return <canvas ref={ref} width={96} height={96} className="h-12 w-12" aria-hidden="true" />;
+}
+
+const label = (sticker: Sticker) =>
+  sticker.kind === "emoji"
+    ? (EMOJIS.find((e) => e.code === sticker.asset)?.char ?? "🙂")
+    : (GRAPHICS.find((g) => g.id === sticker.asset)?.label ?? sticker.asset);
+
+export function StickerPanel({
+  stickers,
+  time,
+  duration,
+  selectedId,
+  onSelect,
+  onAdd,
+  onChange,
+  onRemove,
+  onAutoEmoji,
+  canAuto,
+}: Props) {
+  const [kind, setKind] = useState<"emoji" | "graphic">("emoji");
+  const add = (sticker: Omit<Sticker, "id" | "start" | "end">) => {
+    const start = Math.max(0, Math.min(time, Math.max(0, duration - 0.5)));
+    onAdd({
+      ...sticker,
+      id: newStickerId(),
+      start,
+      end: Math.min(duration || start + 2, start + 2),
+    });
+  };
+  const sorted = [...stickers].sort((a, b) => a.start - b.start);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div role="tablist" aria-label="ชนิดสติกเกอร์" className="flex rounded-lg bg-secondary p-1">
+          {(
+            [
+              ["emoji", "อิโมจิ"],
+              ["graphic", "Motion Graphic"],
+            ] as const
+          ).map(([key, text]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={kind === key}
+              onClick={() => setKind(key)}
+              className={cn(
+                "h-9 rounded-md px-3 text-sm transition-colors",
+                kind === key
+                  ? "bg-background font-semibold text-foreground shadow-sm"
+                  : "text-muted-foreground",
+              )}
+            >
+              {text}
+            </button>
+          ))}
+        </div>
+        <Button size="sm" variant="secondary" disabled={!canAuto} onClick={onAutoEmoji}>
+          <Sparkles className="mr-1.5 h-4 w-4" /> ใส่อิโมจิอัตโนมัติจากซับ
+        </Button>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        แตะเพื่อเพิ่มที่เวลาปัจจุบัน ({time.toFixed(1)} วิ) แล้วลากบนวิดีโอเพื่อย้าย ·
+        ลากจุดมุมเพื่อย่อ/ขยาย
+      </p>
+
+      {kind === "emoji" ? (
+        <div className="grid grid-cols-8 gap-1 sm:grid-cols-10">
+          {EMOJIS.map((emoji) => (
+            <button
+              key={emoji.code}
+              type="button"
+              aria-label={`เพิ่มอิโมจิ ${emoji.char}`}
+              onClick={() =>
+                add({ kind: "emoji", asset: emoji.code, x: 74, y: 38, size: 16, rotation: 0 })
+              }
+              className="grid aspect-square place-items-center rounded-lg text-2xl transition hover:bg-secondary active:scale-95"
+            >
+              {emoji.char}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-4 gap-2">
+          {GRAPHICS.map((graphic) => (
+            <button
+              key={graphic.id}
+              type="button"
+              onClick={() =>
+                add({
+                  kind: "graphic",
+                  asset: graphic.id,
+                  x: 50,
+                  y: graphic.id === "follow" ? 82 : 45,
+                  size: graphic.id === "underline" ? 30 : 22,
+                  rotation: 0,
+                  color: graphic.color,
+                })
+              }
+              className="flex flex-col items-center gap-1 rounded-lg border border-border bg-preview p-2 text-[11px] text-muted-foreground transition hover:border-primary/60 active:scale-95"
+            >
+              <GraphicThumb id={graphic.id} color={graphic.color} />
+              {graphic.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-2 border-t border-border pt-4">
+        <p className="text-sm font-semibold">สติกเกอร์ในคลิป ({stickers.length})</p>
+        {!sorted.length && <p className="text-xs text-muted-foreground">ยังไม่มีสติกเกอร์</p>}
+        {sorted.map((sticker) => {
+          const selected = sticker.id === selectedId;
+          return (
+            <div
+              key={sticker.id}
+              className={cn(
+                "space-y-2 rounded-xl border p-3 transition-colors",
+                selected ? "border-primary/60 bg-primary/5" : "border-border",
+              )}
+              onClick={() => onSelect(sticker.id)}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate",
+                    sticker.kind === "emoji" ? "text-xl" : "text-sm font-medium",
+                  )}
+                >
+                  {label(sticker)}
+                </span>
+                {sticker.kind === "graphic" && (
+                  <Input
+                    type="color"
+                    aria-label="สีของกราฟิก"
+                    value={sticker.color ?? "#facc15"}
+                    onChange={(event) => onChange(sticker.id, { color: event.target.value })}
+                    className="h-8 w-10 cursor-pointer p-0.5"
+                  />
+                )}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  aria-label="ลบสติกเกอร์"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemove(sticker.id);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {(["start", "end"] as const).map((field) => (
+                  <label
+                    key={field}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground"
+                  >
+                    {field === "start" ? "เริ่ม" : "จบ"}
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      value={sticker[field].toFixed(1)}
+                      onChange={(event) => {
+                        const value = Math.max(0, Number(event.target.value) || 0);
+                        onChange(
+                          sticker.id,
+                          field === "start"
+                            ? { start: Math.min(value, sticker.end - 0.2) }
+                            : { end: Math.max(value, sticker.start + 0.2) },
+                        );
+                      }}
+                      className="h-8 px-2 text-xs"
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      aria-label={field === "start" ? "เริ่มที่เวลาปัจจุบัน" : "จบที่เวลาปัจจุบัน"}
+                      title="ใช้เวลาปัจจุบัน"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onChange(
+                          sticker.id,
+                          field === "start"
+                            ? { start: Math.min(time, sticker.end - 0.2) }
+                            : { end: Math.max(time, sticker.start + 0.2) },
+                        );
+                      }}
+                    >
+                      <Clock className="h-3.5 w-3.5" />
+                    </Button>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[11px] text-muted-foreground">{NOTO_CREDIT}</p>
+    </div>
+  );
+}
