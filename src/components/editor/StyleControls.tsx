@@ -341,6 +341,16 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
                 }
               />
             </Control>
+            <Control label="แบ่งเป็น 2 บรรทัด (แบบ Podcast)">
+              <Segmented
+                value={style.splitLines === 2 ? "yes" : "no"}
+                options={[
+                  { label: "เปิด", value: "yes" },
+                  { label: "ปิด", value: "no" },
+                ]}
+                onSelect={(value) => onChange({ splitLines: value === "yes" ? 2 : 0 })}
+              />
+            </Control>
             <Control
               label="จำนวนคำต่อบรรทัด"
               value={style.wordsPerLine ? `${style.wordsPerLine} คำ` : "อัตโนมัติ"}
@@ -571,6 +581,15 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
                   max={900}
                   step={100}
                   onValueChange={([value]) => patchLine({ fontWeight: value ?? 700 })}
+                />
+              </Control>
+              <Control label="ขนาดบรรทัดนี้" value={`${Math.round((line.scale ?? 1) * 100)}%`}>
+                <Slider
+                  value={[line.scale ?? 1]}
+                  min={0.5}
+                  max={2.2}
+                  step={0.05}
+                  onValueChange={([value]) => patchLine({ scale: value ?? 1 })}
                 />
               </Control>
               <Button

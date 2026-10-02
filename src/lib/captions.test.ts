@@ -1,4 +1,5 @@
 import {
+  balancedSplitIndex,
   captionModeOf,
   groupCaptions,
   groupSentences,
@@ -54,5 +55,10 @@ assert(
 );
 assert(joinCaptionWords([w("ใคร", 0), w("ทุก", 0.3)], false) === "ใคร ทุก", "spaced when asked");
 assert(!needsSpace("ກິນ", "ກາເຟ") && needsSpace("ກິນ", "coffee"), "needsSpace");
+
+// podcast split: short lead-in first, never longer than the key line
+assert(balancedSplitIndex(["ขอ", "แค่", "ทำ", "เงิน"]) === 2, "even split");
+assert(balancedSplitIndex(["Microsoft", "Success"]) === 1, "two words");
+assert(balancedSplitIndex(["a", "bb", "ccccccccc"]) === 2, "lead-in before a long key word");
 
 console.log("caption grouping tests passed");

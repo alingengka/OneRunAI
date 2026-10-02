@@ -22,6 +22,7 @@ import {
   LINE_BREAK,
   emphasizedWeight,
   needsSpace,
+  balancedSplitIndex,
   isKeyword,
   splitEmphasis,
   shadowBlur,
@@ -162,7 +163,13 @@ function layoutGroupStatic(group: CaptionGroup, style: CaptionStyle): StaticLine
       keyword: isKeyword(word.text),
     });
   }
-  return lines.filter((line) => line.words.length);
+  const filled = lines.filter((line) => line.words.length);
+  const only = filled[0];
+  if (style.splitLines === 2 && perLine === 0 && filled.length === 1 && only && only.words.length > 1) {
+    const at = balancedSplitIndex(only.words.map((w) => w.text));
+    return [{ words: only.words.slice(0, at) }, { words: only.words.slice(at) }];
+  }
+  return filled;
 }
 
 function lineStyleAt(style: CaptionStyle, index: number): LineStyle {
@@ -242,6 +249,8 @@ export function createBurnRenderer(
     widths: number[];
     /** gap before each word of the line (0 between joined Thai/Lao words) */
     gaps: number[];
+    /** size of this line relative to the caption size */
+    scale: number;
     space: number;
     total: number;
     weight: number | string;
@@ -287,6 +296,9 @@ export function createBurnRenderer(
       const space = ctx.measureText(" ").width;
       const pad = emphasisPad(fontSize, synthetic);
       const gap = (ls.gap ?? 0) * fontSize;
+      const scale = ls.scale ?? 1;
+      // widths are measured at the base size; a scaled line wraps sooner
+      const lineMax = maxTextWidth / scale;
       const wordWidths = line.words.map((w) => ctx.measureText(w.text).width + pad);
 
       // ตัดบรรทัดตามความกว้างจริง เพื่อไม่ให้คำล้นออกนอกเฟรม (คำหายจากภาพ)
@@ -297,7 +309,7 @@ export function createBurnRenderer(
       const flush = () => {
         if (!chunk.length) return;
         lines.push({ words: chunk });
-        metrics.push({ widths: chunkWidths, gaps: chunkGaps, space, total: chunkTotal, weight, family, ls, gap, em: synthetic, font });
+        metrics.push({ widths: chunkWidths, gaps: chunkGaps, scale, space, total: chunkTotal, weight, family, ls, gap, em: synthetic, font });
         chunk = [];
         chunkWidths = [];
         chunkGaps = [];
@@ -308,7 +320,7 @@ export function createBurnRenderer(
         const before = (prev: StaticWord | undefined) =>
           prev && needsSpace(prev.text, word.text, style.joinWords) ? space : 0;
         const next = chunkTotal + before(chunk[chunk.length - 1]) + w;
-        if (chunk.length && next > maxTextWidth) flush();
+        if (chunk.length && next > lineMax) flush();
         const g = before(chunk[chunk.length - 1]);
         chunkTotal += g + w;
         chunk.push(word);
@@ -318,7 +330,10 @@ export function createBurnRenderer(
       flush();
     });
 
-    const blockHeight = metrics.reduce((n, m, i) => n + lineHeight + (i ? baseGap + m.gap : 0), 0);
+    const blockHeight = metrics.reduce(
+      (n, m, i) => n + lineHeight * m.scale + (i ? baseGap + m.gap : 0),
+      0,
+    );
     const layout: GroupLayout = { lines, metrics, blockHeight };
     // Measuring set the caption spacing; other overlays draw without it.
     (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
@@ -346,7 +361,7 @@ export function createBurnRenderer(
     ctx.textBaseline = "middle";
     const centerX = (style.posX / 100) * width;
     const centerY = (style.posY / 100) * height;
-    let y = centerY - blockHeight / 2 + lineHeight / 2;
+    let top = centerY - blockHeight / 2;
 
     ctx.save();
     setSpacing();
@@ -366,15 +381,28 @@ export function createBurnRenderer(
 
     lines.forEach((line, i) => {
       const m = metrics[i]!;
-      if (i) y += baseGap + m.gap;
+      if (i) top += baseGap + m.gap;
+      const y = top + (lineHeight * m.scale) / 2;
 
-      const left =
+      // Scaled lines grow from their alignment edge (or center).
+      const anchorX =
         style.textAlign === "left"
           ? centerX - maxTextWidth / 2
           : style.textAlign === "right"
-            ? centerX + maxTextWidth / 2 - m.total
-
-            : centerX - m.total / 2;
+            ? centerX + maxTextWidth / 2
+            : centerX;
+      ctx.save();
+      if (m.scale !== 1) {
+        ctx.translate(anchorX, y);
+        ctx.scale(m.scale, m.scale);
+        ctx.translate(-anchorX, -y);
+      }
+      const left =
+        style.textAlign === "left"
+          ? anchorX
+          : style.textAlign === "right"
+            ? anchorX - m.total
+            : anchorX - m.total / 2;
 
       if (style.plate) {
         ctx.fillStyle = withAlpha(style.plateColor, style.plateOpacity ?? 0.9);
@@ -496,7 +524,8 @@ export function createBurnRenderer(
       });
 
 
-      y += lineHeight;
+      ctx.restore();
+      top += lineHeight * m.scale;
     });
 
     if (slid) ctx.restore();

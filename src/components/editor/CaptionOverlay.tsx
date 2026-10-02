@@ -1,6 +1,6 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { RotateCw } from "lucide-react";
-import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth, withAlpha, needsSpace } from "@/lib/captions";
+import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth, withAlpha, needsSpace, balancedSplitIndex } from "@/lib/captions";
 
 
 type Props = {
@@ -94,6 +94,9 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
     lines.push(currentLine);
   } else if (perLine > 0) {
     for (let i = 0; i < indexed.length; i += perLine) lines.push(indexed.slice(i, i + perLine));
+  } else if (style.splitLines === 2 && indexed.length > 1) {
+    const at = balancedSplitIndex(indexed.map((item) => item.word.text));
+    lines.push(indexed.slice(0, at), indexed.slice(at));
   } else {
     lines.push(indexed);
   }
@@ -277,6 +280,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
             fontStyle: (ls.italic ?? style.italic) ? "italic" : "normal",
             color: ls.color ?? style.color,
             textShadow: lineTextShadow,
+            fontSize: ls.scale ? fontSize * ls.scale : undefined,
           }}
         >
           <span

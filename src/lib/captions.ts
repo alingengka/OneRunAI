@@ -129,6 +129,8 @@ export type LineStyle = {
   italic?: boolean | undefined;
   /** ระยะห่างจากบรรทัดก่อนหน้า (เท่าของขนาดฟอนต์) */
   gap?: number;
+  /** size of this line relative to the caption size (1 = same) */
+  scale?: number | undefined;
 };
 
 /** ตัวหนา/ตัวเอียงสังเคราะห์ — ใช้ได้กับทุกฟอนต์แม้ไฟล์ฟอนต์มีน้ำหนักเดียว */
@@ -208,6 +210,8 @@ export type CaptionStyle = {
    * `wordsPerGroup` words. Older saved styles have no value; see captionModeOf.
    */
   captionMode?: CaptionMode | undefined;
+  /** 2 = split each caption into two balanced lines (podcast style) */
+  splitLines?: number | undefined;
   /** words per rendered line (0 = all on one line) */
   wordsPerLine: number;
   textAlign: "left" | "center" | "right";
@@ -279,8 +283,53 @@ export function sampleTextForLanguage(language?: string): string {
   return (language && sampleTextByLanguage[language]) || sampleTextByLanguage["th"]!;
 }
 
+const podcastBase: CaptionStyle = {
+  ...baseStyle,
+  size: 6,
+  shadow: "large",
+  shadowColor: "#000000",
+  highlight: "none",
+  textAlign: "left",
+  posX: 50,
+  posY: 72,
+  splitLines: 2,
+  lineGap: 0,
+  animation: "pop",
+  // two short lines read best; an explicit word-count choice still wins
+  captionMode: "fixed",
+  wordsPerGroup: 4,
+};
+
 export const stylePresets: CaptionStyle[] = [
   { ...baseStyle },
+  {
+    ...podcastBase,
+    id: "podcast-yellow",
+    name: "Podcast เหลือง",
+    lineStyles: { 1: { color: "#ffd400", scale: 1.45, bold: true } },
+  },
+  {
+    ...podcastBase,
+    id: "podcast-blue",
+    name: "Podcast ฟ้า",
+    lineStyles: { 1: { color: "#6cc4ff", scale: 1.45, bold: true } },
+  },
+  {
+    ...baseStyle,
+    id: "yellow-bar",
+    name: "แถบเหลือง",
+    size: 4.6,
+    color: "#111111",
+    shadow: "none",
+    highlight: "none",
+    textAlign: "left",
+    posY: 40,
+    plate: true,
+    plateColor: "#facc15",
+    plateOpacity: 1,
+    plateRadius: 0.08,
+    animation: "slideUp2",
+  },
   {
     ...baseStyle,
     id: "hormozi",
@@ -754,4 +803,26 @@ export function joinCaptionWords(words: Word[], joinWords: boolean | undefined =
     prev = word.text;
   }
   return out.trim();
+}
+
+/**
+ * Index where a caption splits into two lines of similar length; the first
+ * line is never longer than the second (a short lead-in, then the key words).
+ */
+export function balancedSplitIndex(texts: string[]): number {
+  if (texts.length < 2) return texts.length;
+  const total = texts.reduce((n, t) => n + t.length, 0);
+  let best = 1;
+  let bestScore = Infinity;
+  let first = 0;
+  for (let i = 1; i < texts.length; i++) {
+    first += texts[i - 1]!.length;
+    const second = total - first;
+    const score = Math.abs(second - first) + (first > second ? 2 : 0);
+    if (score < bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  }
+  return best;
 }
