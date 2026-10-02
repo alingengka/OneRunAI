@@ -80,10 +80,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "OneRunAI" },
-      { name: "description", content: "AI video editor for accurate Lao subtitles, dead-air removal, and ready-to-post short videos." },
+      {
+        name: "description",
+        content:
+          "AI video editor for accurate Lao subtitles, dead-air removal, and ready-to-post short videos.",
+      },
       { name: "author", content: "OneRunAI" },
       { property: "og:title", content: "OneRunAI" },
-      { property: "og:description", content: "Create accurate Lao subtitles and polished short videos." },
+      {
+        property: "og:description",
+        content: "Create accurate Lao subtitles and polished short videos.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -92,14 +99,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/favicon.ico", sizes: "48x48" },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+      { rel: "manifest", href: "/site.webmanifest" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Archivo+Black&family=Anton&family=Bebas+Neue&family=Bricolage+Grotesque:wght@700&family=Inter:wght@400;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=Playfair+Display:wght@700;900&family=Kanit:wght@400;600;700;900&family=Mitr:wght@400;600;700&family=Prompt:wght@400;600;700;800&family=Bai+Jamjuree:wght@400;600;700&family=Noto+Sans+Thai:wght@400;500;600;700;900&family=Noto+Serif+Thai:wght@400;700&family=Noto+Sans+Lao:wght@400;600;700;900&family=Noto+Sans+Lao+Looped:wght@400;600;700;900&family=Noto+Serif+Lao:wght@400;700&display=swap",
       },
-
     ],
   }),
   shellComponent: RootShell,
