@@ -15,16 +15,100 @@ export const defaultSilenceOptions: SilenceOptions = {
   padding: 0.12,
 };
 
-export async function decodeAudioFromFile(file: File | Blob): Promise<AudioBuffer> {
-  const arrayBuffer = await file.arrayBuffer();
+function newAudioContext(): AudioContext {
   const Ctx: typeof AudioContext =
     window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  const ctx = new Ctx();
+  return new Ctx();
+}
+
+async function decodeBytes(bytes: ArrayBuffer): Promise<AudioBuffer> {
+  const ctx = newAudioContext();
   try {
-    return await ctx.decodeAudioData(arrayBuffer.slice(0));
+    return await ctx.decodeAudioData(bytes);
   } finally {
     void ctx.close();
   }
+}
+
+/**
+ * Copies only the audio track into a small audio-only MP4 without re-encoding.
+ * Mobile Safari often fails ("Decoding failed") on a full phone video with
+ * decodeAudioData, but decodes the same AAC audio once the video track is gone.
+ */
+async function extractAudioOnly(file: Blob): Promise<ArrayBuffer | null> {
+  const { ALL_FORMATS, BlobSource, BufferTarget, Conversion, Input, Mp4OutputFormat, Output } =
+    await import("mediabunny");
+  const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+  try {
+    if (!(await input.getPrimaryAudioTrack())) return null;
+    const output = new Output({
+      format: new Mp4OutputFormat({ fastStart: "in-memory" }),
+      target: new BufferTarget(),
+    });
+    const conversion = await Conversion.init({
+      input,
+      output,
+      tracks: "primary",
+      video: { discard: true },
+      showWarnings: false,
+    });
+    if (!conversion.isValid) return null;
+    await conversion.execute();
+    return output.target.buffer;
+  } finally {
+    input.dispose();
+  }
+}
+
+/** Decodes the audio track with WebCodecs, for files the Web Audio decoder rejects. */
+async function decodeWithWebCodecs(file: Blob): Promise<AudioBuffer | null> {
+  if (typeof AudioDecoder === "undefined") return null;
+  const { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await import("mediabunny");
+  const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+  try {
+    const track = await input.getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) return null;
+    const parts: AudioBuffer[] = [];
+    for await (const { buffer } of new AudioBufferSink(track).buffers()) parts.push(buffer);
+    const first = parts[0];
+    if (!first) return null;
+    const channels = first.numberOfChannels;
+    const length = parts.reduce((sum, part) => sum + part.length, 0);
+    const out = new AudioBuffer({ length, numberOfChannels: channels, sampleRate: first.sampleRate });
+    for (let c = 0; c < channels; c++) {
+      const data = out.getChannelData(c);
+      let offset = 0;
+      for (const part of parts) {
+        data.set(part.getChannelData(Math.min(c, part.numberOfChannels - 1)), offset);
+        offset += part.length;
+      }
+    }
+    return out;
+  } finally {
+    input.dispose();
+  }
+}
+
+export async function decodeAudioFromFile(file: File | Blob): Promise<AudioBuffer> {
+  let firstError: unknown;
+  try {
+    const audioOnly = await extractAudioOnly(file);
+    if (audioOnly) return await decodeBytes(audioOnly);
+  } catch (error) {
+    firstError = error;
+  }
+  try {
+    return await decodeBytes(await file.arrayBuffer());
+  } catch (error) {
+    firstError ??= error;
+  }
+  try {
+    const decoded = await decodeWithWebCodecs(file);
+    if (decoded) return decoded;
+  } catch {
+    // fall through to the original error
+  }
+  throw firstError ?? new Error("No audio track");
 }
 
 /** Returns speech segments (non-silent parts) of the buffer. */

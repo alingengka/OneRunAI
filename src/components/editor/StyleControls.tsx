@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import {
   animationOptions,
+  captionModeOf,
   fontOptions,
   sampleTextForLanguage,
   type CaptionStyle,
@@ -275,13 +276,27 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
               </Control>
             </div>
 
-            <Control label="Karaoke" value={`${style.wordsPerGroup} คำ`}>
+            <Control
+              label="จำนวนคำต่อซับ"
+              value={
+                captionModeOf(style) === "sentence"
+                  ? "ทั้งประโยค"
+                  : captionModeOf(style) === "word"
+                    ? "ทีละคำ"
+                    : `${style.wordsPerGroup} คำ`
+              }
+            >
               <Slider
-                value={[style.wordsPerGroup]}
+                value={[captionModeOf(style) === "word" ? 1 : style.wordsPerGroup]}
                 min={1}
                 max={8}
                 step={1}
-                onValueChange={([value]) => onChange({ wordsPerGroup: value ?? 1 })}
+                onValueChange={([value]) =>
+                  onChange({
+                    wordsPerGroup: value ?? 1,
+                    captionMode: (value ?? 1) === 1 ? "word" : "fixed",
+                  })
+                }
               />
             </Control>
             <Control

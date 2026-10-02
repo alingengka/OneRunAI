@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import {
   animationModes,
+  captionModeOf,
   animationOptions,
   sampleTextForLanguage,
   stylePresets,
@@ -94,7 +95,7 @@ function AnimationCard({
 
 export function StylePicker({ activeId, activeStyle, onSelect, onChange, language }: Props) {
   const [mode, setMode] = useState<Mode>("fixed");
-  const [wordMode, setWordMode] = useState<WordMode>(activeStyle.wordsPerGroup === 1 ? "word" : "sentence");
+  const [wordMode, setWordMode] = useState<WordMode>(captionModeOf(activeStyle) === "word" ? "word" : "sentence");
   const sampleText = sampleTextForLanguage(language);
   const [customStyles, setCustomStyles] = useState<CaptionStyle[]>(() =>
     typeof window === "undefined" ? [] : loadCustomStyles(),
@@ -149,7 +150,7 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
               variant={wordMode === "word" ? "secondary" : "ghost"}
               onClick={() => {
                 setWordMode("word");
-                onChange({ wordsPerGroup: 1 });
+                onChange({ captionMode: "word" });
               }}
               className="h-7"
             >
@@ -163,7 +164,7 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
               variant={wordMode === "sentence" ? "secondary" : "ghost"}
               onClick={() => {
                 setWordMode("sentence");
-                onChange({ wordsPerGroup: Math.max(3, activeStyle.wordsPerGroup) });
+                onChange({ captionMode: "sentence" });
               }}
               className="h-7"
             >

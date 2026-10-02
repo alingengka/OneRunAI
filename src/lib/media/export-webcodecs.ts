@@ -10,7 +10,7 @@
  * AudioEncoder จากนั้นรวม video+audio เป็นไฟล์ .mp4 เดียวด้วย mp4-muxer
  */
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
-import type { Segment } from "./audio";
+import { decodeAudioFromFile, type Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
 import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
@@ -123,13 +123,7 @@ async function renderAudio(
   let decoded: AudioBuffer;
   try {
     const response = await fetch(url);
-    const bytes = await response.arrayBuffer();
-    const decodeContext = new AudioContext();
-    try {
-      decoded = await decodeContext.decodeAudioData(bytes);
-    } finally {
-      void decodeContext.close();
-    }
+    decoded = await decodeAudioFromFile(await response.blob());
   } catch {
     return null; // คลิปไม่มีแทร็กเสียง หรืออ่านไม่ได้ → ส่งออกเฉพาะภาพ
   }

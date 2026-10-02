@@ -196,7 +196,7 @@ async function transcribeWithGemini(
    * guessed — the same role the strict OpenAI pass plays.
    */
   variant: "main" | "independent" = "main",
-  options: { temperature?: number; retries?: number } = {},
+  options: { temperature?: number; retries?: number; fallback?: boolean } = {},
 ): Promise<string> {
   const instructions = language === "lo"
     ? [
@@ -251,7 +251,11 @@ export async function transcribeAudioServer(input: {
   const warn = (engine: string, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[transcribe] ${engine} failed:`, message);
-    warnings.push(`${engine} ใช้งานไม่ได้ ซับอาจไม่ครบหรือไม่แม่น: ${message.slice(0, 160)}`);
+    warnings.push(
+      message.includes("[429]")
+        ? `${engine} ใช้งานเกินโควตาชั่วคราว ระบบใช้ตัวถอดเสียงอื่นแทน ซับอาจแม่นน้อยลง`
+        : `${engine} ใช้งานไม่ได้ ซับอาจไม่ครบหรือไม่แม่น: ${message.slice(0, 160)}`,
+    );
   };
 
   /** One gpt-4o-transcribe pass; resolves to cleaned text ("" if nothing usable). */
@@ -284,17 +288,20 @@ export async function transcribeAudioServer(input: {
   // Without OpenAI, Lao gets two extra Gemini passes in its place so ranking
   // still has several independent candidates. They are best-effort: no
   // retries and no user-facing warning, so a free-tier rate limit only drops
-  // the extras instead of slowing everything down.
+  // the extras instead of slowing everything down. They never use the
+  // fallback models, whose quota is kept for the main pass.
   const geminiExtrasSettled = Promise.allSettled(
     !hasOpenAI && hasGemini && input.language === "lo"
       ? [
           transcribeWithGemini(input.audioBase64, "lo", "", input.glossary ?? [], "independent", {
             temperature: 0,
             retries: 0,
+            fallback: false,
           }),
           transcribeWithGemini(input.audioBase64, "lo", input.context ?? "", input.glossary ?? [], "main", {
             temperature: 0.4,
             retries: 0,
+            fallback: false,
           }),
         ]
       : [],

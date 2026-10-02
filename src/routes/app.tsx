@@ -56,7 +56,8 @@ import { StylePicker } from "@/components/editor/StylePicker";
 import {
   alignWordsToSegments,
   baseStyle,
-  groupWords,
+  groupCaptions,
+  captionModeOf,
   LINE_BREAK,
   type CaptionStyle,
   type Word,
@@ -345,8 +346,12 @@ function Studio() {
     [keepSegments, duration],
   );
   const groups = useMemo(
-    () => groupWords(visibleWords, style.wordsPerGroup),
-    [visibleWords, style.wordsPerGroup],
+    () =>
+      groupCaptions(visibleWords, {
+        captionMode: style.captionMode,
+        wordsPerGroup: style.wordsPerGroup,
+      }),
+    [visibleWords, style.captionMode, style.wordsPerGroup],
   );
   const activeGroup = useMemo(
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
@@ -600,7 +605,7 @@ function Studio() {
     setTranslating(true);
     const id = toast.loading("กำลังแปลซับ…");
     try {
-      const src = groupWords(words, style.wordsPerGroup);
+      const src = groupCaptions(words, style);
       const lines = src.map((g) => g.words.map((w) => w.text).join(" "));
       const out: Word[] = [];
       const size = 40;
@@ -1406,16 +1411,16 @@ function Studio() {
   };
 
   return (
-    <main className="studio-shell min-h-screen overflow-hidden bg-background text-foreground lg:flex lg:h-dvh lg:flex-col">
+    <main className="studio-shell flex h-dvh flex-col overflow-hidden bg-background text-foreground">
       <div
         className="orbit-decoration pointer-events-none absolute -right-32 top-24 -z-10 h-72 w-[32rem] opacity-60"
         aria-hidden="true"
       />
-      <header className="studio-header sticky top-0 z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-4">
-          <OneRunLogo className="shrink-0" />
+      <header className="studio-header sticky top-0 z-40 flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2 sm:gap-3 sm:px-6 sm:py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
+          <OneRunLogo className="shrink-0 [&>span+span]:hidden sm:[&>span+span]:inline" />
           <div className="hidden h-8 w-px bg-border sm:block" />
-          <div className="min-w-[140px] max-w-[280px] flex-1">
+          <div className="min-w-0 max-w-[280px] flex-1">
             <h1 className="sr-only">OneRunAI Short Video Editor</h1>
             <Input
               value={projectName}
@@ -1428,7 +1433,7 @@ function Studio() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1 sm:gap-2">
           <span className="hidden">
             <input
               ref={fileInputRef}
@@ -1459,8 +1464,9 @@ function Studio() {
           >
             {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
-          <Button onClick={() => setTab("export")}>
-            <Download className="mr-2 h-4 w-4" /> ส่งออก
+          <Button onClick={() => setTab("export")} className="px-3 sm:px-4" aria-label="ส่งออก">
+            <Download className="h-4 w-4 sm:mr-2" />{" "}
+            <span className="hidden sm:inline">ส่งออก</span>
           </Button>
           <AccountMenu />
         </div>
@@ -1489,7 +1495,7 @@ function Studio() {
         </div>
       )}
 
-      <div className="mx-auto grid min-w-0 w-full max-w-[1600px] gap-4 p-3 pb-24 sm:p-4 sm:pb-24 lg:min-h-0 lg:flex-1 lg:grid-cols-[176px_minmax(0,1fr)_minmax(320px,400px)] lg:overflow-hidden lg:pb-3">
+      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.75rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[176px_minmax(0,1fr)_minmax(320px,400px)] lg:gap-4 lg:p-4 lg:pb-3">
         {/* Desktop menu */}
         <nav
           aria-label="เมนูเครื่องมือ"
@@ -1521,7 +1527,7 @@ function Studio() {
         </nav>
 
         {/* Controls panel */}
-        <section className="studio-panel order-3 min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+        <section className="studio-panel order-3 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-3 sm:p-5 lg:order-none">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold">
               {SECTIONS.find((s) => s.id === sectionOf(tab))?.label}
@@ -2157,7 +2163,10 @@ function Studio() {
               language={languages[0] ?? "th"}
               onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
               onSelect={(preset) => {
-                setStyle(preset);
+                setStyle((current) => ({
+                  ...preset,
+                  captionMode: current.captionMode ?? preset.captionMode,
+                }));
                 void play(preset.animation);
                 toast.success(`ใช้สไตล์ ${preset.name}`);
               }}
@@ -2220,6 +2229,40 @@ function Studio() {
 
           {tab === "text" && (
             <div className="space-y-5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-muted-foreground">แสดงซับบนวิดีโอ</span>
+                <div
+                  role="radiogroup"
+                  aria-label="แสดงซับบนวิดีโอ"
+                  className="flex rounded-lg bg-secondary p-1"
+                >
+                  {(
+                    [
+                      ["sentence", "ทั้งประโยค"],
+                      ["word", "ทีละคำ"],
+                    ] as const
+                  ).map(([mode, label]) => {
+                    const on = captionModeOf(style) === mode;
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => setStyle((current) => ({ ...current, captionMode: mode }))}
+                        className={cn(
+                          "h-9 rounded-md px-3 text-sm transition-colors",
+                          on
+                            ? "bg-background font-semibold text-foreground shadow-sm"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <CaptionList
                 groups={groups}
                 words={words}
@@ -2339,9 +2382,9 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
-          <div className="studio-panel rounded-xl border border-border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between">
+        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+          <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4">
+            <div className="mb-3 hidden items-center justify-between lg:flex">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Smartphone className="h-4 w-4" /> TikTok Preview
               </div>
@@ -2353,7 +2396,7 @@ function Studio() {
             </div>
             <div
               ref={frameRef}
-              className={`relative mx-auto w-full overflow-hidden rounded-xl bg-preview shadow-primary-lg ring-1 ring-primary/20 ${tiktokPreview ? "aspect-[886/1920] max-w-[230px] sm:max-w-[314px]" : "aspect-[9/16] max-w-[250px] sm:max-w-[340px]"} lg:h-[min(600px,calc(100dvh-480px))] lg:w-auto`}
+              className={`relative mx-auto max-w-full overflow-hidden rounded-xl bg-preview shadow-primary-lg ring-1 ring-primary/20 ${tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]"} h-[30dvh] w-auto lg:h-[min(600px,calc(100dvh-480px))]`}
             >
               {videoUrl ? (
                 <video
@@ -2405,13 +2448,13 @@ function Studio() {
               {tiktokPreview && <TikTokSafeAreaOverlay />}
             </div>
             {videoUrl && (
-              <p className="mt-2 text-center text-xs text-muted-foreground">
+              <p className="mt-2 hidden text-center text-xs text-muted-foreground lg:block">
                 ลากข้อความเพื่อย้ายตำแหน่ง · ดับเบิลคลิกเพื่อแก้ไข (ขึ้นบรรทัดใหม่ = แยกแถว)
               </p>
             )}
 
-            <div className="mt-4 space-y-3">
-              <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div className="mt-2 space-y-2 lg:mt-4 lg:space-y-3">
+              <div className="relative hidden h-2 w-full overflow-hidden rounded-full bg-secondary lg:block">
                 {duration > 0 &&
                   silences.map((s, i) => (
                     <div
@@ -2483,7 +2526,7 @@ function Studio() {
 
         {/* Phone: word timeline right under the video */}
         {duration > 0 && (
-          <div className="studio-panel order-2 min-w-0 overflow-hidden rounded-xl border border-border bg-card lg:hidden">
+          <div className="studio-panel order-2 min-w-0 shrink-0 overflow-hidden rounded-xl border border-border bg-card lg:hidden">
             <WordTrack
               words={words}
               duration={duration}
