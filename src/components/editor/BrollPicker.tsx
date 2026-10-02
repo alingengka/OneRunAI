@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { searchKlipyMedia } from "@/lib/klipy.functions";
+import { klipyCustomerId } from "@/lib/klipy-client";
 import { searchPixabayMedia, suggestBrollKeywords } from "@/lib/pixabay.functions";
 import { uploadBrollAsset } from "@/lib/broll-upload";
 import type { SceneAssetPatch } from "@/lib/scenes";
@@ -27,7 +28,7 @@ type Props = {
   language?: string | undefined;
 };
 
-type Source = "pixabay-videos" | "pixabay-images" | "klipy";
+type Source = "pixabay-videos" | "pixabay-images" | "klipy" | "klipy-clips";
 
 type ResultItem = {
   id: string;
@@ -41,7 +42,8 @@ type ResultItem = {
 const SOURCES: { id: Source; label: string }[] = [
   { id: "pixabay-videos", label: "วิดีโอฟรี" },
   { id: "pixabay-images", label: "รูปฟรี" },
-  { id: "klipy", label: "GIF / มีม" },
+  { id: "klipy", label: "GIF" },
+  { id: "klipy-clips", label: "คลิปมีม" },
 ];
 
 /** Copies a Pixabay file into the user's storage (Pixabay forbids permanent hotlinks). */
@@ -61,17 +63,6 @@ async function copyIntoStorage(item: ResultItem) {
     item.assetType === "video" ? "mp4" : (item.assetUrl.split(".").pop() ?? "jpg").split("?")[0];
   const type = blob.type || (item.assetType === "video" ? "video/mp4" : "image/jpeg");
   return uploadBrollAsset(new File([blob], `pixabay-${item.id}.${ext}`, { type }));
-}
-
-/** รหัสผู้ใช้แบบคงที่ต่อเบราว์เซอร์ ใช้ให้คลังคลิปจัดผลลัพธ์ให้เหมาะ */
-function customerId(): string {
-  const key = "onerunai-klipy-customer";
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
-  }
-  return id;
 }
 
 export function BrollPicker({ open, onOpenChange, defaultQuery, onPick, language }: Props) {
@@ -97,8 +88,14 @@ export function BrollPicker({ open, onOpenChange, defaultQuery, onPick, language
     setError(null);
     try {
       let found: ResultItem[];
-      if (from === "klipy") {
-        const result = await search({ data: { query: q, kind: "gifs", customerId: customerId() } });
+      if (from === "klipy" || from === "klipy-clips") {
+        const result = await search({
+          data: {
+            query: q,
+            kind: from === "klipy" ? "gifs" : "clips",
+            customerId: klipyCustomerId(),
+          },
+        });
         found = result.items.map((item) => ({ ...item }));
       } else {
         const result = await searchPixabay({
@@ -139,7 +136,7 @@ export function BrollPicker({ open, onOpenChange, defaultQuery, onPick, language
   };
 
   const pick = async (item: ResultItem) => {
-    if (source === "klipy") {
+    if (source === "klipy" || source === "klipy-clips") {
       onPick({
         assetUrl: item.assetUrl,
         assetType: item.assetType,
@@ -317,7 +314,7 @@ export function BrollPicker({ open, onOpenChange, defaultQuery, onPick, language
               )}
             </div>
 
-            {source === "klipy" ? (
+            {source === "klipy" || source === "klipy-clips" ? (
               <p className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2.5 text-[11px] text-warning-foreground">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                 คลิปจาก KLIPY อาจมีลิขสิทธิ์จากภาพยนตร์/รายการทีวี

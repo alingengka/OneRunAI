@@ -6,7 +6,8 @@
  */
 
 /** "image" and "lottie" are the user's own uploads (data URL / Lottie JSON text). */
-export type StickerKind = "emoji" | "graphic" | "image" | "lottie";
+/** "animated" is a GIF/WebP sticker from KLIPY, drawn frame by frame. */
+export type StickerKind = "emoji" | "graphic" | "image" | "lottie" | "animated";
 
 export type GraphicId =
   "arrow" | "circle" | "underline" | "sparkles" | "follow" | "heart" | "check" | "burst";
@@ -414,9 +415,96 @@ function stickerEnvelope(sticker: Sticker, time: number): { alpha: number; scale
   };
 }
 
+type AnimatedFrames = {
+  frames: (ImageBitmap | HTMLImageElement)[];
+  /** end time of each frame in seconds, cumulative */
+  ends: number[];
+  total: number;
+  width: number;
+  height: number;
+};
+
+const MAX_FRAMES = 240;
+
+/** Same-origin copy of a remote file, so canvas export is not blocked. */
+export const proxiedMediaUrl = (url: string) =>
+  url.startsWith("http") ? `/api/public/broll-media?url=${encodeURIComponent(url)}` : url;
+
+/**
+ * Decodes every frame of an animated GIF/WebP with ImageDecoder (Chrome,
+ * Edge, Android). Browsers without it get the first frame as a still.
+ */
+async function decodeAnimated(url: string): Promise<AnimatedFrames | null> {
+  try {
+    const response = await fetch(proxiedMediaUrl(url));
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    const Decoder = (globalThis as { ImageDecoder?: typeof ImageDecoder }).ImageDecoder;
+    if (Decoder && blob.type && (await Decoder.isTypeSupported(blob.type))) {
+      const decoder = new Decoder({ data: await blob.arrayBuffer(), type: blob.type });
+      await decoder.tracks.ready;
+      const count = Math.min(MAX_FRAMES, decoder.tracks.selectedTrack?.frameCount ?? 1);
+      const frames: ImageBitmap[] = [];
+      const ends: number[] = [];
+      let t = 0;
+      for (let i = 0; i < count; i++) {
+        const { image } = await decoder.decode({ frameIndex: i });
+        // GIFs often store 0 for "as fast as possible"; browsers show those at 10fps.
+        const seconds = image.duration && image.duration > 10_000 ? image.duration / 1e6 : 0.1;
+        frames.push(await createImageBitmap(image));
+        image.close();
+        t += seconds;
+        ends.push(t);
+      }
+      decoder.close();
+      const first = frames[0];
+      if (first) return { frames, ends, total: t, width: first.width, height: first.height };
+    }
+    const img = new Image();
+    img.src = URL.createObjectURL(blob);
+    await img.decode();
+    return {
+      frames: [img],
+      ends: [1],
+      total: 1,
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+    };
+  } catch (error) {
+    console.error("[stickers] animated sticker failed to load", error);
+    return null;
+  }
+}
+
+function frameAt(anim: AnimatedFrames, seconds: number): ImageBitmap | HTMLImageElement {
+  if (anim.frames.length === 1) return anim.frames[0]!;
+  const t = ((seconds % anim.total) + anim.total) % anim.total;
+  let lo = 0;
+  let hi = anim.ends.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (anim.ends[mid]! > t) hi = mid;
+    else lo = mid + 1;
+  }
+  return anim.frames[lo]!;
+}
+
 export function createStickerLayer(resolution = 512): StickerLayer {
   const players = new Map<string, Promise<EmojiPlayer | null>>();
   const ready = new Map<string, EmojiPlayer>();
+  const animations = new Map<string, Promise<AnimatedFrames | null>>();
+  const readyAnimations = new Map<string, AnimatedFrames>();
+  const loadAnimated = (url: string) => {
+    let pending = animations.get(url);
+    if (!pending) {
+      pending = decodeAnimated(url).then((frames) => {
+        if (frames) readyAnimations.set(url, frames);
+        return frames;
+      });
+      animations.set(url, pending);
+    }
+    return pending;
+  };
   const images = new Map<string, Promise<HTMLImageElement | null>>();
   const readyImages = new Map<string, HTMLImageElement>();
 
@@ -487,7 +575,9 @@ export function createStickerLayer(resolution = 512): StickerLayer {
       const codes = new Set(stickers.filter((s) => s.kind === "emoji").map((s) => s.asset));
       const lotties = new Set(stickers.filter((s) => s.kind === "lottie").map((s) => s.asset));
       const pics = new Set(stickers.filter((s) => s.kind === "image").map((s) => s.asset));
+      const gifs = new Set(stickers.filter((s) => s.kind === "animated").map((s) => s.asset));
       await Promise.all([
+        ...[...gifs].map(loadAnimated),
         ...[...codes].map((code) => load(code)),
         ...[...lotties].map((json) => load(json, "lottie")),
         ...[...pics].map(loadImage),
@@ -504,7 +594,17 @@ export function createStickerLayer(resolution = 512): StickerLayer {
         ctx.translate((sticker.x / 100) * width, (sticker.y / 100) * height);
         if (sticker.rotation) ctx.rotate((sticker.rotation * Math.PI) / 180);
         ctx.scale(scale, scale);
-        if (sticker.kind === "image") {
+        if (sticker.kind === "animated") {
+          const anim = readyAnimations.get(sticker.asset);
+          if (!anim) void loadAnimated(sticker.asset);
+          else {
+            const frame = frameAt(anim, time - sticker.start);
+            const ratio = anim.width / Math.max(1, anim.height);
+            const w = ratio >= 1 ? box : box * ratio;
+            const h = ratio >= 1 ? box / ratio : box;
+            ctx.drawImage(frame, -w / 2, -h / 2, w, h);
+          }
+        } else if (sticker.kind === "image") {
           const img = readyImages.get(sticker.asset);
           if (!img) void loadImage(sticker.asset);
           else {
@@ -540,6 +640,11 @@ export function createStickerLayer(resolution = 512): StickerLayer {
       players.clear();
       images.clear();
       readyImages.clear();
+      for (const anim of readyAnimations.values()) {
+        for (const frame of anim.frames) if ("close" in frame) frame.close();
+      }
+      animations.clear();
+      readyAnimations.clear();
     },
   };
 }
