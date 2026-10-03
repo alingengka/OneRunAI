@@ -17,6 +17,7 @@ import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResoluti
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
 import { openFrameReader, type FrameReader } from "./frame-reader";
+import { copyAudioPackets } from "./audio-passthrough";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 type Progress = (ratio: number) => void;
@@ -25,9 +26,7 @@ export function supportsWebCodecsExport(): boolean {
   return (
     typeof window !== "undefined" &&
     "VideoEncoder" in window &&
-    "VideoFrame" in window &&
-    "AudioEncoder" in window &&
-    "AudioData" in window
+    "VideoFrame" in window
   );
 }
 
@@ -40,6 +39,8 @@ export type WebCodecsExportResult = {
   frames: number;
   expectedDuration: number;
   audioCodec: "aac" | "opus" | "none";
+  /** The clip's audio was copied as is (no AudioEncoder): no noise reduction or fades. */
+  audioCopied: boolean;
   videoCodec: string;
   renderMs: number;
 };
@@ -301,10 +302,15 @@ export async function exportWebCodecsVideo(
     const { config: videoConfig, muxCodec } = await pickVideoCodec(width, height, bitrate, fps);
 
     // ---- เสียง (ทำล่วงหน้าแบบ offline) ----
-    const audioBuffer = await renderAudio(sourceBlob, normalized, total, options);
+    const canEncodeAudio = typeof AudioEncoder !== "undefined" && typeof AudioData !== "undefined";
+    const audioBuffer = canEncodeAudio
+      ? await renderAudio(sourceBlob, normalized, total, options)
+      : null;
     const audioPick = audioBuffer
       ? await pickAudioCodec(audioBuffer.sampleRate, Math.min(2, audioBuffer.numberOfChannels))
       : null;
+    // No way to encode audio here (iPhone Safari): copy the clip's own audio instead.
+    const copied = audioPick ? null : await copyAudioPackets(sourceBlob, normalized);
 
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
@@ -318,7 +324,15 @@ export async function exportWebCodecsVideo(
               sampleRate: audioBuffer.sampleRate,
             },
           }
-        : {}),
+        : copied
+          ? {
+              audio: {
+                codec: copied.codec,
+                numberOfChannels: copied.numberOfChannels,
+                sampleRate: copied.sampleRate,
+              },
+            }
+          : {}),
       fastStart: "in-memory" as const,
     });
 
@@ -405,6 +419,18 @@ export async function exportWebCodecsVideo(
       audioEncoder = null;
     }
 
+    if (copied) {
+      copied.packets.forEach((packet, i) =>
+        muxer.addAudioChunkRaw(
+          packet.data,
+          "key",
+          packet.timestamp,
+          packet.duration,
+          i === 0 ? { decoderConfig: copied.decoderConfig } : undefined,
+        ),
+      );
+    }
+
     muxer.finalize();
     const buffer = (muxer.target as ArrayBufferTarget).buffer;
     const blob = new Blob([buffer], { type: "video/mp4" });
@@ -419,7 +445,8 @@ export async function exportWebCodecsVideo(
       fps,
       frames: frameIndex,
       expectedDuration: total,
-      audioCodec: audioBuffer && audioPick ? audioPick.mux : "none",
+      audioCodec: audioBuffer && audioPick ? audioPick.mux : (copied?.codec ?? "none"),
+      audioCopied: !!copied,
       videoCodec: videoConfig.codec,
       renderMs: performance.now() - started,
     };

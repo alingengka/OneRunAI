@@ -1188,6 +1188,9 @@ function Studio() {
         toast.success(
           `ได้วิดีโอพร้อมโพสต์แล้ว ${result.width}x${result.height} · ${result.fps}fps · ${result.frames} เฟรม`,
         );
+        if (result.audioCopied && noiseReduction) {
+          toast.info("เบราว์เซอร์นี้ใช้เสียงต้นฉบับของคลิป จึงไม่ได้ลดเสียงรบกวนในไฟล์ส่งออก");
+        }
         return;
       }
 
