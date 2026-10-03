@@ -2,6 +2,7 @@
  * B-roll (cutaway): แสดงสื่อของซีนแทนภาพต้นฉบับทั้งเฟรม
  * ใช้ร่วมกันระหว่างพรีวิวและการเบิร์นลงไฟล์ส่งออก
  */
+import { openFrameReader, type FrameReader } from "./frame-reader";
 import type { MotionElement, MotionScene } from "./motion";
 
 export type BrollWindow = {
@@ -90,9 +91,22 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
 }
 
 /** โหลดสื่อทั้งหมดล่วงหน้าให้พร้อมวาดลง canvas */
-export async function createBrollTrack(windows: BrollWindow[]): Promise<BrollTrack> {
+export async function createBrollTrack(
+  windows: BrollWindow[],
+  /**
+   * Export only: every source time `prepare` will be called with, in order, and
+   * the frame size. B-roll videos are then decoded in order instead of seeked.
+   */
+  sequential?: { plannedTimes: number[]; size: { width: number; height: number } },
+): Promise<BrollTrack> {
   if (!windows.length) return EMPTY_TRACK;
-  type Loaded = BrollWindow & { source: CanvasImageSource | null; video?: HTMLVideoElement };
+  type Loaded = BrollWindow & {
+    source: CanvasImageSource | null;
+    video?: HTMLVideoElement;
+    url?: string;
+    reader?: FrameReader | null;
+    frame?: CanvasImageSource | null;
+  };
   const loaded: Loaded[] = [];
 
   for (const win of windows) {
@@ -128,7 +142,7 @@ export async function createBrollTrack(windows: BrollWindow[]): Promise<BrollTra
           { once: true },
         );
       });
-      loaded.push(ok ? { ...win, source: video, video } : { ...win, source: null });
+      loaded.push(ok ? { ...win, source: video, video, url } : { ...win, source: null });
       if (!ok) video.remove();
       continue;
     }
@@ -141,15 +155,47 @@ export async function createBrollTrack(windows: BrollWindow[]): Promise<BrollTra
 
   const hit = (time: number) =>
     loaded.find((w) => time >= w.start - 0.001 && time <= w.end + 0.001) ?? null;
+  /** Where in the (looping) B-roll video a source time lands. */
+  const clipTime = (item: Loaded, video: HTMLVideoElement, time: number) => {
+    const length = video.duration || 0;
+    const at = length > 0.05 ? (time - item.start) % length : 0;
+    return Math.max(0, Math.min(length - 0.03, at));
+  };
+
+  if (sequential) {
+    const planned = new Map<Loaded, number[]>();
+    for (const time of sequential.plannedTimes) {
+      const item = hit(time);
+      if (!item?.video) continue;
+      const list = planned.get(item) ?? [];
+      list.push(clipTime(item, item.video, time));
+      planned.set(item, list);
+    }
+    for (const [item, times] of planned) {
+      const blob = await fetch(item.url!)
+        .then((r) => (r.ok ? r.blob() : null))
+        .catch(() => null);
+      item.reader = blob
+        ? await openFrameReader(blob, times, { ...sequential.size, fit: "cover" })
+        : null;
+    }
+  }
 
   return {
     prepare: async (time) => {
       const current = hit(time);
       if (!current?.video) return;
-      const length = current.video.duration || 0;
-      const rel = time - current.start;
-      const at = length > 0.05 ? rel % length : 0;
-      await seekVideo(current.video, Math.max(0, Math.min(length - 0.03, at)));
+      if (current.reader) {
+        try {
+          current.frame = await current.reader.next();
+          if (current.frame) return;
+        } catch {
+          current.reader.dispose();
+          current.reader = null;
+        }
+      }
+      current.frame = null;
+      await seekVideo(current.video, clipTime(current, current.video, time));
     },
     syncRealtime: (time) => {
       for (const item of loaded) {
@@ -163,9 +209,13 @@ export async function createBrollTrack(windows: BrollWindow[]): Promise<BrollTra
         }
       }
     },
-    sourceAt: (time) => hit(time)?.source ?? null,
+    sourceAt: (time) => {
+      const item = hit(time);
+      return item?.frame ?? item?.source ?? null;
+    },
     dispose: () => {
       for (const item of loaded) {
+        item.reader?.dispose();
         if (item.video) {
           item.video.removeAttribute("src");
           item.video.remove();

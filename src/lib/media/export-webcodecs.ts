@@ -16,6 +16,7 @@ import { createNoiseGate } from "./noise-gate";
 import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
+import { openFrameReader, type FrameReader } from "./frame-reader";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 type Progress = (ratio: number) => void;
@@ -116,15 +117,14 @@ async function pickAudioCodec(sampleRate: number, channels: number) {
  * คืนค่าเป็น AudioBuffer ของ timeline ผลลัพธ์ (เวลาต่อเนื่องหลังตัดช่วงเงียบแล้ว)
  */
 async function renderAudio(
-  url: string,
+  source: Blob,
   segments: Segment[],
   total: number,
   options: { noiseReduction?: boolean; noiseFloor?: number; smoothCuts?: boolean },
 ): Promise<AudioBuffer | null> {
   let decoded: AudioBuffer;
   try {
-    const response = await fetch(url);
-    decoded = await decodeAudioFromFile(await response.blob());
+    decoded = await decodeAudioFromFile(source);
   } catch {
     return null; // คลิปไม่มีแทร็กเสียง หรืออ่านไม่ได้ → ส่งออกเฉพาะภาพ
   }
@@ -227,10 +227,13 @@ export async function exportWebCodecsVideo(
   let audioEncoder: AudioEncoder | null = null;
   let brollTrack: BrollTrack | null = null;
   let stickerLayer: StickerLayer | null = null;
+  let frames: FrameReader | null = null;
 
   try {
-    await waitFor("loadedmetadata");
+    const blobPromise = fetch(url).then((response) => response.blob());
+    if (video.readyState < 1) await waitFor("loadedmetadata");
     if (video.readyState < 2) await waitFor("loadeddata");
+    const sourceBlob = await blobPromise;
     await ensureCaptionFonts(style);
 
     const sourceWidth = video.videoWidth || 1080;
@@ -248,7 +251,33 @@ export async function exportWebCodecsVideo(
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
 
-    brollTrack = await createBrollTrack(brollWindows(options.scenes, options.sceneElements));
+    // Plan every output frame up front: which source time it shows, and in which segment.
+    const fps = options.fps && options.fps > 0 ? options.fps : 30;
+    const normalized = segments.map((segment, index) => {
+      const start = Math.max(0, Math.min(video.duration, segment.start));
+      const end = Math.max(0, Math.min(video.duration, segment.end));
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.02) {
+        throw new Error(`ช่วงวิดีโอที่ ${index + 1} ไม่ถูกต้อง (${segment.start}–${segment.end})`);
+      }
+      return { start, end };
+    });
+    const total = normalized.reduce((n, s) => n + (s.end - s.start), 0);
+    const plan: { time: number; seg: Segment }[] = [];
+    for (const seg of normalized) {
+      const count = Math.max(1, Math.round((seg.end - seg.start) * fps));
+      for (let k = 0; k < count; k++) {
+        plan.push({ time: Math.min(seg.end - 0.001, seg.start + k / fps), seg });
+      }
+    }
+    const planTimes = plan.map((frame) => frame.time);
+
+    frames = await openFrameReader(sourceBlob, planTimes, { width, height, fit: "fill" });
+    dbg(frames ? "decoding frames in order" : "falling back to seeking");
+
+    brollTrack = await createBrollTrack(brollWindows(options.scenes, options.sceneElements), {
+      plannedTimes: planTimes,
+      size: { width, height },
+    });
     if (options.stickers?.length) {
       stickerLayer = createStickerLayer(Math.min(1024, Math.max(256, Math.round(height * 0.5))));
       await stickerLayer.prepare(options.stickers);
@@ -265,25 +294,14 @@ export async function exportWebCodecsVideo(
     });
 
     // ไม่ต้องลด fps ตามความสามารถเครื่องอีกแล้ว เพราะไม่ได้อัดตามเวลาจริง
-    const fps = options.fps && options.fps > 0 ? options.fps : 30;
     const frameDurationUs = 1e6 / fps;
     const bitrateOverride = (window as unknown as { __EXPORT_BITRATE?: number }).__EXPORT_BITRATE;
     const bitrate = bitrateOverride ?? Math.min(64_000_000, Math.max(8_000_000, Math.round(width * height * fps * 0.2)));
 
-    const normalized = segments.map((segment, index) => {
-      const start = Math.max(0, Math.min(video.duration, segment.start));
-      const end = Math.max(0, Math.min(video.duration, segment.end));
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.02) {
-        throw new Error(`ช่วงวิดีโอที่ ${index + 1} ไม่ถูกต้อง (${segment.start}–${segment.end})`);
-      }
-      return { start, end };
-    });
-    const total = normalized.reduce((n, s) => n + (s.end - s.start), 0);
-
     const { config: videoConfig, muxCodec } = await pickVideoCodec(width, height, bitrate, fps);
 
     // ---- เสียง (ทำล่วงหน้าแบบ offline) ----
-    const audioBuffer = await renderAudio(url, normalized, total, options);
+    const audioBuffer = await renderAudio(sourceBlob, normalized, total, options);
     const audioPick = audioBuffer
       ? await pickAudioCodec(audioBuffer.sampleRate, Math.min(2, audioBuffer.numberOfChannels))
       : null;
@@ -312,32 +330,41 @@ export async function exportWebCodecsVideo(
 
     // ---- วนเฟรมทีละเฟรมตามเวลาที่ต้องการ ----
     let frameIndex = 0;
-    let outputTime = 0; // วินาทีสะสมของ timeline ผลลัพธ์
-    for (let s = 0; s < normalized.length; s++) {
-      const seg = normalized[s]!;
-      const length = seg.end - seg.start;
-      const count = Math.max(1, Math.round(length * fps));
-      for (let k = 0; k < count; k++) {
-        if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
-        const sourceTime = Math.min(seg.end - 0.001, seg.start + k / fps);
-        await seekTo(video, sourceTime);
-        await brollTrack?.prepare(sourceTime);
-        renderer.paint(video, sourceTime, seg);
-        const timestamp = Math.round(frameIndex * frameDurationUs);
-        const frame = new VideoFrame(canvas, { timestamp, duration: Math.round(frameDurationUs) });
-        // keyframe ทุก 2 วินาที เพื่อให้ seek ในไฟล์ผลลัพธ์ลื่น
-        encoder.encode(frame, { keyFrame: frameIndex % Math.round(fps * 2) === 0 });
-        frame.close();
-        frameIndex++;
-        if (encoder.encodeQueueSize > 8) {
-          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-          while (encoder.encodeQueueSize > 8) await new Promise<void>((r) => window.setTimeout(r, 4));
+    const keyEvery = Math.round(fps * 2); // keyframe ทุก 2 วินาที เพื่อให้ seek ในไฟล์ผลลัพธ์ลื่น
+    let lastYield = performance.now();
+    for (const { time, seg } of plan) {
+      if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
+      let image: CanvasImageSource | null = null;
+      if (frames) {
+        try {
+          image = await frames.next();
+        } catch (error) {
+          // The decoder gave up part way: finish the rest by seeking.
+          dbg(`in-order decode failed, seeking instead: ${String(error)}`);
+          frames.dispose();
+          frames = null;
         }
-        if ((frameIndex & 7) === 0) onProgress?.(Math.min(0.97, (outputTime + k / fps) / total));
       }
-      outputTime += length;
-      dbg(`segment ${s + 1}/${normalized.length} frames=${frameIndex}`);
+      if (!image) {
+        await seekTo(video, time);
+        image = video;
+      }
+      await brollTrack?.prepare(time);
+      renderer.paint(image, time, seg);
+      const timestamp = Math.round(frameIndex * frameDurationUs);
+      const frame = new VideoFrame(canvas, { timestamp, duration: Math.round(frameDurationUs) });
+      encoder.encode(frame, { keyFrame: frameIndex % keyEvery === 0 });
+      frame.close();
+      frameIndex++;
+      while (encoder.encodeQueueSize > 8) await new Promise<void>((r) => window.setTimeout(r, 4));
+      // Give the page a moment now and then so progress paints and taps still work.
+      if (performance.now() - lastYield > 50) {
+        await new Promise<void>((r) => window.setTimeout(r, 0));
+        lastYield = performance.now();
+      }
+      if ((frameIndex & 7) === 0) onProgress?.(Math.min(0.97, frameIndex / plan.length));
     }
+    dbg(`frames=${frameIndex}`);
 
     await encoder.flush();
     encoder.close();
@@ -400,6 +427,7 @@ export async function exportWebCodecsVideo(
     video.pause();
     video.removeAttribute("src");
     video.remove();
+    frames?.dispose();
     try { brollTrack?.dispose(); } catch { /* ignore */ }
     stickerLayer?.destroy();
     try { if (encoder && encoder.state !== "closed") encoder.close(); } catch { /* ignore */ }
