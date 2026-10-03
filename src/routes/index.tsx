@@ -280,7 +280,7 @@ function Landing() {
             <p className="inline-flex items-center gap-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-200">
               <span className="h-1.5 w-1.5 rounded-full bg-violet-300" /> {t.hero.badge}
             </p>
-            <h1 className="mt-6 font-landing text-[2.6rem] font-black leading-[1.08] tracking-tight sm:text-6xl">
+            <h1 className="mt-6 font-landing text-[2.5rem] font-bold leading-[1.2] sm:text-6xl sm:leading-[1.18]">
               {t.hero.line1.map((chunk, i) => (
                 <Fragment key={chunk}>
                   {i > 0 && <wbr />}
@@ -356,7 +356,7 @@ function Landing() {
         <section id="features" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-24 sm:px-6">
           <Reveal className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold text-violet-300">{t.features.eyebrow}</p>
-            <h2 className="mt-3 font-landing text-3xl font-black sm:text-5xl">
+            <h2 className="mt-3 font-landing text-3xl font-bold leading-[1.25] sm:text-5xl">
               {t.features.title}
             </h2>
             <p className="mt-4 text-white/60">{t.features.subtitle}</p>
@@ -387,7 +387,9 @@ function Landing() {
         <section id="how" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-24 sm:px-6">
           <Reveal className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold text-violet-300">{t.how.eyebrow}</p>
-            <h2 className="mt-3 font-landing text-3xl font-black sm:text-5xl">{t.how.title}</h2>
+            <h2 className="mt-3 font-landing text-3xl font-bold leading-[1.25] sm:text-5xl">
+              {t.how.title}
+            </h2>
           </Reveal>
           <div className="mt-14 grid gap-4 md:grid-cols-3">
             {t.how.steps.map(({ title, text }, i) => {
@@ -425,7 +427,9 @@ function Landing() {
           </div>
           <Reveal className="relative text-center">
             <p className="text-sm font-semibold text-violet-300">{t.pricing.eyebrow}</p>
-            <h2 className="mt-3 font-landing text-3xl font-black sm:text-5xl">{t.pricing.title}</h2>
+            <h2 className="mt-3 font-landing text-3xl font-bold leading-[1.25] sm:text-5xl">
+              {t.pricing.title}
+            </h2>
             <div
               role="radiogroup"
               aria-label={t.pricing.cycleLabel}
@@ -468,7 +472,7 @@ function Landing() {
             <Reveal>
               <div className="h-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
                 <p className="text-sm text-white/60">{t.pricing.trialLabel}</p>
-                <p className="mt-2 font-landing text-5xl font-black">{t.pricing.free}</p>
+                <p className="mt-2 font-landing text-5xl font-extrabold">{t.pricing.free}</p>
                 <p className="mt-1 text-sm text-white/50">{t.pricing.trialNote(trialDays)}</p>
                 {startLink(
                   "mt-7 flex h-11 items-center justify-center rounded-full border border-white/15 font-semibold transition hover:bg-white/5",
@@ -492,7 +496,7 @@ function Landing() {
                 <p className="text-sm text-black/60">
                   Pro {billing === "monthly" ? t.pricing.monthly : t.pricing.yearly}
                 </p>
-                <p className="mt-2 font-landing text-4xl font-black sm:text-5xl">
+                <p className="mt-2 font-landing text-4xl font-extrabold sm:text-5xl">
                   {formatKip(promoPrice)}
                 </p>
                 <p className="mt-1 text-sm text-black/55">
@@ -521,7 +525,9 @@ function Landing() {
         {/* faq */}
         <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-4 py-24 sm:px-6">
           <Reveal className="text-center">
-            <h2 className="font-landing text-3xl font-black sm:text-4xl">{t.faqTitle}</h2>
+            <h2 className="font-landing text-3xl font-bold leading-[1.25] sm:text-4xl">
+              {t.faqTitle}
+            </h2>
           </Reveal>
           <Reveal className="mt-10">
             <Accordion
@@ -555,7 +561,7 @@ function Landing() {
                 aria-hidden="true"
                 className="absolute -bottom-24 -right-16 h-64 w-64 rounded-full bg-[#a776cf]/25 blur-3xl"
               />
-              <h2 className="relative font-landing text-3xl font-black sm:text-5xl">
+              <h2 className="relative font-landing text-3xl font-bold leading-[1.25] sm:text-5xl">
                 {t.cta.title}
               </h2>
               <p className="relative mx-auto mt-4 max-w-xl text-white/65">{t.cta.text}</p>
