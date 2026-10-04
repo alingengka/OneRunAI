@@ -55,3 +55,27 @@ export async function openFrameReader(
     return null;
   }
 }
+
+/**
+ * Duration and display size read from the file itself. iPhone Safari does not
+ * load a <video> it has not played, so waiting on its metadata can hang.
+ */
+export async function probeVideo(
+  blob: Blob,
+): Promise<{ duration: number; width: number; height: number } | null> {
+  try {
+    const { ALL_FORMATS, BlobSource, Input } = await import("mediabunny");
+    const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+    try {
+      const track = await input.getPrimaryVideoTrack();
+      if (!track) return null;
+      const duration = await input.computeDuration();
+      if (!(duration > 0) || !track.displayWidth || !track.displayHeight) return null;
+      return { duration, width: track.displayWidth, height: track.displayHeight };
+    } finally {
+      input.dispose();
+    }
+  } catch {
+    return null;
+  }
+}
