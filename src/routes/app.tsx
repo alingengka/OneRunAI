@@ -711,11 +711,12 @@ function Studio() {
       // ถอดเสียงทีละวลี (รวมช่วงพูดที่ต่อเนื่องกัน) เพื่อให้โมเดลมีบริบทพอ
       // และคำยังยึดกับช่วงเวลาที่พูดจริง
       const transcriptionSegments = refineSpeechSegments(buffer, segs, lang === "lo" ? 12 : 8);
+      // Longer chunks mean far fewer AI calls (and rate limits): Thai/English
+      // go to Scribe, which handles long audio and returns word times; Lao
+      // runs several engines per chunk, so it stays a little shorter.
       const baseChunks = buildAsrChunks(transcriptionSegments, buffer.duration, {
-        // Lao needs longer phrases (and a little more head/tail room) for the
-        // model to resolve tone marks and word boundaries correctly.
-        min: lang === "lo" ? 4.5 : 2.4,
-        max: lang === "lo" ? 18 : 14,
+        min: lang === "lo" ? 10 : 20,
+        max: lang === "lo" ? 24 : 45,
         gap: lang === "lo" ? 0.8 : 0.55,
         pad: lang === "lo" ? 0.25 : 0.12,
       });

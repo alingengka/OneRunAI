@@ -16,7 +16,7 @@ import { createNoiseGate } from "./noise-gate";
 import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
-import { openFrameReader, type FrameReader } from "./frame-reader";
+import { openFrameReader, probeVideo, type FrameReader } from "./frame-reader";
 import { copyAudioPackets } from "./audio-passthrough";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
@@ -214,15 +214,43 @@ export async function exportWebCodecsVideo(
 
   const waitFor = (ev: string) =>
     new Promise<void>((resolve, reject) => {
-      const ok = () => { cleanup(); resolve(); };
-      const bad = () => { cleanup(); reject(new Error("โหลดวิดีโอไม่สำเร็จ")); };
+      const timer = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("โหลดวิดีโอไม่สำเร็จ (หมดเวลา)"));
+      }, 20000);
+      const ok = () => {
+        cleanup();
+        resolve();
+      };
+      const bad = () => {
+        cleanup();
+        reject(new Error("โหลดวิดีโอไม่สำเร็จ"));
+      };
       const cleanup = () => {
+        window.clearTimeout(timer);
         video.removeEventListener(ev, ok);
         video.removeEventListener("error", bad);
       };
       video.addEventListener(ev, ok, { once: true });
       video.addEventListener("error", bad, { once: true });
     });
+  /**
+   * The <video> is only needed for the seeking fallback. iPhone Safari loads a
+   * video only after it plays, so start it muted for a moment.
+   */
+  let videoReady: Promise<void> | null = null;
+  const ensureVideoReady = () =>
+    (videoReady ??= (async () => {
+      if (video.readyState >= 2) return;
+      const loaded = waitFor("loadeddata");
+      try {
+        await video.play();
+        video.pause();
+      } catch {
+        /* autoplay refused: loading may still finish */
+      }
+      await loaded;
+    })());
 
   let encoder: VideoEncoder | null = null;
   let audioEncoder: AudioEncoder | null = null;
@@ -231,14 +259,15 @@ export async function exportWebCodecsVideo(
   let frames: FrameReader | null = null;
 
   try {
-    const blobPromise = fetch(url).then((response) => response.blob());
-    if (video.readyState < 1) await waitFor("loadedmetadata");
-    if (video.readyState < 2) await waitFor("loadeddata");
-    const sourceBlob = await blobPromise;
+    const sourceBlob = await fetch(url).then((response) => response.blob());
+    // Read size and duration from the file; fall back to the <video> element.
+    const probe = await probeVideo(sourceBlob);
+    if (!probe) await ensureVideoReady();
+    const duration = probe?.duration ?? video.duration;
     await ensureCaptionFonts(style);
 
-    const sourceWidth = video.videoWidth || 1080;
-    const sourceHeight = video.videoHeight || 1920;
+    const sourceWidth = probe?.width || video.videoWidth || 1080;
+    const sourceHeight = probe?.height || video.videoHeight || 1920;
     const target = targetSize(sourceWidth, sourceHeight, options.resolution ?? "source");
     const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
     const width = even(target.width);
@@ -255,8 +284,8 @@ export async function exportWebCodecsVideo(
     // Plan every output frame up front: which source time it shows, and in which segment.
     const fps = options.fps && options.fps > 0 ? options.fps : 30;
     const normalized = segments.map((segment, index) => {
-      const start = Math.max(0, Math.min(video.duration, segment.start));
-      const end = Math.max(0, Math.min(video.duration, segment.end));
+      const start = Math.max(0, Math.min(duration, segment.start));
+      const end = Math.max(0, Math.min(duration, segment.end));
       if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 0.02) {
         throw new Error(`ช่วงวิดีโอที่ ${index + 1} ไม่ถูกต้อง (${segment.start}–${segment.end})`);
       }
@@ -342,6 +371,8 @@ export async function exportWebCodecsVideo(
     });
     encoder.configure(videoConfig);
 
+    onProgress?.(0.01); // setup done: show that work has started
+
     // ---- วนเฟรมทีละเฟรมตามเวลาที่ต้องการ ----
     let frameIndex = 0;
     const keyEvery = Math.round(fps * 2); // keyframe ทุก 2 วินาที เพื่อให้ seek ในไฟล์ผลลัพธ์ลื่น
@@ -360,6 +391,7 @@ export async function exportWebCodecsVideo(
         }
       }
       if (!image) {
+        await ensureVideoReady();
         await seekTo(video, time);
         image = video;
       }

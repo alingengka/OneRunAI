@@ -2,7 +2,7 @@
  * B-roll (cutaway): แสดงสื่อของซีนแทนภาพต้นฉบับทั้งเฟรม
  * ใช้ร่วมกันระหว่างพรีวิวและการเบิร์นลงไฟล์ส่งออก
  */
-import { openFrameReader, type FrameReader } from "./frame-reader";
+import { openFrameReader, probeVideo, type FrameReader } from "./frame-reader";
 import type { MotionElement, MotionScene } from "./motion";
 
 export type BrollWindow = {
@@ -104,6 +104,9 @@ export async function createBrollTrack(
     source: CanvasImageSource | null;
     video?: HTMLVideoElement;
     url?: string;
+    /** Export only: the file and its length, read without a <video> element. */
+    blob?: Blob;
+    duration?: number;
     reader?: FrameReader | null;
     frame?: CanvasImageSource | null;
   };
@@ -112,6 +115,17 @@ export async function createBrollTrack(
   for (const win of windows) {
     const url = proxiedMediaUrl(win.assetUrl);
     if (win.assetType === "video") {
+      if (sequential) {
+        // iPhone Safari does not load an unplayed <video>; decode from the file instead.
+        const blob = await fetch(url)
+          .then((r) => (r.ok ? r.blob() : null))
+          .catch(() => null);
+        const probe = blob ? await probeVideo(blob) : null;
+        if (blob && probe) {
+          loaded.push({ ...win, source: null, blob, duration: probe.duration });
+          continue;
+        }
+      }
       const video = document.createElement("video");
       video.src = url;
       video.crossOrigin = "anonymous";
@@ -156,8 +170,8 @@ export async function createBrollTrack(
   const hit = (time: number) =>
     loaded.find((w) => time >= w.start - 0.001 && time <= w.end + 0.001) ?? null;
   /** Where in the (looping) B-roll video a source time lands. */
-  const clipTime = (item: Loaded, video: HTMLVideoElement, time: number) => {
-    const length = video.duration || 0;
+  const clipTime = (item: Loaded, time: number) => {
+    const length = item.duration ?? item.video?.duration ?? 0;
     const at = length > 0.05 ? (time - item.start) % length : 0;
     return Math.max(0, Math.min(length - 0.03, at));
   };
@@ -166,15 +180,17 @@ export async function createBrollTrack(
     const planned = new Map<Loaded, number[]>();
     for (const time of sequential.plannedTimes) {
       const item = hit(time);
-      if (!item?.video) continue;
+      if (!item?.video && !item?.blob) continue;
       const list = planned.get(item) ?? [];
-      list.push(clipTime(item, item.video, time));
+      list.push(clipTime(item, time));
       planned.set(item, list);
     }
     for (const [item, times] of planned) {
-      const blob = await fetch(item.url!)
-        .then((r) => (r.ok ? r.blob() : null))
-        .catch(() => null);
+      const blob =
+        item.blob ??
+        (await fetch(item.url!)
+          .then((r) => (r.ok ? r.blob() : null))
+          .catch(() => null));
       item.reader = blob
         ? await openFrameReader(blob, times, { ...sequential.size, fit: "cover" })
         : null;
@@ -184,7 +200,7 @@ export async function createBrollTrack(
   return {
     prepare: async (time) => {
       const current = hit(time);
-      if (!current?.video) return;
+      if (!current?.video && !current?.reader) return;
       if (current.reader) {
         try {
           current.frame = await current.reader.next();
@@ -195,7 +211,7 @@ export async function createBrollTrack(
         }
       }
       current.frame = null;
-      await seekVideo(current.video, clipTime(current, current.video, time));
+      if (current.video) await seekVideo(current.video, clipTime(current, time));
     },
     syncRealtime: (time) => {
       for (const item of loaded) {

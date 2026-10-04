@@ -105,13 +105,15 @@ function scoreCandidate(candidate: string, others: string[], language?: string, 
 async function transcribeWithScribe(
   binary: Uint8Array<ArrayBuffer>,
   glossary: string[],
+  language: "th" | "lo" | "en" | undefined = "lo",
 ): Promise<{ text: string; transliterated: boolean; timing: TimedWord[] }> {
   const apiKey = process.env["ELEVENLABS_API_KEY"];
   if (!apiKey) throw new Error("ElevenLabs is not connected to this project");
   const form = new FormData();
   form.append("file", new Blob([binary], { type: "audio/wav" }), "recording.wav");
   form.append("model_id", "scribe_v2");
-  form.append("language_code", "lao");
+  const code = { lo: "lao", th: "tha", en: "eng" } as const;
+  if (language) form.append("language_code", code[language]);
   form.append("diarize", "false");
   form.append("tag_audio_events", "false");
   if (glossary.length) form.append("biased_keywords", JSON.stringify(glossary.slice(0, 40)));
@@ -133,7 +135,7 @@ async function transcribeWithScribe(
   if (!raw) return { text: "", transliterated: false, timing: [] };
   const lao = (raw.match(/[\u0e80-\u0eff]/g) ?? []).length;
   const thai = (raw.match(/[\u0e00-\u0e7f]/g) ?? []).length;
-  const transliterated = lao < thai;
+  const transliterated = language === "lo" && lao < thai;
   return {
     text: transliterated ? thaiToLaoScript(raw) : raw,
     transliterated,
@@ -257,6 +259,28 @@ export async function transcribeAudioServer(input: {
         : `${engine} ใช้งานไม่ได้ ซับอาจไม่ครบหรือไม่แม่น: ${message.slice(0, 160)}`,
     );
   };
+
+  // Thai and English: Scribe alone gives accurate text plus measured word
+  // times in one fast call, so try it first and only fall back to the other
+  // engines when it fails.
+  if (input.language !== "lo" && process.env["ELEVENLABS_API_KEY"]) {
+    try {
+      const scribe = await transcribeWithScribe(binary, input.glossary ?? [], input.language);
+      const text = cleanup(scribe.text, input.language);
+      if (text) {
+        return {
+          text,
+          alternatives: [text],
+          agreement: 0.85,
+          words: scribe.timing,
+          wordSource: scribe.timing.length ? "scribe" : null,
+          warnings,
+        };
+      }
+    } catch (error) {
+      warn("ElevenLabs", error);
+    }
+  }
 
   /** One gpt-4o-transcribe pass; resolves to cleaned text ("" if nothing usable). */
   const openaiPass = async (index: number): Promise<string> => {
