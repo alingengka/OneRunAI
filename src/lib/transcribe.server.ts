@@ -82,6 +82,9 @@ function similarity(a: string, b: string): number {
   return Math.max(0, 1 - (row[y.length] ?? Math.max(x.length, y.length)) / Math.max(x.length, y.length));
 }
 
+/** Scribe and the main Gemini pass agreeing this closely skip the extra Lao passes. */
+export const EXTRAS_SKIP_AGREEMENT = 0.8;
+
 function scoreCandidate(candidate: string, others: string[], language?: string, bestLatin = 0): number {
   const agreement = others.length ? others.reduce((sum, value) => sum + similarity(candidate, value), 0) / others.length : 0.72;
   if (language !== "lo") return agreement;
@@ -309,12 +312,13 @@ export async function transcribeAudioServer(input: {
     hasOpenAI ? attempts.map((_, index) => openaiPass(index)) : [],
   );
 
-  // Without OpenAI, Lao gets two extra Gemini passes in its place so ranking
-  // still has several independent candidates. They are best-effort: no
-  // retries and no user-facing warning, so a free-tier rate limit only drops
-  // the extras instead of slowing everything down. They never use the
-  // fallback models, whose quota is kept for the main pass.
-  const geminiExtrasSettled = Promise.allSettled(
+  // Without OpenAI, Lao can get two extra Gemini passes so ranking has more
+  // independent candidates. They only run when Scribe and the main Gemini
+  // pass disagree (see below), which keeps the cost of a typical chunk at
+  // two engine calls. They are best-effort: no retries and no user-facing
+  // warning, and they never use the fallback models, whose quota is kept for
+  // the main pass.
+  const runGeminiExtras = () => Promise.allSettled(
     !hasOpenAI && hasGemini && input.language === "lo"
       ? [
           transcribeWithGemini(input.audioBase64, "lo", "", input.glossary ?? [], "independent", {
@@ -370,7 +374,10 @@ export async function transcribeAudioServer(input: {
     if (text) alternatives.push(text);
   }
 
-  for (const result of await geminiExtrasSettled) {
+  // Two engines that already agree closely settle the chunk on their own.
+  const [first, second] = alternatives;
+  const settled = alternatives.length >= 2 && !!first && !!second && similarity(first, second) >= EXTRAS_SKIP_AGREEMENT;
+  for (const result of settled ? [] : await runGeminiExtras()) {
     if (result.status === "fulfilled") {
       const text = cleanup(result.value, "lo");
       if (text && !alternatives.includes(text)) alternatives.push(text);

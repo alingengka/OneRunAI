@@ -963,6 +963,7 @@ function Studio() {
             language: languages[0] ?? "th",
             context: localContext,
             glossary: terms,
+            fresh: true,
           },
         });
         const replacementText = res.text ?? old.text;
@@ -1022,6 +1023,7 @@ function Studio() {
           language: languages[0] ?? "th",
           context,
           glossary: parseGlossaryTerms(glossary),
+          fresh: true,
         },
       });
       const text = (res.text ?? "").trim();
