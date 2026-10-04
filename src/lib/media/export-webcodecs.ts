@@ -229,8 +229,12 @@ async function renderAudio(
       : null;
 
   highpass.connect(lowpass).connect(compressor);
-  if (gate) (compressor.connect(gate.input), gate.output.connect(offline.destination));
-  else compressor.connect(offline.destination);
+  if (gate) {
+    compressor.connect(gate.input);
+    gate.output.connect(offline.destination);
+  } else {
+    compressor.connect(offline.destination);
+  }
 
   let cursor = 0;
   for (const segment of segments) {
