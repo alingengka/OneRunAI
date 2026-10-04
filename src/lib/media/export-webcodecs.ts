@@ -65,32 +65,87 @@ async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   });
 }
 
+/**
+ * Encodes one blank frame and waits for the result. Safari (iPhone) answers
+ * "supported" to configs it then fails to encode, so a config is only trusted
+ * once a frame has really come out.
+ */
+async function encoderWorks(config: VideoEncoderConfig): Promise<string | null> {
+  let failure: string | null = null;
+  let produced = false;
+  const encoder = new VideoEncoder({
+    output: () => {
+      produced = true;
+    },
+    error: (error) => {
+      failure = error.message || String(error);
+    },
+  });
+  try {
+    encoder.configure(config);
+    const canvas = document.createElement("canvas");
+    canvas.width = config.width;
+    canvas.height = config.height;
+    canvas.getContext("2d")?.fillRect(0, 0, config.width, config.height);
+    const frame = new VideoFrame(canvas, { timestamp: 0 });
+    encoder.encode(frame, { keyFrame: true });
+    frame.close();
+    await Promise.race([
+      encoder.flush(),
+      new Promise((_, reject) => window.setTimeout(() => reject(new Error("timeout")), 8000)),
+    ]);
+  } catch (error) {
+    failure ??= error instanceof Error ? error.message : String(error);
+  } finally {
+    try {
+      if (encoder.state !== "closed") encoder.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  return produced && !failure ? null : (failure ?? "no output");
+}
+
 /** เลือก codec วิดีโอที่เครื่องนี้เข้ารหัสได้จริงที่ความละเอียดนี้ */
 async function pickVideoCodec(width: number, height: number, bitrate: number, fps: number) {
-  const candidates = [
-    "avc1.640034", // High 5.2 (รองรับ 4K)
-    "avc1.4d0034",
-    "avc1.640028",
-    "avc1.42E01E",
-  ];
+  // Lowest H.264 level that fits first: phones often reject levels above
+  // what the frame size needs (High 4.0 covers 1080p30, 4.2 covers 1080p60).
+  const large = width * height > 1920 * 1088;
+  const candidates = large
+    ? ["avc1.640033", "avc1.640034", "avc1.4d0033"]
+    : fps > 30
+      ? ["avc1.64002a", "avc1.4d002a", "avc1.640033"]
+      : ["avc1.640028", "avc1.4d0028", "avc1.64002a", "avc1.640033"];
+  // Level 4.x tops out around 20-25 Mbps.
+  const avcBitrate = large ? bitrate : Math.min(bitrate, 20_000_000);
+  const failures: string[] = [];
   for (const codec of candidates) {
     const config: VideoEncoderConfig = {
       codec,
       width,
       height,
-      bitrate,
+      bitrate: avcBitrate,
       framerate: fps,
       avc: { format: "avc" },
     };
-    try {
-      const support = await VideoEncoder.isConfigSupported(config);
-      if (support.supported) return { codec, config, muxCodec: "avc" as const };
-    } catch { /* ลองตัวถัดไป */ }
+    const support = await VideoEncoder.isConfigSupported(config).catch(() => null);
+    if (!support?.supported) continue;
+    const failure = await encoderWorks(config);
+    if (!failure) return { codec, config, muxCodec: "avc" as const };
+    failures.push(`${codec}: ${failure}`);
   }
   const vp9: VideoEncoderConfig = { codec: "vp09.00.51.08", width, height, bitrate, framerate: fps };
-  const support = await VideoEncoder.isConfigSupported(vp9).catch(() => ({ supported: false }));
-  if (support.supported) return { codec: vp9.codec, config: vp9, muxCodec: "vp9" as const };
-  throw new Error("เบราว์เซอร์นี้เข้ารหัสวิดีโอที่ความละเอียดนี้ไม่ได้ ลองลดความละเอียดลง");
+  const support = await VideoEncoder.isConfigSupported(vp9).catch(() => null);
+  if (support?.supported) {
+    const failure = await encoderWorks(vp9);
+    if (!failure) return { codec: vp9.codec, config: vp9, muxCodec: "vp9" as const };
+    failures.push(`vp9: ${failure}`);
+  }
+  dbg(`no working encoder: ${failures.join(" | ")}`);
+  throw new Error(
+    `เบราว์เซอร์นี้เข้ารหัสวิดีโอ ${width}x${height} ไม่ได้ ลองลดความละเอียดหรือ FPS ลง` +
+      (failures.length ? ` (${failures[0]})` : ""),
+  );
 }
 
 async function pickAudioCodec(sampleRate: number, channels: number) {
@@ -365,11 +420,21 @@ export async function exportWebCodecsVideo(
       fastStart: "in-memory" as const,
     });
 
+    // Errors arrive in a callback; keep them so the loop can report the real cause.
+    let encoderError: string | null = null;
     encoder = new VideoEncoder({
       output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-      error: (error) => { throw new Error(`เข้ารหัสวิดีโอไม่สำเร็จ: ${error.message}`); },
+      error: (error) => {
+        encoderError = error.message || String(error);
+      },
     });
     encoder.configure(videoConfig);
+    const encodeFailed = (cause?: unknown) =>
+      new Error(
+        `เข้ารหัสวิดีโอไม่สำเร็จ (${videoConfig.codec}): ${
+          encoderError ?? (cause instanceof Error ? cause.message : String(cause))
+        }`,
+      );
 
     onProgress?.(0.01); // setup done: show that work has started
 
@@ -399,8 +464,14 @@ export async function exportWebCodecsVideo(
       renderer.paint(image, time, seg);
       const timestamp = Math.round(frameIndex * frameDurationUs);
       const frame = new VideoFrame(canvas, { timestamp, duration: Math.round(frameDurationUs) });
-      encoder.encode(frame, { keyFrame: frameIndex % keyEvery === 0 });
-      frame.close();
+      try {
+        if (!encoderError) encoder.encode(frame, { keyFrame: frameIndex % keyEvery === 0 });
+      } catch (error) {
+        throw encodeFailed(error);
+      } finally {
+        frame.close();
+      }
+      if (encoderError) throw encodeFailed();
       frameIndex++;
       while (encoder.encodeQueueSize > 8) await new Promise<void>((r) => window.setTimeout(r, 4));
       // Give the page a moment now and then so progress paints and taps still work.
@@ -412,7 +483,12 @@ export async function exportWebCodecsVideo(
     }
     dbg(`frames=${frameIndex}`);
 
-    await encoder.flush();
+    try {
+      await encoder.flush();
+    } catch (error) {
+      throw encodeFailed(error);
+    }
+    if (encoderError) throw encodeFailed();
     encoder.close();
     encoder = null;
 
