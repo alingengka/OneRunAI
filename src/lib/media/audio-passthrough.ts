@@ -36,10 +36,18 @@ export async function copyAudioPackets(
       let packet = (await sink.getPacket(segment.start)) ?? (await sink.getFirstPacket());
       while (packet && packet.timestamp < segment.end) {
         if (packet.timestamp + packet.duration > segment.start) {
-          const at = outputStart + (packet.timestamp - segment.start);
-          // Keep the timeline increasing where packets straddle a cut.
-          const timestamp = Math.max(lastEnd, Math.round(at * 1e6));
+          const at = Math.round((outputStart + (packet.timestamp - segment.start)) * 1e6);
           const duration = Math.round(packet.duration * 1e6);
+          // Where packets straddle a cut, drop one that mostly overlaps the
+          // previous packet and nudge one that barely does. Every segment is
+          // placed from its exact output start, so the nudge never adds up
+          // across cuts (pushing every packet later used to drift audio
+          // behind the picture by up to a packet per cut).
+          if (at < lastEnd && lastEnd - at > duration / 2) {
+            packet = await sink.getNextPacket(packet);
+            continue;
+          }
+          const timestamp = Math.max(lastEnd, at);
           packets.push({ data: packet.data, timestamp, duration });
           lastEnd = timestamp + duration;
         }
