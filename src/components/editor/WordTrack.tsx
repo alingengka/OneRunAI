@@ -47,6 +47,11 @@ type Props = {
    * scrubs the video, like CapCut.
    */
   centered?: boolean;
+  /**
+   * Centered mode: the playing video's time, or null when paused. Read every
+   * frame so the track glides instead of stepping with the 30 Hz clock.
+   */
+  clock?: () => number | null;
   /** Called when the user starts scrubbing, so playback can pause. */
   onScrubStart?: () => void;
   /** Tap on an empty part of the timeline. */
@@ -89,6 +94,7 @@ export function WordTrack({
   onMove,
   compact = false,
   centered = false,
+  clock,
   onScrubStart,
   onDeselect,
   lanes,
@@ -244,6 +250,29 @@ export function WordTrack({
     }
     // setScroll only touches refs and the element.
   }, [time, drag, centered, pps, half]);
+
+  const clockRef = useRef(clock);
+  clockRef.current = clock;
+  useEffect(() => {
+    if (!centered) return;
+    let raf = 0;
+    const follow = () => {
+      const el = scrollRef.current;
+      const t = clockRef.current?.();
+      if (
+        el &&
+        t != null &&
+        !touchingRef.current &&
+        performance.now() - userScrollAtRef.current >= 250
+      ) {
+        const x = t * ppsRef.current;
+        if (Math.abs(el.scrollLeft - x) > 0.5) setScroll(x);
+      }
+      raf = requestAnimationFrame(follow);
+    };
+    raf = requestAnimationFrame(follow);
+    return () => cancelAnimationFrame(raf);
+  }, [centered]);
 
   // Bring a newly selected word into view (e.g. picked from the caption list).
   useEffect(() => {
