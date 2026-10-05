@@ -104,6 +104,15 @@ export function WordTrack({
   /** scrollLeft we set ourselves; scroll events matching it are not the user's. */
   const expectedScrollRef = useRef(-1);
   const userScrollAtRef = useRef(0);
+  /**
+   * Scroll events only scrub the video while the user is touching or
+   * dragging the track, or during the momentum glide after release. iOS
+   * Safari reports programmatic scrolls back with slightly different
+   * positions, and treating those as scrubbing kept seeking the playing
+   * video back to where it was, so playback looked frozen.
+   */
+  const touchingRef = useRef(false);
+  const gestureUntilRef = useRef(0);
   const seekFrameRef = useRef(0);
 
   useLayoutEffect(() => {
@@ -145,7 +154,10 @@ export function WordTrack({
     const onWheel = (event: WheelEvent) => {
       const pinch = event.ctrlKey || event.metaKey;
       const vertical = Math.abs(event.deltaY) > Math.abs(event.deltaX) && !event.shiftKey;
-      if (!pinch && !vertical) return;
+      if (!pinch && !vertical) {
+        gestureUntilRef.current = performance.now() + 400; // sideways swipe scrubs
+        return;
+      }
       event.preventDefault();
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
       const delta = event.deltaY * unit;
@@ -165,6 +177,7 @@ export function WordTrack({
     return a && b ? Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) : 0;
   };
   const onTouchStart = (event: ReactTouchEvent) => {
+    touchingRef.current = true;
     if (event.touches.length === 2) {
       pinchRef.current = { distance: touchDistance(event.touches), pps: ppsRef.current };
     } else if (centered) {
@@ -182,12 +195,17 @@ export function WordTrack({
   };
   const onTouchEnd = (event: ReactTouchEvent) => {
     if (event.touches.length < 2) pinchRef.current = null;
+    if (event.touches.length === 0) {
+      touchingRef.current = false;
+      gestureUntilRef.current = performance.now() + 1500; // momentum glide
+    }
   };
 
   // Centered: dragging the track (including momentum) scrubs the video.
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el || !centered || pinchRef.current) return;
+    if (!touchingRef.current && performance.now() > gestureUntilRef.current) return;
     if (Math.abs(el.scrollLeft - expectedScrollRef.current) <= 1) return;
     userScrollAtRef.current = performance.now();
     const t = Math.max(0, Math.min(duration, el.scrollLeft / ppsRef.current));
@@ -210,7 +228,7 @@ export function WordTrack({
     if (!el || drag) return;
     if (centered) {
       // Follow the video unless the user is dragging the track right now.
-      if (performance.now() - userScrollAtRef.current < 250) return;
+      if (touchingRef.current || performance.now() - userScrollAtRef.current < 250) return;
       if (Math.abs(el.scrollLeft - time * pps) > 0.5) setScroll(time * pps);
       return;
     }
@@ -482,7 +500,13 @@ export function WordTrack({
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
         onPointerDown={(event) => {
-          if (centered && event.pointerType === "mouse") onScrubStart?.();
+          if (centered && event.pointerType === "mouse") {
+            gestureUntilRef.current = Number.POSITIVE_INFINITY;
+            onScrubStart?.();
+          }
+        }}
+        onPointerUpCapture={(event) => {
+          if (event.pointerType === "mouse") gestureUntilRef.current = performance.now() + 300;
         }}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
