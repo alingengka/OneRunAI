@@ -119,6 +119,7 @@ import {
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt, type MotionKind } from "@/lib/media/motion";
+import { Clocked, createPlaybackClock, nextBoundaryAfter } from "@/lib/playback-clock";
 import { isPriming, markUserPlay, primeFirstFrame } from "@/lib/media/first-frame";
 import {
   addSceneElement,
@@ -296,7 +297,21 @@ function Studio() {
   const [file, setFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string>("");
   const [duration, setDuration] = useState(0);
-  const [time, setTime] = useState(0);
+  /**
+   * `clock` ticks with the video; `time` (React state) follows it only when
+   * paused or when something on screen outside the preview changes (a word,
+   * caption group, sticker or scene starts or ends), so playback does not
+   * re-render the whole editor every frame.
+   */
+  const clock = useMemo(() => createPlaybackClock(), []);
+  const [time, setCoarseTime] = useState(0);
+  const setTime = useCallback(
+    (t: number) => {
+      clock.set(t);
+      setCoarseTime(t);
+    },
+    [clock],
+  );
   const [playing, setPlaying] = useState(false);
   const [frameHeight, setFrameHeight] = useState(0);
   const [frameWidth, setFrameWidth] = useState(0);
@@ -492,11 +507,6 @@ function Studio() {
       window.clearTimeout(timer);
     };
   }, [file, duration]);
-  // งาน B: พรีวิว motion จริงบนวิดีโอ ใช้สูตรเดียวกับตอน export
-  const previewMotion = useMemo(
-    () => motionAt(time, scenes, sceneElements),
-    [time, scenes, sceneElements],
-  );
   const activeGroupIndex = useMemo(
     () => groups.findIndex((g) => time >= g.start && time <= g.end),
     [groups, time],
@@ -545,6 +555,28 @@ function Studio() {
 
   // playback clock + silence skipping
   const lastClockRef = useRef(0);
+  const scenesRef = useRef(scenes);
+  scenesRef.current = scenes;
+  const sceneElementsRef = useRef(sceneElements);
+  sceneElementsRef.current = sceneElements;
+  /**
+   * Times where something outside the preview changes during playback: the
+   * caption list's current line, sound effects, the sticker and scene panels.
+   * Word-by-word highlighting lives in the preview, which follows the clock.
+   */
+  const boundaries = useMemo(() => {
+    const out: number[] = [];
+    for (const g of groups) out.push(g.start, g.end);
+    for (const st of stickers) out.push(st.start, st.end);
+    for (const sc of scenes) out.push(sc.start, sc.end);
+    return out.sort((a, b) => a - b);
+  }, [groups, stickers, scenes]);
+  const boundariesRef = useRef(boundaries);
+  boundariesRef.current = boundaries;
+  const coarseTimeRef = useRef({ time: -1, next: 0 });
+  useEffect(() => {
+    coarseTimeRef.current.next = -Infinity; // re-evaluate against the new list
+  }, [boundaries]);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
   /** Fast-forwarding through a cut right now (muted, high playbackRate). */
@@ -592,18 +624,33 @@ function Studio() {
           endSkip(v);
         }
         // ~30 updates a second is smooth for captions; phones run requestAnimationFrame
-        // at 120Hz, and re-rendering the editor that often made playback stutter.
+        // at 120Hz, and re-rendering that often made playback stutter.
         const now = v.currentTime;
         if (v.paused || Math.abs(now - lastClockRef.current) >= 1 / 30) {
           lastClockRef.current = now;
-          setTime(now);
+          clock.set(now);
+        }
+        // Scene motion on the preview, same formula as the export. Set on the
+        // element directly so it does not need a React render.
+        const motion = motionAt(now, scenesRef.current, sceneElementsRef.current);
+        const transform = `scale(${motion.scale}) translate(${motion.translateX * 100}%, ${motion.translateY * 100}%)`;
+        if (v.style.transform !== transform) v.style.transform = transform;
+        const coarse = coarseTimeRef.current;
+        if (
+          v.paused
+            ? now !== coarse.time
+            : now >= coarse.next || now < coarse.time || now - coarse.time >= 2
+        ) {
+          coarse.time = now;
+          coarse.next = nextBoundaryAfter(boundariesRef.current, now);
+          setCoarseTime(now);
         }
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [removeSilence, keepSegments, silences]);
+  }, [removeSilence, keepSegments, silences, clock]);
 
   useEffect(() => {
     setAudioEnabled(sfx.enabled);
@@ -2871,7 +2918,7 @@ function Studio() {
                     {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
                   </Button>
                   <span className="rounded-full bg-black/60 px-3 py-1 font-mono text-xs text-white">
-                    {fmt(time)} / {fmt(duration)}
+                    <Clocked clock={clock}>{(t) => fmt(t)}</Clocked> / {fmt(duration)}
                   </span>
                   <Button
                     size="icon"
@@ -2914,9 +2961,6 @@ function Studio() {
                     // iOS Safari shows a blank box until a video has played once
                     onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
                     className="h-full w-full object-cover will-change-transform"
-                    style={{
-                      transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,
-                    }}
                     playsInline
                     onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                     onEnded={() => setPlaying(false)}
@@ -2939,46 +2983,53 @@ function Studio() {
                     แตะเพื่ออัปโหลดคลิป
                   </button>
                 )}
-                <BrollOverlay
-                  scenes={scenes}
-                  sceneElements={sceneElements}
-                  time={time}
-                  playing={playing}
-                />
-                {captionsOn && (
-                  <CaptionOverlay
-                    group={activeGroup}
-                    time={time}
-                    style={style}
-                    height={frameHeight}
-                    safeArea={tiktokPreview}
-                    onPositionChange={({ posX, posY }) =>
-                      setStyle((current) => ({ ...current, posX, posY }))
-                    }
-                    onEditText={(text) => editActiveGroupText(text)}
-                    onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-                    showHandles={!playing && !(tab === "stickers" && selectedSticker)}
-                  />
-                )}
-                <ViralTextOverlay
-                  scenes={scenes}
-                  sceneElements={sceneElements}
-                  time={time}
-                  height={frameHeight}
-                />
-                {stickers.length > 0 && (
-                  <StickerOverlay
-                    stickers={stickers}
-                    time={time}
-                    width={frameWidth}
-                    height={frameHeight}
-                    selectedId={selectedSticker}
-                    onSelect={setSelectedSticker}
-                    onChange={updateSticker}
-                    onRemove={removeSticker}
-                    interactive={!playing}
-                  />
-                )}
+                {/* Only the preview layers follow every clock tick. */}
+                <Clocked clock={clock}>
+                  {(t) => (
+                    <>
+                      <BrollOverlay
+                        scenes={scenes}
+                        sceneElements={sceneElements}
+                        time={t}
+                        playing={playing}
+                      />
+                      {captionsOn && (
+                        <CaptionOverlay
+                          group={groups.find((g) => t >= g.start && t <= g.end) ?? null}
+                          time={t}
+                          style={style}
+                          height={frameHeight}
+                          safeArea={tiktokPreview}
+                          onPositionChange={({ posX, posY }) =>
+                            setStyle((current) => ({ ...current, posX, posY }))
+                          }
+                          onEditText={(text) => editActiveGroupText(text)}
+                          onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+                          showHandles={!playing && !(tab === "stickers" && selectedSticker)}
+                        />
+                      )}
+                      <ViralTextOverlay
+                        scenes={scenes}
+                        sceneElements={sceneElements}
+                        time={t}
+                        height={frameHeight}
+                      />
+                      {stickers.length > 0 && (
+                        <StickerOverlay
+                          stickers={stickers}
+                          time={t}
+                          width={frameWidth}
+                          height={frameHeight}
+                          selectedId={selectedSticker}
+                          onSelect={setSelectedSticker}
+                          onChange={updateSticker}
+                          onRemove={removeSticker}
+                          interactive={!playing}
+                        />
+                      )}
+                    </>
+                  )}
+                </Clocked>
                 {tiktokPreview && <TikTokSafeAreaOverlay />}
               </div>
             </div>
@@ -2996,10 +3047,14 @@ function Studio() {
                       }}
                     />
                   ))}
-                <div
-                  className="absolute top-0 h-full w-0.5 bg-primary"
-                  style={{ left: `${duration ? (time / duration) * 100 : 0}%` }}
-                />
+                <Clocked clock={clock}>
+                  {(t) => (
+                    <div
+                      className="absolute top-0 h-full w-0.5 bg-primary"
+                      style={{ left: `${duration ? (t / duration) * 100 : 0}%` }}
+                    />
+                  )}
+                </Clocked>
               </div>
 
               <div className="flex items-center gap-1.5 sm:gap-2">
@@ -3013,19 +3068,23 @@ function Studio() {
                 >
                   {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 </Button>
-                <Slider
-                  className="min-w-0 flex-1"
-                  value={[time]}
-                  min={0}
-                  max={Math.max(duration, 0.1)}
-                  step={0.01}
-                  aria-label="ตำแหน่งวิดีโอ"
-                  onValueChange={([v]) => {
-                    if (videoRef.current) videoRef.current.currentTime = v ?? 0;
-                  }}
-                />
+                <Clocked clock={clock}>
+                  {(t) => (
+                    <Slider
+                      className="min-w-0 flex-1"
+                      value={[t]}
+                      min={0}
+                      max={Math.max(duration, 0.1)}
+                      step={0.01}
+                      aria-label="ตำแหน่งวิดีโอ"
+                      onValueChange={([v]) => {
+                        if (videoRef.current) videoRef.current.currentTime = v ?? 0;
+                      }}
+                    />
+                  )}
+                </Clocked>
                 <span className="shrink-0 font-mono text-[11px] text-muted-foreground sm:text-xs">
-                  {fmt(time)}
+                  <Clocked clock={clock}>{(t) => fmt(t)}</Clocked>
                   <span className="hidden sm:inline"> / {fmt(duration)}</span>
                 </span>
                 <Button
@@ -3148,6 +3207,7 @@ function Studio() {
                 onSeek={seekTo}
                 onRetime={retimeWord}
                 onMove={moveWord}
+                clock={playClock}
                 lanes={timelineLanes}
                 selectedSticker={selectedSticker}
                 onSelectSticker={(id) => {

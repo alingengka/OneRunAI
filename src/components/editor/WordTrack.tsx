@@ -48,8 +48,8 @@ type Props = {
    */
   centered?: boolean;
   /**
-   * Centered mode: the playing video's time, or null when paused. Read every
-   * frame so the track glides instead of stepping with the 30 Hz clock.
+   * The playing video's time, or null when paused. Read every frame so the
+   * playhead and track glide; `time` only updates now and then while playing.
    */
   clock?: () => number | null;
   /** Called when the user starts scrubbing, so playback can pause. */
@@ -253,20 +253,29 @@ export function WordTrack({
 
   const clockRef = useRef(clock);
   clockRef.current = clock;
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef(drag);
+  dragRef.current = drag;
   useEffect(() => {
-    if (!centered) return;
     let raf = 0;
     const follow = () => {
       const el = scrollRef.current;
       const t = clockRef.current?.();
-      if (
-        el &&
-        t != null &&
-        !touchingRef.current &&
-        performance.now() - userScrollAtRef.current >= 250
-      ) {
+      if (el && t != null) {
         const x = t * ppsRef.current;
-        if (Math.abs(el.scrollLeft - x) > 0.5) setScroll(x);
+        if (centered) {
+          if (!touchingRef.current && performance.now() - userScrollAtRef.current >= 250) {
+            if (Math.abs(el.scrollLeft - x) > 0.5) setScroll(x);
+          }
+        } else {
+          if (playheadRef.current) playheadRef.current.style.left = `${x}px`;
+          if (
+            !dragRef.current &&
+            (x < el.scrollLeft + 24 || x > el.scrollLeft + el.clientWidth - 64)
+          ) {
+            setScroll(x - el.clientWidth * 0.35);
+          }
+        }
       }
       raf = requestAnimationFrame(follow);
     };
@@ -675,6 +684,7 @@ export function WordTrack({
 
           {!centered && (
             <div
+              ref={playheadRef}
               aria-hidden="true"
               className="pointer-events-none absolute bottom-0 top-0 w-0.5 bg-foreground"
               style={{ left: time * pps }}
