@@ -36,7 +36,11 @@ function Segmented({
   return (
     <div className="space-y-1.5">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <div role="radiogroup" aria-label={label} className="flex rounded-lg bg-secondary p-1">
+      <div
+        role="radiogroup"
+        aria-label={label}
+        className="flex flex-wrap gap-0.5 rounded-lg bg-secondary p-1"
+      >
         {choices.map((choice) => {
           const on = choice.key === current;
           return (
@@ -47,7 +51,7 @@ function Segmented({
               aria-checked={on}
               onClick={() => onPick(choice)}
               className={cn(
-                "h-9 min-w-0 flex-1 rounded-md px-2 text-sm whitespace-nowrap transition-colors",
+                "h-9 flex-auto rounded-md px-2.5 text-sm whitespace-nowrap transition-colors",
                 on
                   ? "bg-background font-semibold text-foreground shadow-sm"
                   : "text-muted-foreground",
@@ -108,7 +112,7 @@ export function CaptionLayoutControls({ style, onChange }: Props) {
   const mode = captionModeOf(style);
   const groupKey = mode === "fixed" ? String(Math.min(4, Math.max(2, style.wordsPerGroup))) : mode;
   return (
-    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+    <div className="grid gap-3">
       <Segmented
         label="ขึ้นซับครั้งละ"
         choices={GROUPS}
