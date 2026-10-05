@@ -77,6 +77,7 @@ import {
   encodeWav16k,
   invertSegments,
   reconcileSegmentsWithWords,
+  splitSegmentsAtWordGaps,
   estimateNoiseFloor,
   refineSpeechSegments,
   smoothSpeechSegments,
@@ -222,6 +223,9 @@ const LANGUAGES: { code: LangCode; label: string; font: string }[] = [
   { code: "lo", label: "ລາວ", font: "'Noto Sans Lao Looped', 'Noto Sans Lao', sans-serif" },
   { code: "en", label: "English", font: "'Inter', system-ui, sans-serif" },
 ];
+
+/** Cuts up to this long are fast-forwarded in the preview; longer ones are seeked. */
+const FAST_SKIP_MAX = 1.2;
 
 /** How many subtitle chunks are transcribed at the same time. */
 const TRANSCRIBE_CONCURRENCY = 3;
@@ -514,18 +518,51 @@ function Studio() {
 
   // playback clock + silence skipping
   const lastClockRef = useRef(0);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  /** Fast-forwarding through a cut right now (muted, high playbackRate). */
+  const skippingRef = useRef(false);
   useEffect(() => {
     let raf = 0;
+    const endSkip = (v: HTMLVideoElement) => {
+      if (!skippingRef.current) return;
+      skippingRef.current = false;
+      v.playbackRate = 1;
+      v.muted = mutedRef.current;
+    };
     const tick = () => {
       const v = videoRef.current;
       if (v) {
         const t = v.currentTime;
-        if (removeSilence && keepSegments.length) {
-          const gap = silences.find((g) => t >= g.start && t < g.end - 0.02);
-          if (gap) {
+        // Only while playing: scrubbing a paused video through a cut must not jump.
+        const gap =
+          removeSilence && keepSegments.length && !v.paused
+            ? silences.find((g) => t >= g.start && t < g.end - 0.03)
+            : undefined;
+        if (gap) {
+          const remaining = gap.end - t;
+          let fastForward = remaining <= FAST_SKIP_MAX;
+          if (fastForward) {
+            // A seek stalls the picture and sound on phones; racing through a
+            // short cut muted at up to 16x does not. The rate eases off near
+            // the end so playback lands on the next spoken part.
+            try {
+              v.playbackRate = Math.min(16, Math.max(1, remaining / 0.03));
+              if (!skippingRef.current) {
+                skippingRef.current = true;
+                v.muted = true;
+              }
+            } catch {
+              fastForward = false; // browser refuses high rates: seek instead
+            }
+          }
+          if (!fastForward) {
+            endSkip(v);
             const next = keepSegments.find((s) => s.start >= gap.end - 0.001);
             v.currentTime = next ? next.start : v.duration;
           }
+        } else {
+          endSkip(v);
         }
         // ~30 updates a second is smooth for captions; phones run requestAnimationFrame
         // at 120Hz, and re-rendering the editor that often made playback stutter.
@@ -946,10 +983,14 @@ function Studio() {
       allWords.splice(0, allWords.length, ...closeSpeechGaps(allWords, segs));
       // งาน A: ใช้เวลาคำจริงขยายขอบช่วงพูด ไม่ให้ energy gate ตัดพยางค์ต้น/ท้ายขาด
 
-      const timingForCuts = measured.length ? measured : allWords;
-      const reconciled = reconcileSegmentsWithWords(segs, timingForCuts, {
-        duration: buffer.duration,
-      });
+      // Measured word times (Scribe) show every pause, even in a noisy place,
+      // so cuts come from the words; estimated times only nudge the edges.
+      const reconciled = measured.length
+        ? splitSegmentsAtWordGaps(segs, measured, {
+            minGap: Math.max(0.25, minSilence),
+            duration: buffer.duration,
+          })
+        : reconcileSegmentsWithWords(segs, allWords, { duration: buffer.duration });
       if (reconciled.length) setSegments(reconciled);
       const ruled = applyRulesToWords(allWords, lexRules);
       if (ruled.changed) setLexRules(ruled.rules);
