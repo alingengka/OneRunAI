@@ -588,6 +588,39 @@ export function reconcileSegmentsWithWords(
 }
 
 /**
+ * Parts of the speech segments that no transcribed word covers, at least
+ * `minLength` long. The recognisers sometimes drop a phrase (often the end of
+ * a chunk); these ranges are sent again so captions are not missing there.
+ */
+export function uncoveredSpeech(
+  segments: Segment[],
+  words: { start: number; end: number }[],
+  opts: { minLength?: number; slack?: number } = {},
+): Segment[] {
+  const minLength = opts.minLength ?? 0.6;
+  const slack = opts.slack ?? 0.15;
+  const spans = words
+    .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end))
+    .map((w) => ({ start: w.start - slack, end: w.end + slack }))
+    .sort((a, b) => a.start - b.start);
+  const out: Segment[] = [];
+  for (const segment of segments) {
+    let cursor = segment.start;
+    for (const span of spans) {
+      if (span.end <= cursor) continue;
+      if (span.start >= segment.end) break;
+      if (span.start > cursor && span.start - cursor >= minLength) {
+        out.push({ start: cursor, end: Math.min(span.start, segment.end) });
+      }
+      cursor = Math.max(cursor, span.end);
+      if (cursor >= segment.end) break;
+    }
+    if (segment.end - cursor >= minLength) out.push({ start: cursor, end: segment.end });
+  }
+  return out;
+}
+
+/**
  * Keep ranges built from measured word times (Scribe), for cutting dead air.
  *
  * The loudness gate alone misses pauses in noisy places (street, bus) and,

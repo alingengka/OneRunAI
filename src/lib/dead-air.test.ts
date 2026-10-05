@@ -181,3 +181,33 @@ for (const [name, noise] of scenarios) {
 }
 
 console.log("dead-air tests passed");
+
+// Speech with no words in it is found again (the tail an engine dropped).
+{
+  const { uncoveredSpeech } = await import("./media/audio");
+  const gaps = uncoveredSpeech(
+    [{ start: 9, end: 14 }],
+    [
+      { start: 9.1, end: 9.6 },
+      { start: 9.7, end: 10.4 },
+      { start: 10.5, end: 12.0 },
+    ],
+  );
+  assert(gaps.length === 1, `missing tail not found: ${JSON.stringify(gaps)}`);
+  assert(
+    Math.abs(gaps[0]!.start - 12.15) < 1e-9 && gaps[0]!.end === 14,
+    `wrong tail: ${JSON.stringify(gaps)}`,
+  );
+  // Short gaps between words are not reported.
+  assert(
+    uncoveredSpeech(
+      [{ start: 0, end: 2 }],
+      [
+        { start: 0, end: 0.9 },
+        { start: 1.2, end: 2 },
+      ],
+    ).length === 0,
+    "short gap reported as missing speech",
+  );
+  console.log("uncovered speech tests passed");
+}

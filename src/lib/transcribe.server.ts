@@ -82,6 +82,13 @@ function similarity(a: string, b: string): number {
   return Math.max(0, 1 - (row[y.length] ?? Math.max(x.length, y.length)) / Math.max(x.length, y.length));
 }
 
+/** Shorter text length over longer text length, by characters. */
+function lengthRatio(a: string, b: string): number {
+  const x = chars(a).length;
+  const y = chars(b).length;
+  return Math.min(x, y) / Math.max(1, x, y);
+}
+
 /** Scribe and the main Gemini pass agreeing this closely skip the extra Lao passes. */
 export const EXTRAS_SKIP_AGREEMENT = 0.8;
 
@@ -376,7 +383,14 @@ export async function transcribeAudioServer(input: {
 
   // Two engines that already agree closely settle the chunk on their own.
   const [first, second] = alternatives;
-  const settled = alternatives.length >= 2 && !!first && !!second && similarity(first, second) >= EXTRAS_SKIP_AGREEMENT;
+  // They must also be about as long: one engine dropping the end of the
+  // audio can still look "similar" over the part it kept.
+  const settled =
+    alternatives.length >= 2 &&
+    !!first &&
+    !!second &&
+    similarity(first, second) >= EXTRAS_SKIP_AGREEMENT &&
+    lengthRatio(first, second) >= 0.9;
   for (const result of settled ? [] : await runGeminiExtras()) {
     if (result.status === "fulfilled") {
       const text = cleanup(result.value, "lo");
@@ -403,13 +417,17 @@ export async function transcribeAudioServer(input: {
     return { text: "", alternatives: [], agreement: 0, words: scribeTiming, wordSource: scribeTiming.length ? "scribe" : null, warnings };
   }
   const bestLatin = Math.max(0, ...alternatives.map((text) => latinWords(text).length));
+  const longest = Math.max(...alternatives.map((text) => chars(text).length));
   const ranked = alternatives
     .map((text) => ({
       text,
       // Thai->Lao transliteration (Scribe) is lossy, so such a candidate only
       // wins when it is clearly better than a natively Lao-script candidate.
+      // A candidate much shorter than the longest one has probably dropped
+      // part of the speech (often the end), so it loses points for that.
       score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language, bestLatin)
-        - (transliterated.has(text) ? 0.03 : 0),
+        - (transliterated.has(text) ? 0.03 : 0)
+        - Math.max(0, 0.9 - chars(text).length / Math.max(1, longest)) * 0.8,
     }))
     .sort((a, b) => b.score - a.score);
 

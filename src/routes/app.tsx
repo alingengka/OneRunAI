@@ -78,6 +78,7 @@ import {
   invertSegments,
   reconcileSegmentsWithWords,
   splitSegmentsAtWordGaps,
+  uncoveredSpeech,
   estimateNoiseFloor,
   refineSpeechSegments,
   smoothSpeechSegments,
@@ -817,8 +818,9 @@ function Studio() {
       // go to Scribe, which handles long audio and returns word times; Lao
       // runs several engines per chunk, so it stays a little shorter.
       const baseChunks = buildAsrChunks(transcriptionSegments, buffer.duration, {
-        min: lang === "lo" ? 10 : 20,
-        max: lang === "lo" ? 24 : 45,
+        // Lao: long audio makes the models drop the end of what was said.
+        min: lang === "lo" ? 5 : 20,
+        max: lang === "lo" ? 14 : 45,
         gap: lang === "lo" ? 0.8 : 0.55,
         pad: lang === "lo" ? 0.25 : 0.12,
       });
@@ -941,6 +943,44 @@ function Studio() {
             setWords([...allWords]);
           },
         );
+        // Safety net: speech the engines skipped (often the end of a chunk).
+        // The analysis heard voice there but no word landed in it, so send
+        // just that part again.
+        const skipped = uncoveredSpeech(segs, allWords).slice(0, 8);
+        if (skipped.length) {
+          const pad = 0.2;
+          await runInOrderPool(
+            skipped.length,
+            TRANSCRIBE_CONCURRENCY,
+            (i) =>
+              transcribeChunk(
+                [
+                  {
+                    start: Math.max(0, skipped[i]!.start - pad),
+                    end: Math.min(buffer!.duration, skipped[i]!.end + pad),
+                  },
+                ],
+                1,
+              ),
+            (_i, out) => {
+              if (!("aligned" in out) || !out.aligned?.length) return;
+              // The gap sits between existing words: add only words that do
+              // not overlap them, then keep time order.
+              const fill = out.aligned.filter(
+                (word) =>
+                  !allWords.some(
+                    (other) => word.start < other.end - 0.02 && word.end > other.start + 0.02,
+                  ),
+              );
+              if (!fill.length) return;
+              texts.push(fill.map((word) => word.text).join(" "));
+              allWords.push(...fill);
+              allWords.sort((a, b) => a.start - b.start);
+              setWords([...allWords]);
+            },
+          );
+        }
+
         if (stillMissing.length) {
           const ranges = stillMissing
             .map(
