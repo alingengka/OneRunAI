@@ -119,7 +119,7 @@ import {
 import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt, type MotionKind } from "@/lib/media/motion";
-import { primeFirstFrame } from "@/lib/media/first-frame";
+import { isPriming, markUserPlay, primeFirstFrame } from "@/lib/media/first-frame";
 import {
   addSceneElement,
   buildScenes,
@@ -476,7 +476,14 @@ function Studio() {
     if (!file || !(duration > 0)) return;
     let alive = true;
     const timer = window.setTimeout(() => {
-      void makeThumbnails(file, duration).then((result) => {
+      // Phones decode thumbnails with the same hardware as the preview, so
+      // make fewer and hold off while the clip plays (it stuttered).
+      const phone = window.matchMedia("(pointer: coarse)").matches;
+      void makeThumbnails(file, duration, {
+        max: phone ? 36 : 80,
+        hold: () => alive && !!videoRef.current && !videoRef.current.paused,
+        cancelled: () => !alive,
+      }).then((result) => {
         if (alive && result) setTimelineThumbs(result);
       });
     }, 600);
@@ -1071,6 +1078,7 @@ function Studio() {
     const video = videoRef.current;
     if (!video) return;
     video.currentTime = Math.max(0, start - 0.18);
+    markUserPlay(video);
     void video.play();
     setPlaying(true);
     window.setTimeout(
@@ -1536,12 +1544,21 @@ function Studio() {
     );
   };
 
+  const playClock = useCallback(() => {
+    const v = videoRef.current;
+    return v && !v.paused ? v.currentTime : null;
+  }, []);
+
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) {
-      void v.play();
+    // The muted warm-up counts as paused: the person wants to start playing.
+    if (v.paused || isPriming(v)) {
+      markUserPlay(v);
+      v.muted = mutedRef.current; // the warm-up plays muted
       setPlaying(true);
+      // The button must not claim it is playing when the browser refused.
+      v.play()?.catch(() => setPlaying(v.paused ? false : true));
     } else {
       v.pause();
       setPlaying(false);
@@ -2820,6 +2837,14 @@ function Studio() {
                     playsInline
                     onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                     onEnded={() => setPlaying(false)}
+                    // Follow the real state: iOS can pause on its own (calls,
+                    // other audio), and a play can start late.
+                    onPause={(e) => {
+                      if (!isPriming(e.currentTarget)) setPlaying(false);
+                    }}
+                    onPlaying={(e) => {
+                      if (!isPriming(e.currentTarget)) setPlaying(true);
+                    }}
                     onClick={togglePlay}
                   />
                 ) : (
@@ -3000,6 +3025,7 @@ function Studio() {
               onMove={moveWord}
               compact
               centered
+              clock={playClock}
               lanes={timelineLanes}
               selectedSticker={selectedSticker}
               onSelectSticker={(id) => {

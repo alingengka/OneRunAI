@@ -3,11 +3,21 @@
  * loudness curve.
  */
 
+type ThumbOptions = {
+  max?: number;
+  /** While this returns true, decoding waits (e.g. the preview is playing). */
+  hold?: () => boolean;
+  /** Stop early, e.g. a different clip was opened. */
+  cancelled?: () => boolean;
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** One thumbnail every `step` seconds (at most `max`), as small JPEG data URLs. */
 export async function makeThumbnails(
   file: Blob,
   duration: number,
-  max = 80,
+  { max = 80, hold, cancelled }: ThumbOptions = {},
 ): Promise<{ thumbs: string[]; step: number } | null> {
   if (!(duration > 0) || typeof VideoDecoder === "undefined") return null;
   const step = Math.max(1, Math.ceil(duration / max));
@@ -23,6 +33,8 @@ export async function makeThumbnails(
       const out = document.createElement("canvas");
       const thumbs: string[] = [];
       for await (const wrapped of sink.canvasesAtTimestamps(times)) {
+        while (hold?.() && !cancelled?.()) await sleep(300);
+        if (cancelled?.()) return null;
         if (!wrapped) {
           thumbs.push(thumbs[thumbs.length - 1] ?? "");
           continue;
@@ -31,6 +43,8 @@ export async function makeThumbnails(
         out.height = wrapped.canvas.height;
         out.getContext("2d")?.drawImage(wrapped.canvas, 0, 0);
         thumbs.push(out.toDataURL("image/jpeg", 0.6));
+        // Give the page a breath between frames so taps stay responsive.
+        await sleep(0);
       }
       return { thumbs, step };
     } finally {
