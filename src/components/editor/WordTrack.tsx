@@ -36,6 +36,11 @@ type Props = {
   onSeek: (time: number) => void;
   /** Commit new timing for one word (seconds). */
   onRetime: (index: number, start: number, end: number) => void;
+  /**
+   * Commit a word dragged to a new place. It may pass other words; the
+   * caller reorders and trims neighbors. Falls back to onRetime.
+   */
+  onMove?: (index: number, start: number, end: number) => void;
   compact?: boolean;
   /**
    * Phone mode: the playhead stays in the middle and dragging the timeline
@@ -81,6 +86,7 @@ export function WordTrack({
   onSelect,
   onSeek,
   onRetime,
+  onMove,
   compact = false,
   centered = false,
   onScrubStart,
@@ -303,8 +309,10 @@ export function WordTrack({
       const end = Math.max(Math.min(nextStart, word.end + delta), word.start + MIN_WORD);
       setDrag({ ...drag, end, moved: true });
     } else {
+      // Moving is free: the word can be dropped anywhere in the clip, even
+      // past other words (the editor reorders them on drop).
       const length = word.end - word.start;
-      const start = Math.min(Math.max(prevEnd, word.start + delta), nextStart - length);
+      const start = Math.min(Math.max(0, word.start + delta), Math.max(0, duration - length));
       setDrag({ ...drag, start, end: start + length, moved: true });
     }
   };
@@ -317,7 +325,8 @@ export function WordTrack({
       drag.moved &&
       (Math.abs(drag.start - word.start) > 0.005 || Math.abs(drag.end - word.end) > 0.005)
     ) {
-      onRetime(drag.index, drag.start, drag.end);
+      if (drag.edge === "move" && onMove) onMove(drag.index, drag.start, drag.end);
+      else onRetime(drag.index, drag.start, drag.end);
     }
     // Let the click that follows a move see that it was a move, then clear.
     requestAnimationFrame(() => setDrag(null));
@@ -350,8 +359,12 @@ export function WordTrack({
             <button
               type="button"
               onPointerDown={(event) => {
-                if (isSelected) beginDrag(event, index, "move");
-                else event.stopPropagation();
+                // Mouse: grab any word straight away. Touch: only the selected
+                // word, so a swipe over other words still scrolls the track.
+                if (isSelected || event.pointerType === "mouse") {
+                  if (!isSelected) onSelect(index);
+                  beginDrag(event, index, "move");
+                } else event.stopPropagation();
               }}
               onClick={() => {
                 if (drag?.moved) return;
@@ -364,7 +377,8 @@ export function WordTrack({
                   : word.text
               }
               className={cn(
-                "h-full w-full overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-xs transition-colors",
+                "h-full w-full cursor-grab overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-xs transition-colors active:cursor-grabbing",
+                dragging && drag?.moved && "z-20 shadow-lg ring-2 ring-primary",
                 isSelected
                   ? "touch-none border-2 border-amber-400 bg-amber-400/15 text-amber-800 dark:text-amber-100"
                   : "border-border bg-secondary text-foreground hover:border-primary/60",
@@ -375,6 +389,11 @@ export function WordTrack({
             >
               {word.text}
             </button>
+            {dragging && drag?.moved && (
+              <span className="pointer-events-none absolute -top-6 left-0 z-30 whitespace-nowrap rounded bg-primary px-1.5 py-0.5 font-mono text-[10px] text-primary-foreground shadow">
+                {start.toFixed(2)}s – {end.toFixed(2)}s
+              </span>
+            )}
             {isSelected && (
               <>
                 <span
@@ -461,7 +480,7 @@ export function WordTrack({
         <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border px-3">
           <span className="text-sm font-semibold">ไทม์ไลน์คำ</span>
           <span className="hidden truncate text-xs text-muted-foreground md:inline">
-            คลิกคำเพื่อเลือก · ลากขอบคำเพื่อปรับเวลา · เลื่อนลูกกลิ้ง/บีบนิ้วบนแทร็กแพดเพื่อซูม ·
+            ลากคำไปวางตรงไหนก็ได้ · ลากขอบคำเพื่อยืด/หด · เลื่อนลูกกลิ้ง/บีบนิ้วบนแทร็กแพดเพื่อซูม ·
             ลายทาง = ช่วงเงียบที่ถูกตัด
           </span>
           <div className="ml-auto flex items-center gap-1">

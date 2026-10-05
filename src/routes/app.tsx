@@ -52,6 +52,7 @@ import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay
 import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
 import { WordTrack, type TimelineLanes } from "@/components/editor/WordTrack";
 import { MobileWordBar } from "@/components/editor/MobileWordBar";
+import { moveWordTo } from "@/lib/word-actions";
 import { Inspector } from "@/components/editor/Inspector";
 import { computePeaks, makeThumbnails } from "@/lib/media/timeline-assets";
 import { CaptionList } from "@/components/editor/CaptionList";
@@ -1459,6 +1460,16 @@ function Studio() {
   };
 
   /** Retime one word from the bottom timeline (drag handles). */
+  /** A word dragged on the timeline to a new place (may pass other words). */
+  const moveWord = (index: number, start: number, end: number) => {
+    const moved = moveWordTo(words, index, start, end, duration);
+    updateWords(moved);
+    // Keep the dragged word selected at its new position in the list.
+    const target = words[index];
+    const at = moved.findIndex((w) => w.text === target?.text && Math.abs(w.start - start) < 1e-6);
+    if (at >= 0) setSelectedWord(at);
+  };
+
   const retimeWord = (index: number, start: number, end: number) => {
     updateWords(
       normalizeWordTimes(
@@ -1809,7 +1820,7 @@ function Studio() {
         </div>
       )}
 
-      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)_320px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-3 lg:p-3 lg:pb-2">
+      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(340px,400px)_minmax(300px,1fr)_minmax(360px,1.15fr)] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-3 lg:p-3 lg:pb-2">
         {/* Desktop menu */}
         <nav
           aria-label="เมนูเครื่องมือ"
@@ -2728,7 +2739,7 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
           <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4">
             <div className="mb-3 hidden items-center justify-between lg:flex">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -2928,7 +2939,7 @@ function Studio() {
 
         {/* Desktop: settings for the selection, on the right */}
         <Inspector
-          className="hidden lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:block"
+          className="hidden lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:block"
           words={words}
           duration={duration}
           selectedWord={selectedWordValid}
@@ -2964,6 +2975,7 @@ function Studio() {
               }}
               onSeek={seekTo}
               onRetime={retimeWord}
+              onMove={moveWord}
               compact
               centered
               lanes={timelineLanes}
@@ -3004,6 +3016,7 @@ function Studio() {
               }}
               onSeek={seekTo}
               onRetime={retimeWord}
+              onMove={moveWord}
               lanes={timelineLanes}
               selectedSticker={selectedSticker}
               onSelectSticker={(id) => {
