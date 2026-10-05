@@ -2,6 +2,7 @@ import {
   type TouchList as ReactTouchList,
   type TouchEvent as ReactTouchEvent,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -12,6 +13,17 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { LINE_BREAK, type Word } from "@/lib/captions";
 import type { Segment } from "@/lib/media/audio";
+
+/** Extra rows drawn around the caption row (CapCut-style multi-track). */
+export type TimelineLanes = {
+  /** Video frame thumbnails, one every `thumbStep` seconds. */
+  thumbs?: string[];
+  thumbStep?: number;
+  /** Audio loudness 0–1, one value every `peakStep` seconds. */
+  peaks?: number[];
+  peakStep?: number;
+  stickers?: { id: string; label: string; start: number; end: number }[];
+};
 
 type Props = {
   words: Word[];
@@ -25,6 +37,18 @@ type Props = {
   /** Commit new timing for one word (seconds). */
   onRetime: (index: number, start: number, end: number) => void;
   compact?: boolean;
+  /**
+   * Phone mode: the playhead stays in the middle and dragging the timeline
+   * scrubs the video, like CapCut.
+   */
+  centered?: boolean;
+  /** Called when the user starts scrubbing, so playback can pause. */
+  onScrubStart?: () => void;
+  /** Tap on an empty part of the timeline. */
+  onDeselect?: () => void;
+  lanes?: TimelineLanes;
+  selectedSticker?: string | null;
+  onSelectSticker?: (id: string) => void;
   className?: string;
 };
 
@@ -33,10 +57,19 @@ const MIN_WORD = 0.05;
 const MIN_PPS = 24;
 const MAX_PPS = 480;
 const BUTTON_STEP = 1.35;
+/** Movement (px) before a press on the selected word counts as a move. */
+const MOVE_SLOP = 4;
 
 const clampPps = (value: number) => Math.min(MAX_PPS, Math.max(MIN_PPS, value));
 
-type Drag = { index: number; edge: "start" | "end"; originX: number; start: number; end: number };
+type Drag = {
+  index: number;
+  edge: "start" | "end" | "move";
+  originX: number;
+  start: number;
+  end: number;
+  moved: boolean;
+};
 
 /** Horizontal word timeline: every word is a block on a time ruler. */
 export function WordTrack({
@@ -49,15 +82,46 @@ export function WordTrack({
   onSeek,
   onRetime,
   compact = false,
+  centered = false,
+  onScrubStart,
+  onDeselect,
+  lanes,
+  selectedSticker = null,
+  onSelectSticker,
   className,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [pps, setPps] = useState(compact ? 60 : 110);
+  const [pps, setPps] = useState(centered ? 90 : compact ? 60 : 110);
   const [drag, setDrag] = useState<Drag | null>(null);
+  // In centered mode the track is padded by half the visible width on both
+  // sides, so time 0 and the end can both reach the middle playhead.
+  const [half, setHalf] = useState(0);
+  const origin = centered ? half : 0;
   const width = Math.max(1, duration) * pps;
   const ppsRef = useRef(pps);
   ppsRef.current = pps;
   const pinchRef = useRef<{ distance: number; pps: number } | null>(null);
+  /** scrollLeft we set ourselves; scroll events matching it are not the user's. */
+  const expectedScrollRef = useRef(-1);
+  const userScrollAtRef = useRef(0);
+  const seekFrameRef = useRef(0);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !centered) return;
+    const measure = () => setHalf(Math.round(el.clientWidth / 2));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [centered]);
+
+  const setScroll = (value: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = Math.max(0, value);
+    expectedScrollRef.current = el.scrollLeft;
+  };
 
   /** Zooms around a point of the visible track so the time under it stays put. */
   const zoomAt = (nextPps: number, anchorX?: number) => {
@@ -65,13 +129,12 @@ export function WordTrack({
     const current = ppsRef.current;
     const target = clampPps(nextPps);
     if (!el || target === current) return;
-    const x = anchorX ?? el.clientWidth / 2;
+    // Centered: the time under the middle playhead stays there.
+    const x = centered ? 0 : (anchorX ?? el.clientWidth / 2);
     const anchorTime = (el.scrollLeft + x) / current;
     ppsRef.current = target;
     setPps(target);
-    requestAnimationFrame(() => {
-      el.scrollLeft = Math.max(0, anchorTime * target - x);
-    });
+    requestAnimationFrame(() => setScroll(anchorTime * target - x));
   };
 
   // Trackpad pinch (Mac and Windows send it as ctrl+wheel) and the mouse
@@ -104,6 +167,8 @@ export function WordTrack({
   const onTouchStart = (event: ReactTouchEvent) => {
     if (event.touches.length === 2) {
       pinchRef.current = { distance: touchDistance(event.touches), pps: ppsRef.current };
+    } else if (centered) {
+      onScrubStart?.();
     }
   };
   const onTouchMove = (event: ReactTouchEvent) => {
@@ -119,6 +184,18 @@ export function WordTrack({
     if (event.touches.length < 2) pinchRef.current = null;
   };
 
+  // Centered: dragging the track (including momentum) scrubs the video.
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el || !centered || pinchRef.current) return;
+    if (Math.abs(el.scrollLeft - expectedScrollRef.current) <= 1) return;
+    userScrollAtRef.current = performance.now();
+    const t = Math.max(0, Math.min(duration, el.scrollLeft / ppsRef.current));
+    cancelAnimationFrame(seekFrameRef.current);
+    seekFrameRef.current = requestAnimationFrame(() => onSeek(t));
+  };
+  useEffect(() => () => cancelAnimationFrame(seekFrameRef.current), []);
+
   const tickStep = pps >= 110 ? 1 : pps >= 60 ? 2 : 5;
   const ticks = useMemo(() => {
     const out: number[] = [];
@@ -131,21 +208,28 @@ export function WordTrack({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || drag) return;
+    if (centered) {
+      // Follow the video unless the user is dragging the track right now.
+      if (performance.now() - userScrollAtRef.current < 250) return;
+      if (Math.abs(el.scrollLeft - time * pps) > 0.5) setScroll(time * pps);
+      return;
+    }
     const x = time * ppsRef.current;
     if (x < el.scrollLeft + 24 || x > el.scrollLeft + el.clientWidth - 64) {
-      el.scrollLeft = Math.max(0, x - el.clientWidth * 0.35);
+      setScroll(x - el.clientWidth * 0.35);
     }
-  }, [time, drag]);
+    // setScroll only touches refs and the element.
+  }, [time, drag, centered, pps, half]);
 
   // Bring a newly selected word into view (e.g. picked from the caption list).
   useEffect(() => {
     const el = scrollRef.current;
     const word = selected != null ? words[selected] : undefined;
-    if (!el || !word) return;
+    if (!el || !word || centered) return;
     const left = word.start * ppsRef.current;
     const right = word.end * ppsRef.current;
     if (left < el.scrollLeft || right > el.scrollLeft + el.clientWidth) {
-      el.scrollLeft = Math.max(0, left - el.clientWidth * 0.35);
+      setScroll(left - el.clientWidth * 0.35);
     }
     // Only when the selection changes, not on every edit of the words.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,27 +253,41 @@ export function WordTrack({
     return { prevEnd, nextStart };
   };
 
-  const beginDrag = (event: ReactPointerEvent, index: number, edge: "start" | "end") => {
+  const beginDrag = (event: ReactPointerEvent, index: number, edge: Drag["edge"]) => {
     const word = words[index];
     if (!word) return;
     event.stopPropagation();
-    event.preventDefault();
+    // A press on the word body may still be a plain tap; only edges grab at once.
+    if (edge !== "move") event.preventDefault();
     (event.target as Element).setPointerCapture?.(event.pointerId);
-    setDrag({ index, edge, originX: event.clientX, start: word.start, end: word.end });
+    setDrag({
+      index,
+      edge,
+      originX: event.clientX,
+      start: word.start,
+      end: word.end,
+      moved: edge !== "move",
+    });
   };
 
   const moveDrag = (event: ReactPointerEvent) => {
     if (!drag) return;
     const word = words[drag.index];
     if (!word) return;
-    const delta = (event.clientX - drag.originX) / pps;
+    const dx = event.clientX - drag.originX;
+    if (!drag.moved && Math.abs(dx) < MOVE_SLOP) return;
+    const delta = dx / pps;
     const { prevEnd, nextStart } = bounds(drag.index);
     if (drag.edge === "start") {
       const start = Math.min(Math.max(prevEnd, word.start + delta), word.end - MIN_WORD);
-      setDrag({ ...drag, start });
-    } else {
+      setDrag({ ...drag, start, moved: true });
+    } else if (drag.edge === "end") {
       const end = Math.max(Math.min(nextStart, word.end + delta), word.start + MIN_WORD);
-      setDrag({ ...drag, end });
+      setDrag({ ...drag, end, moved: true });
+    } else {
+      const length = word.end - word.start;
+      const start = Math.min(Math.max(prevEnd, word.start + delta), nextStart - length);
+      setDrag({ ...drag, start, end: start + length, moved: true });
     }
   };
 
@@ -198,30 +296,32 @@ export function WordTrack({
     const word = words[drag.index];
     if (
       word &&
+      drag.moved &&
       (Math.abs(drag.start - word.start) > 0.005 || Math.abs(drag.end - word.end) > 0.005)
     ) {
       onRetime(drag.index, drag.start, drag.end);
     }
-    setDrag(null);
+    // Let the click that follows a move see that it was a move, then clear.
+    requestAnimationFrame(() => setDrag(null));
   };
 
   const seekFromEvent = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (centered) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const t = (event.clientX - rect.left) / pps;
     onSeek(Math.max(0, Math.min(duration, t)));
   };
 
-  const blockHeight = compact ? 34 : 40;
-  const handlers = useRef({ onSelect, onSeek });
-  handlers.current = { onSelect, onSeek };
+  const blockHeight = centered ? 40 : compact ? 34 : 40;
 
   const wordBlocks = useMemo(
     () =>
       words.map((word, index) => {
         if (word.text === LINE_BREAK) return null;
         const isSelected = selected === index;
-        const start = drag?.index === index ? drag.start : word.start;
-        const end = drag?.index === index ? drag.end : word.end;
+        const dragging = drag?.index === index;
+        const start = dragging ? drag.start : word.start;
+        const end = dragging ? drag.end : word.end;
         const w = Math.max(6, (end - start) * pps - 2);
         return (
           <div
@@ -231,10 +331,14 @@ export function WordTrack({
           >
             <button
               type="button"
-              onPointerDown={(event) => event.stopPropagation()}
+              onPointerDown={(event) => {
+                if (isSelected) beginDrag(event, index, "move");
+                else event.stopPropagation();
+              }}
               onClick={() => {
+                if (drag?.moved) return;
                 onSelect(index);
-                onSeek(word.start);
+                if (!centered) onSeek(word.start);
               }}
               title={
                 typeof word.confidence === "number"
@@ -244,7 +348,7 @@ export function WordTrack({
               className={cn(
                 "h-full w-full overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-xs transition-colors",
                 isSelected
-                  ? "border-2 border-amber-400 bg-amber-400/15 text-amber-800 dark:text-amber-100"
+                  ? "touch-none border-2 border-amber-400 bg-amber-400/15 text-amber-800 dark:text-amber-100"
                   : "border-border bg-secondary text-foreground hover:border-primary/60",
                 !isSelected &&
                   word.confidenceLabel === "low" &&
@@ -259,17 +363,33 @@ export function WordTrack({
                   aria-hidden="true"
                   title="ลากเพื่อปรับเวลาเริ่มของคำ"
                   onPointerDown={(event) => beginDrag(event, index, "start")}
-                  className="absolute -left-1.5 top-0 h-full w-3 cursor-ew-resize touch-none"
+                  className={cn(
+                    "absolute top-0 h-full cursor-ew-resize touch-none",
+                    centered ? "-left-3 w-5" : "-left-1.5 w-3",
+                  )}
                 >
-                  <span className="absolute left-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-amber-400" />
+                  <span
+                    className={cn(
+                      "absolute top-1/2 -translate-y-1/2 rounded-full bg-amber-400",
+                      centered ? "left-2 h-7 w-1.5" : "left-1 h-5 w-1",
+                    )}
+                  />
                 </span>
                 <span
                   aria-hidden="true"
                   title="ลากเพื่อปรับเวลาจบของคำ"
                   onPointerDown={(event) => beginDrag(event, index, "end")}
-                  className="absolute -right-1.5 top-0 h-full w-3 cursor-ew-resize touch-none"
+                  className={cn(
+                    "absolute top-0 h-full cursor-ew-resize touch-none",
+                    centered ? "-right-3 w-5" : "-right-1.5 w-3",
+                  )}
                 >
-                  <span className="absolute right-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-amber-400" />
+                  <span
+                    className={cn(
+                      "absolute top-1/2 -translate-y-1/2 rounded-full bg-amber-400",
+                      centered ? "right-2 h-7 w-1.5" : "right-1 h-5 w-1",
+                    )}
+                  />
                 </span>
               </>
             )}
@@ -279,12 +399,47 @@ export function WordTrack({
     // Word blocks only change with the words, selection, drag or zoom — not with
     // the playhead, which moves every frame while the video plays.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, selected, drag, pps, blockHeight],
+    [words, selected, drag, pps, blockHeight, centered],
   );
 
+  // ---- extra lanes ----
+  const thumbs = lanes?.thumbs ?? [];
+  const thumbStep = lanes?.thumbStep ?? 1;
+  const peaks = useMemo(() => lanes?.peaks ?? [], [lanes?.peaks]);
+  const peakStep = lanes?.peakStep ?? 0.05;
+  const stickerItems = lanes?.stickers ?? [];
+  const showRuler = !compact || centered;
+  const RULER = centered ? 18 : 24;
+  const GAP = 6;
+  const videoH = thumbs.length ? 40 : 0;
+  const stickerH = stickerItems.length ? 26 : 0;
+  const audioH = peaks.length ? 24 : 0;
+  let cursor = showRuler ? RULER + 4 : compact ? 9 : 30;
+  const videoTop = cursor;
+  if (videoH) cursor += videoH + GAP;
+  const captionTop = cursor;
+  cursor += blockHeight + GAP;
+  const stickerTop = cursor;
+  if (stickerH) cursor += stickerH + GAP;
+  const audioTop = cursor;
+  if (audioH) cursor += audioH + GAP;
+  const contentHeight = Math.max(compact && !centered ? 52 : 92, cursor + 2);
+
+  const peakPath = useMemo(() => {
+    if (!peaks.length) return "";
+    // Mirrored bars in a 0..duration × 0..1 box; scaled with the SVG.
+    let d = "";
+    peaks.forEach((v, i) => {
+      const h = Math.max(0.04, Math.min(1, v));
+      const x = i * peakStep;
+      d += `M${x.toFixed(3)} ${(0.5 - h / 2).toFixed(3)}v${h.toFixed(3)}`;
+    });
+    return d;
+  }, [peaks, peakStep]);
+
   return (
-    <div data-word-track="" className={cn("flex min-w-0 flex-col", className)}>
-      {!compact && (
+    <div data-word-track="" className={cn("relative flex min-w-0 flex-col", className)}>
+      {!compact && !centered && (
         <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border px-3">
           <span className="text-sm font-semibold">ไทม์ไลน์คำ</span>
           <span className="hidden truncate text-xs text-muted-foreground md:inline">
@@ -317,24 +472,38 @@ export function WordTrack({
       )}
       <div
         ref={scrollRef}
-        className="relative min-w-0 touch-pan-x overflow-x-auto overflow-y-hidden overscroll-x-contain"
+        className={cn(
+          "relative min-w-0 touch-pan-x overflow-x-auto overflow-y-hidden overscroll-x-contain",
+          centered && "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        )}
+        onScroll={onScroll}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         onTouchCancel={onTouchEnd}
+        onPointerDown={(event) => {
+          if (centered && event.pointerType === "mouse") onScrubStart?.();
+        }}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        <div className="relative px-0" style={{ width, height: compact ? 52 : 92 }}>
-          {!compact && (
-            <div className="absolute inset-x-0 top-0 h-6" onPointerDown={seekFromEvent}>
+        <div
+          className="relative"
+          style={{ width: width + origin * 2, height: contentHeight }}
+          onClick={(event) => {
+            // Tapping empty space (not a word, sticker or handle) clears the selection.
+            if (centered && event.target === event.currentTarget) onDeselect?.();
+          }}
+        >
+          {showRuler && (
+            <div
+              className="absolute top-0"
+              style={{ left: origin, width, height: RULER }}
+              onPointerDown={seekFromEvent}
+            >
               {ticks.map((t) => (
-                <div
-                  key={t}
-                  className="absolute top-1.5 flex items-start"
-                  style={{ left: t * pps }}
-                >
+                <div key={t} className="absolute top-1 flex items-start" style={{ left: t * pps }}>
                   <div className="h-2 w-px bg-border" />
                   <span className="ml-1 font-mono text-[10px] text-muted-foreground">
                     {Math.floor(t / 60)}:{String(Math.floor(t % 60)).padStart(2, "0")}
@@ -344,16 +513,38 @@ export function WordTrack({
             </div>
           )}
 
+          {videoH > 0 && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute overflow-hidden rounded-md border-2 border-white/80 bg-black/40"
+              style={{ left: origin, width, top: videoTop, height: videoH }}
+            >
+              {thumbs.map((src, i) => (
+                <img
+                  key={i}
+                  src={src}
+                  alt=""
+                  draggable={false}
+                  className="absolute top-0 h-full object-cover"
+                  style={{ left: i * thumbStep * pps, width: Math.ceil(thumbStep * pps) + 1 }}
+                />
+              ))}
+            </div>
+          )}
+
           <div
-            className="absolute inset-x-0"
-            style={{ top: compact ? 9 : 30, height: blockHeight }}
+            className="absolute"
+            style={{ left: origin, width, top: captionTop, height: blockHeight }}
             onPointerDown={seekFromEvent}
+            onClick={(event) => {
+              if (centered && event.target === event.currentTarget) onDeselect?.();
+            }}
           >
             {cuts.map((cut, i) => (
               <div
                 key={`cut-${i}`}
                 aria-hidden="true"
-                className="absolute top-0 h-full rounded-md border border-dashed border-border"
+                className="pointer-events-none absolute top-0 h-full rounded-md border border-dashed border-border"
                 style={{
                   left: cut.start * pps,
                   width: Math.max(2, (cut.end - cut.start) * pps),
@@ -365,14 +556,73 @@ export function WordTrack({
             {wordBlocks}
           </div>
 
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute bottom-0 top-0 w-0.5 bg-foreground"
-            style={{ left: time * pps }}
-          />
+          {stickerH > 0 && (
+            <div
+              className="absolute"
+              style={{ left: origin, width, top: stickerTop, height: stickerH }}
+            >
+              {stickerItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => onSelectSticker?.(item.id)}
+                  className={cn(
+                    "absolute top-0 h-full overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-[11px]",
+                    selectedSticker === item.id
+                      ? "border-2 border-amber-400 bg-amber-500/25"
+                      : "border-amber-700/60 bg-amber-900/40 text-amber-100",
+                  )}
+                  style={{
+                    left: item.start * pps,
+                    width: Math.max(18, (item.end - item.start) * pps - 2),
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {audioH > 0 && (
+            <svg
+              aria-hidden="true"
+              className="pointer-events-none absolute rounded-md bg-teal-950/60 text-teal-400"
+              style={{ left: origin, width, top: audioTop, height: audioH }}
+              viewBox={`0 0 ${Math.max(0.001, duration)} 1`}
+              preserveAspectRatio="none"
+            >
+              <path
+                d={peakPath}
+                stroke="currentColor"
+                strokeWidth={Math.max(0.004, peakStep * 0.55)}
+                fill="none"
+              />
+            </svg>
+          )}
+
+          {!centered && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-0 top-0 w-0.5 bg-foreground"
+              style={{ left: time * pps }}
+            />
+          )}
         </div>
       </div>
-      {!words.length && !compact && (
+
+      {centered && (
+        /* Fixed playhead in the middle; the track moves under it. */
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 top-0 z-10 w-0.5 -translate-x-1/2 bg-foreground"
+          style={{ left: "50%" }}
+        >
+          <span className="absolute -left-[5px] top-0 h-3 w-3 rounded-full bg-foreground" />
+        </div>
+      )}
+
+      {!words.length && !compact && !centered && (
         <p className="px-3 pb-3 text-xs text-muted-foreground">
           ยังไม่มีซับ — กด “สร้างซับด้วย AI” ในเมนูเครื่องมือ AI แล้วคำจะขึ้นที่นี่
         </p>

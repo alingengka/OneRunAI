@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useAudioFeedback } from "@/hooks/use-audio-feedback";
 import { AudioPreview } from "@/components/audio-preview";
@@ -50,7 +50,9 @@ import { cn } from "@/lib/utils";
 import { CaptionOverlay } from "@/components/editor/CaptionOverlay";
 import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay";
 import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
-import { WordTrack } from "@/components/editor/WordTrack";
+import { WordTrack, type TimelineLanes } from "@/components/editor/WordTrack";
+import { MobileWordBar } from "@/components/editor/MobileWordBar";
+import { computePeaks, makeThumbnails } from "@/lib/media/timeline-assets";
 import { CaptionList } from "@/components/editor/CaptionList";
 import { StyleControls } from "@/components/editor/StyleControls";
 import { StylePicker } from "@/components/editor/StylePicker";
@@ -149,7 +151,7 @@ import {
 import { ExportMenu, loadExportPreset, type ExportType } from "@/components/editor/ExportMenu";
 import { StickerOverlay } from "@/components/editor/StickerOverlay";
 import { StickerPanel } from "@/components/editor/StickerPanel";
-import { suggestEmojiStickers, type Sticker } from "@/lib/media/stickers";
+import { EMOJIS, suggestEmojiStickers, type Sticker } from "@/lib/media/stickers";
 import { AccountMenu } from "@/components/account/AccountMenu";
 
 export const Route = createFileRoute("/app")({
@@ -230,6 +232,19 @@ function fmt(t: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
+/** Matches Tailwind's lg breakpoint, where the desktop layout starts. */
+function useIsDesktop(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      const query = window.matchMedia("(min-width: 1024px)");
+      query.addEventListener("change", notify);
+      return () => query.removeEventListener("change", notify);
+    },
+    () => window.matchMedia("(min-width: 1024px)").matches,
+    () => true,
+  );
+}
+
 function Studio() {
   const {
     play,
@@ -298,6 +313,11 @@ function Studio() {
   const [style, setStyle] = useState<CaptionStyle>(baseStyle);
   const [tab, setTab] = useState<Tab>("tools");
   const [selectedWord, setSelectedWord] = useState<number | null>(null);
+  const isDesktop = useIsDesktop();
+  const [timelineThumbs, setTimelineThumbs] = useState<{ thumbs: string[]; step: number } | null>(
+    null,
+  );
+  const [peaks, setPeaks] = useState<number[]>([]);
   const [languages, setLanguages] = useState<LangCode[]>(["th"]);
 
   const [captionsOn, setCaptionsOn] = useState(true);
@@ -398,6 +418,48 @@ function Studio() {
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
     [groups, time],
   );
+  const selectedWordValid =
+    selectedWord != null && selectedWord < words.length ? selectedWord : null;
+  /** The caption line around the selected word (for "re-transcribe this line"). */
+  const selectedLineRange = useMemo(() => {
+    const word = selectedWordValid != null ? words[selectedWordValid] : undefined;
+    const group = word ? groups.find((g) => g.words.includes(word)) : undefined;
+    return group
+      ? { start: group.start, end: group.end }
+      : { start: word?.start ?? 0, end: word?.end ?? 0 };
+  }, [selectedWordValid, words, groups]);
+  const timelineLanes = useMemo<TimelineLanes>(
+    () => ({
+      ...(timelineThumbs ? { thumbs: timelineThumbs.thumbs, thumbStep: timelineThumbs.step } : {}),
+      ...(peaks.length ? { peaks, peakStep: 0.05 } : {}),
+      stickers: stickers.map((sticker) => ({
+        id: sticker.id,
+        start: sticker.start,
+        end: sticker.end,
+        label:
+          sticker.kind === "emoji"
+            ? (EMOJIS.find((emoji) => emoji.code === sticker.asset)?.char ?? "😀")
+            : "สติกเกอร์",
+      })),
+    }),
+    [timelineThumbs, peaks, stickers],
+  );
+
+  // Video thumbnails for the timeline, made in the background after a clip loads.
+  useEffect(() => {
+    setTimelineThumbs(null);
+    if (!file || !(duration > 0)) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      void makeThumbnails(file, duration).then((result) => {
+        if (alive && result) setTimelineThumbs(result);
+      });
+    }, 600);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [file, duration]);
   // งาน B: พรีวิว motion จริงบนวิดีโอ ใช้สูตรเดียวกับตอน export
   const previewMotion = useMemo(
     () => motionAt(time, scenes, sceneElements),
@@ -503,6 +565,7 @@ function Studio() {
       if (!buffer) {
         buffer = await decodeAudioFromFile(target);
         audioBufferRef.current = buffer;
+        setPeaks(computePeaks(buffer));
       }
       const detected = detectSpeechSegments(buffer, {
         ...defaultSilenceOptions,
@@ -529,6 +592,7 @@ function Studio() {
 
   const onPickFile = async (f: File) => {
     audioBufferRef.current = null;
+    setPeaks([]);
     // ไฟล์ใหม่ต้องไม่ใช้ผลวิเคราะห์ของไฟล์เก่า ไม่งั้นการกดถอดเสียงทันที
     // จะได้ช่วงพูดของคลิปก่อนหน้า → ซับออกมาไม่ครบ
     analysisSegmentsRef.current = [];
@@ -2443,6 +2507,7 @@ function Studio() {
                 onChange={updateWords}
                 onRetranscribe={(start, end) => void retranscribeRange(start, end)}
                 busy={retryingSync}
+                popoverEdit={isDesktop}
               />
 
               {words.some((w) => w.confidenceLabel === "low" || w.confidenceLabel === "review") && (
@@ -2758,12 +2823,30 @@ function Studio() {
               cuts={removeSilence ? silences : []}
               selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
               onSelect={(index) => {
+                setSelectedSticker(null);
                 setSelectedWord(index);
-                if (sectionOf(tab) !== "captions") setTab("text");
               }}
               onSeek={seekTo}
               onRetime={retimeWord}
               compact
+              centered
+              lanes={timelineLanes}
+              selectedSticker={selectedSticker}
+              onSelectSticker={(id) => {
+                setSelectedWord(null);
+                setSelectedSticker(id);
+                setTab("stickers");
+              }}
+              onDeselect={() => {
+                setSelectedWord(null);
+                setSelectedSticker(null);
+              }}
+              onScrubStart={() => {
+                if (playing) {
+                  videoRef.current?.pause();
+                  setPlaying(false);
+                }
+              }}
             />
           </div>
         )}
@@ -2790,8 +2873,24 @@ function Studio() {
         </div>
       )}
 
+      {/* Phone: tools for the selected word replace the bottom menu */}
+      {!isDesktop && selectedWordValid != null && (
+        <MobileWordBar
+          words={words}
+          index={selectedWordValid}
+          duration={duration}
+          lineRange={selectedLineRange}
+          busy={retryingSync}
+          onChange={updateWords}
+          onSelect={setSelectedWord}
+          onPreview={previewRange}
+          onRetranscribe={(start, end) => void retranscribeRange(start, end)}
+        />
+      )}
+
       {/* Phone: bottom toolbar */}
       <nav
+        hidden={!isDesktop && selectedWordValid != null}
         aria-label="เมนูเครื่องมือ"
         className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >
