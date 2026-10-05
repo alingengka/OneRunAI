@@ -317,6 +317,24 @@ export const stylePresets: CaptionStyle[] = [
     lineStyles: { 1: { color: "#6cc4ff", scale: 1.45, bold: true } },
   },
   {
+    // White heavy text with a thick dark outline and soft shadow; the spoken
+    // word turns yellow. Kanit covers Thai and Latin, Noto Sans Lao takes Lao.
+    ...baseStyle,
+    id: "outline-yellow",
+    name: "ขอบดำ เน้นเหลือง",
+    fontFamily: "'Kanit', 'Noto Sans Lao', 'Noto Sans Thai', sans-serif",
+    fontWeight: 800,
+    size: 6.6,
+    color: "#ffffff",
+    stroke: "large",
+    strokeColor: "#1f1f1f",
+    shadow: "medium",
+    shadowColor: "#000000",
+    highlight: "color",
+    highlightColor: "#ffd21f",
+    animation: "pop",
+  },
+  {
     ...baseStyle,
     id: "yellow-bar",
     name: "แถบเหลือง",
