@@ -655,6 +655,58 @@ function Studio() {
     }
   }, []);
 
+  /**
+   * iPhones copy (and often convert) a video picked from Photos before the
+   * page gets it, which can take many seconds for a long 4K clip. Show that
+   * something is happening from the moment the picker closes.
+   */
+  const [receivingFile, setReceivingFile] = useState(false);
+  const pickerOpenRef = useRef(false);
+  const openFilePicker = () => {
+    pickerOpenRef.current = true;
+    fileInputRef.current?.click();
+  };
+  useEffect(() => {
+    const input = fileInputRef.current;
+    const onBack = () => {
+      if (!pickerOpenRef.current || document.visibilityState !== "visible") return;
+      // Give a quick pick a moment to arrive before showing the overlay.
+      window.setTimeout(() => {
+        if (pickerOpenRef.current) setReceivingFile(true);
+      }, 400);
+    };
+    const onCancel = () => {
+      pickerOpenRef.current = false;
+      setReceivingFile(false);
+    };
+    window.addEventListener("focus", onBack);
+    document.addEventListener("visibilitychange", onBack);
+    input?.addEventListener("cancel", onCancel);
+    return () => {
+      window.removeEventListener("focus", onBack);
+      document.removeEventListener("visibilitychange", onBack);
+      input?.removeEventListener("cancel", onCancel);
+    };
+  }, []);
+  useEffect(() => {
+    if (!receivingFile) return;
+    const timer = window.setTimeout(() => {
+      pickerOpenRef.current = false;
+      setReceivingFile(false);
+      toast.error("ยังไม่ได้รับคลิปจากเครื่อง ลองเลือกใหม่ หรือเลือกผ่าน “Choose File”");
+    }, 120_000);
+    return () => window.clearTimeout(timer);
+  }, [receivingFile]);
+  const takePickedFile = (input: HTMLInputElement) => {
+    const f = input.files?.[0];
+    if (!f) return;
+    pickerOpenRef.current = false;
+    setReceivingFile(false);
+    // Clear the input so choosing the same file again still fires onChange.
+    input.value = "";
+    void onPickFile(f);
+  };
+
   const onPickFile = async (f: File) => {
     audioBufferRef.current = null;
     setPeaks([]);
@@ -1783,22 +1835,22 @@ function Studio() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-          <span className="hidden">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="video/*,audio/*"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                // Clear the input so choosing the same file again still fires onChange.
-                e.target.value = "";
-                if (f) void onPickFile(f);
-              }}
-            />
-          </span>
+          {/* Visually hidden but still rendered: iOS can drop the change event
+              of a display:none input. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="video/*,audio/*"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+            // Some iOS versions fire only one of these; whichever comes first wins.
+            onInput={(e) => takePickedFile(e.currentTarget)}
+            onChange={(e) => takePickedFile(e.currentTarget)}
+          />
           <Button
             variant="secondary"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => openFilePicker()}
             className="px-3 sm:px-4"
             aria-label="อัปโหลดคลิป"
           >
@@ -1831,6 +1883,29 @@ function Studio() {
           <AccountMenu />
         </div>
       </header>
+
+      {receivingFile && (
+        <div
+          role="status"
+          className="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-3 bg-background/85 px-6 text-center backdrop-blur-sm"
+        >
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-base font-semibold">กำลังรับคลิปจากเครื่อง…</p>
+          <p className="max-w-xs text-sm text-muted-foreground">
+            คลิปยาวหรือ 4K จาก iPhone อาจใช้เวลาสักครู่ กรุณาอย่าปิดหน้านี้
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              pickerOpenRef.current = false;
+              setReceivingFile(false);
+            }}
+          >
+            ยกเลิก
+          </Button>
+        </div>
+      )}
 
       {job && (
         <div className="mx-auto w-full max-w-[1500px] shrink-0 px-2 pt-2 sm:px-6 sm:pt-4">
@@ -2857,7 +2932,7 @@ function Studio() {
                   />
                 ) : (
                   <button
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => openFilePicker()}
                     className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
                   >
                     <Upload className="h-6 w-6" />
