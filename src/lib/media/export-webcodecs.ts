@@ -13,7 +13,12 @@ import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { decodeAudioFromFile, type Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
-import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
+import {
+  createBurnRenderer,
+  ensureCaptionFonts,
+  targetSize,
+  type ExportResolution,
+} from "./burn-render";
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
 import { openFrameReader, probeVideo, type FrameReader } from "./frame-reader";
@@ -23,11 +28,7 @@ import type { CaptionGroup, CaptionStyle } from "../captions";
 type Progress = (ratio: number) => void;
 
 export function supportsWebCodecsExport(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    "VideoEncoder" in window &&
-    "VideoFrame" in window
-  );
+  return typeof window !== "undefined" && "VideoEncoder" in window && "VideoFrame" in window;
 }
 
 export type WebCodecsExportResult = {
@@ -46,19 +47,29 @@ export type WebCodecsExportResult = {
 };
 
 const dbg = (m: string) => {
-  if ((window as unknown as { __EXPORT_DEBUG?: boolean }).__EXPORT_DEBUG) console.log("[webcodecs] " + m);
+  if ((window as unknown as { __EXPORT_DEBUG?: boolean }).__EXPORT_DEBUG)
+    console.log("[webcodecs] " + m);
 };
 
 async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => { cleanup(); reject(new Error("เลื่อนไปยังช่วงวิดีโอไม่สำเร็จ")); }, 10000);
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("เลื่อนไปยังช่วงวิดีโอไม่สำเร็จ"));
+    }, 10000);
     const cleanup = () => {
       window.clearTimeout(timeout);
       video.removeEventListener("seeked", done);
       video.removeEventListener("error", failed);
     };
-    const done = () => { cleanup(); resolve(); };
-    const failed = () => { cleanup(); reject(new Error("อ่านช่วงวิดีโอไม่สำเร็จ")); };
+    const done = () => {
+      cleanup();
+      resolve();
+    };
+    const failed = () => {
+      cleanup();
+      reject(new Error("อ่านช่วงวิดีโอไม่สำเร็จ"));
+    };
     video.addEventListener("seeked", done, { once: true });
     video.addEventListener("error", failed, { once: true });
     video.currentTime = time;
@@ -134,7 +145,13 @@ async function pickVideoCodec(width: number, height: number, bitrate: number, fp
     if (!failure) return { codec, config, muxCodec: "avc" as const };
     failures.push(`${codec}: ${failure}`);
   }
-  const vp9: VideoEncoderConfig = { codec: "vp09.00.51.08", width, height, bitrate, framerate: fps };
+  const vp9: VideoEncoderConfig = {
+    codec: "vp09.00.51.08",
+    width,
+    height,
+    bitrate,
+    framerate: fps,
+  };
   const support = await VideoEncoder.isConfigSupported(vp9).catch(() => null);
   if (support?.supported) {
     const failure = await encoderWorks(vp9);
@@ -163,7 +180,9 @@ async function pickAudioCodec(sampleRate: number, channels: number) {
     try {
       const support = await AudioEncoder.isConfigSupported(config);
       if (support.supported) return { config, mux: option.mux };
-    } catch { /* ลองตัวถัดไป */ }
+    } catch {
+      /* ลองตัวถัดไป */
+    }
   }
   return null;
 }
@@ -188,7 +207,11 @@ async function renderAudio(
 
   const sampleRate = decoded.sampleRate;
   const channels = Math.min(2, Math.max(1, decoded.numberOfChannels));
-  const offline = new OfflineAudioContext(channels, Math.max(1, Math.ceil(total * sampleRate)), sampleRate);
+  const offline = new OfflineAudioContext(
+    channels,
+    Math.max(1, Math.ceil(total * sampleRate)),
+    sampleRate,
+  );
 
   const highpass = offline.createBiquadFilter();
   highpass.type = "highpass";
@@ -200,13 +223,18 @@ async function renderAudio(
   compressor.threshold.value = options.noiseReduction ? -38 : -24;
   compressor.ratio.value = options.noiseReduction ? 5 : 2;
 
-  const gate = options.noiseReduction && options.noiseFloor
-    ? await createNoiseGate(offline, { noiseFloor: options.noiseFloor })
-    : null;
+  const gate =
+    options.noiseReduction && options.noiseFloor
+      ? await createNoiseGate(offline, { noiseFloor: options.noiseFloor })
+      : null;
 
   highpass.connect(lowpass).connect(compressor);
-  if (gate) compressor.connect(gate.input), gate.output.connect(offline.destination);
-  else compressor.connect(offline.destination);
+  if (gate) {
+    compressor.connect(gate.input);
+    gate.output.connect(offline.destination);
+  } else {
+    compressor.connect(offline.destination);
+  }
 
   let cursor = 0;
   for (const segment of segments) {
@@ -312,6 +340,8 @@ export async function exportWebCodecsVideo(
   let brollTrack: BrollTrack | null = null;
   let stickerLayer: StickerLayer | null = null;
   let frames: FrameReader | null = null;
+  /** Encoded-but-not-yet-output frame copies, for recovering a failed encoder. */
+  const pending: { index: number; frame: VideoFrame }[] = [];
 
   try {
     const sourceBlob = await fetch(url).then((response) => response.blob());
@@ -381,7 +411,9 @@ export async function exportWebCodecsVideo(
     // ไม่ต้องลด fps ตามความสามารถเครื่องอีกแล้ว เพราะไม่ได้อัดตามเวลาจริง
     const frameDurationUs = 1e6 / fps;
     const bitrateOverride = (window as unknown as { __EXPORT_BITRATE?: number }).__EXPORT_BITRATE;
-    const bitrate = bitrateOverride ?? Math.min(64_000_000, Math.max(8_000_000, Math.round(width * height * fps * 0.2)));
+    const bitrate =
+      bitrateOverride ??
+      Math.min(64_000_000, Math.max(8_000_000, Math.round(width * height * fps * 0.2)));
 
     const { config: videoConfig, muxCodec } = await pickVideoCodec(width, height, bitrate, fps);
 
@@ -399,7 +431,12 @@ export async function exportWebCodecsVideo(
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
       // The muxer needs an integer timescale; 29.97fps uses 29970 ticks/s.
-      video: { codec: muxCodec, width, height, frameRate: Number.isInteger(fps) ? fps : Math.round(fps * 1000) },
+      video: {
+        codec: muxCodec,
+        width,
+        height,
+        frameRate: Number.isInteger(fps) ? fps : Math.round(fps * 1000),
+      },
       ...(audioBuffer && audioPick
         ? {
             audio: {
@@ -422,19 +459,58 @@ export async function exportWebCodecsVideo(
 
     // Errors arrive in a callback; keep them so the loop can report the real cause.
     let encoderError: string | null = null;
-    encoder = new VideoEncoder({
-      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-      error: (error) => {
-        encoderError = error.message || String(error);
-      },
-    });
-    encoder.configure(videoConfig);
+    const messageOf = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
     const encodeFailed = (cause?: unknown) =>
       new Error(
-        `เข้ารหัสวิดีโอไม่สำเร็จ (${videoConfig.codec}): ${
-          encoderError ?? (cause instanceof Error ? cause.message : String(cause))
-        }`,
+        `เข้ารหัสวิดีโอไม่สำเร็จ (${videoConfig.codec}): ${encoderError ?? messageOf(cause)}`,
       );
+    const makeEncoder = () => {
+      const next = new VideoEncoder({
+        output: (chunk, meta) => {
+          muxer.addVideoChunk(chunk, meta);
+          // This frame is safely in the file: stop keeping its copy.
+          const done = Math.round(chunk.timestamp / frameDurationUs);
+          while (pending.length && pending[0]!.index <= done) pending.shift()!.frame.close();
+        },
+        error: (error) => {
+          encoderError = error.message || String(error);
+        },
+      });
+      next.configure(videoConfig);
+      return next;
+    };
+    encoder = makeEncoder();
+    let activeEncoder = encoder;
+
+    /**
+     * iPhone's hardware encoder can drop out part way ("Encoding task did not
+     * complete"). Frames it had not finished are still kept in `pending`, so a
+     * fresh encoder re-encodes them (starting with a key frame) and the file
+     * continues without a gap.
+     */
+    let recoveries = 0;
+    const recover = async () => {
+      while (encoderError) {
+        if (recoveries >= 3) throw encodeFailed();
+        recoveries++;
+        dbg(`encoder failed (${encoderError}); restarting with ${pending.length} pending frames`);
+        try {
+          if (activeEncoder.state !== "closed") activeEncoder.close();
+        } catch {
+          /* already gone */
+        }
+        encoderError = null;
+        await new Promise<void>((r) => window.setTimeout(r, 120));
+        activeEncoder = encoder = makeEncoder();
+        try {
+          pending.forEach((item, i) => activeEncoder.encode(item.frame, { keyFrame: i === 0 }));
+        } catch (error) {
+          encoderError ??= messageOf(error);
+        }
+      }
+    };
+    // Keep the encoder's queue short: WebKit fails more often when flooded.
+    const queueLimit = 4;
 
     onProgress?.(0.01); // setup done: show that work has started
 
@@ -444,6 +520,7 @@ export async function exportWebCodecsVideo(
     let lastYield = performance.now();
     for (const { time, seg } of plan) {
       if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
+      if (encoderError) await recover();
       let image: CanvasImageSource | null = null;
       if (frames) {
         try {
@@ -464,16 +541,19 @@ export async function exportWebCodecsVideo(
       renderer.paint(image, time, seg);
       const timestamp = Math.round(frameIndex * frameDurationUs);
       const frame = new VideoFrame(canvas, { timestamp, duration: Math.round(frameDurationUs) });
+      // The encoder copies the frame; this copy stays until its chunk is out.
+      pending.push({ index: frameIndex, frame });
       try {
-        if (!encoderError) encoder.encode(frame, { keyFrame: frameIndex % keyEvery === 0 });
+        activeEncoder.encode(frame, { keyFrame: frameIndex % keyEvery === 0 });
       } catch (error) {
-        throw encodeFailed(error);
-      } finally {
-        frame.close();
+        encoderError ??= messageOf(error);
       }
-      if (encoderError) throw encodeFailed();
+      if (encoderError) await recover();
       frameIndex++;
-      while (encoder.encodeQueueSize > 8) await new Promise<void>((r) => window.setTimeout(r, 4));
+      while (activeEncoder.encodeQueueSize >= queueLimit || pending.length > 24) {
+        if (encoderError) await recover();
+        await new Promise<void>((r) => window.setTimeout(r, 4));
+      }
       // Give the page a moment now and then so progress paints and taps still work.
       if (performance.now() - lastYield > 50) {
         await new Promise<void>((r) => window.setTimeout(r, 0));
@@ -483,13 +563,16 @@ export async function exportWebCodecsVideo(
     }
     dbg(`frames=${frameIndex}`);
 
-    try {
-      await encoder.flush();
-    } catch (error) {
-      throw encodeFailed(error);
+    for (;;) {
+      try {
+        await activeEncoder.flush();
+      } catch (error) {
+        encoderError ??= messageOf(error);
+      }
+      if (!encoderError) break;
+      await recover();
     }
-    if (encoderError) throw encodeFailed();
-    encoder.close();
+    activeEncoder.close();
     encoder = null;
 
     // ---- เข้ารหัสเสียงที่เรนเดอร์ไว้ ----
@@ -498,7 +581,9 @@ export async function exportWebCodecsVideo(
       const sampleRate = audioBuffer.sampleRate;
       audioEncoder = new AudioEncoder({
         output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
-        error: (error) => { throw new Error(`เข้ารหัสเสียงไม่สำเร็จ: ${error.message}`); },
+        error: (error) => {
+          throw new Error(`เข้ารหัสเสียงไม่สำเร็จ: ${error.message}`);
+        },
       });
       audioEncoder.configure(audioPick.config);
       const data: Float32Array[] = [];
@@ -507,7 +592,8 @@ export async function exportWebCodecsVideo(
       for (let offset = 0; offset < audioBuffer.length; offset += block) {
         const frames = Math.min(block, audioBuffer.length - offset);
         const planar = new Float32Array(frames * channels);
-        for (let c = 0; c < channels; c++) planar.set(data[c]!.subarray(offset, offset + frames), c * frames);
+        for (let c = 0; c < channels; c++)
+          planar.set(data[c]!.subarray(offset, offset + frames), c * frames);
         const audioData = new AudioData({
           format: "f32-planar",
           sampleRate,
@@ -519,7 +605,8 @@ export async function exportWebCodecsVideo(
         audioEncoder.encode(audioData);
         audioData.close();
         if (audioEncoder.encodeQueueSize > 16) {
-          while (audioEncoder.encodeQueueSize > 16) await new Promise<void>((r) => window.setTimeout(r, 4));
+          while (audioEncoder.encodeQueueSize > 16)
+            await new Promise<void>((r) => window.setTimeout(r, 4));
         }
       }
       await audioEncoder.flush();
@@ -563,9 +650,22 @@ export async function exportWebCodecsVideo(
     video.removeAttribute("src");
     video.remove();
     frames?.dispose();
-    try { brollTrack?.dispose(); } catch { /* ignore */ }
+    for (const item of pending.splice(0)) item.frame.close();
+    try {
+      brollTrack?.dispose();
+    } catch {
+      /* ignore */
+    }
     stickerLayer?.destroy();
-    try { if (encoder && encoder.state !== "closed") encoder.close(); } catch { /* ignore */ }
-    try { if (audioEncoder && audioEncoder.state !== "closed") audioEncoder.close(); } catch { /* ignore */ }
+    try {
+      if (encoder && encoder.state !== "closed") encoder.close();
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (audioEncoder && audioEncoder.state !== "closed") audioEncoder.close();
+    } catch {
+      /* ignore */
+    }
   }
 }

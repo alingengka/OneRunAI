@@ -1161,6 +1161,9 @@ function Studio() {
     } else if (resolution === "4k") {
       toast.info("4K จะใช้เวลาเรนเดอร์นานกว่ามาก แต่ไฟล์ที่ได้จะเดินเฟรมครบ ไม่กระตุก");
     }
+    // The preview would compete with the export for the phone's video hardware.
+    videoRef.current?.pause();
+    setPlaying(false);
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
       const shared = {
         noiseReduction,
@@ -1177,14 +1180,26 @@ function Studio() {
       const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
 
       if (webCodecs) {
-        const result = await exportWebCodecsVideo(
-          videoUrl,
-          [...outputSegments],
-          [...groups],
-          style,
-          onProgress,
-          shared,
-        );
+        const run = (options: typeof shared) =>
+          exportWebCodecsVideo(
+            videoUrl,
+            [...outputSegments],
+            [...groups],
+            style,
+            onProgress,
+            options,
+          );
+        let result: Awaited<ReturnType<typeof run>>;
+        try {
+          result = await run(shared);
+        } catch (error) {
+          // A phone encoder that keeps failing usually copes with smaller frames.
+          const encoderTrouble =
+            error instanceof Error && /เข้ารหัสวิดีโอ/.test(error.message) && !signal.aborted;
+          if (!encoderTrouble || resolution === "720") throw error;
+          toast.info("เครื่องนี้เข้ารหัสความละเอียดนี้ไม่ไหว กำลังลองใหม่ที่ 720p…");
+          result = await run({ ...shared, resolution: "720" });
+        }
         if (signal.aborted) return;
         console.info("[export-webcodecs] completed", result);
         saveBlob(result.blob, `${baseName()}-final.${result.ext}`);
