@@ -1855,7 +1855,15 @@ function Studio() {
         </div>
       )}
 
-      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(340px,400px)_minmax(300px,1fr)_minmax(360px,1.15fr)] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-3 lg:p-3 lg:pb-2">
+      <div
+        className={cn(
+          "mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(340px,400px)_minmax(300px,1fr)_minmax(360px,1.15fr)] lg:gap-3 lg:p-3 lg:pb-3",
+          // The timeline row exists only once a clip is loaded.
+          duration > 0
+            ? "lg:grid-rows-[auto_minmax(0,1fr)_auto]"
+            : "lg:grid-rows-[auto_minmax(0,1fr)]",
+        )}
+      >
         {/* Desktop menu */}
         <nav
           aria-label="เมนูเครื่องมือ"
@@ -2772,7 +2780,7 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
+        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-3 lg:row-span-full lg:flex lg:min-h-0 lg:flex-col">
           <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
             {expanded && (
               <>
@@ -3046,35 +3054,36 @@ function Studio() {
             />
           </div>
         )}
-      </div>
 
-      {/* Desktop: word timeline across the bottom */}
-      {duration > 0 && (
-        <div className="mx-auto hidden w-full max-w-[1600px] shrink-0 px-4 pb-3 lg:block">
-          <div className="studio-panel overflow-hidden rounded-xl border border-border bg-card">
-            <WordTrack
-              words={words}
-              duration={duration}
-              time={time}
-              cuts={removeSilence ? silences : []}
-              selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
-              onSelect={(index) => {
-                setSelectedSticker(null);
-                setSelectedWord(index);
-              }}
-              onSeek={seekTo}
-              onRetime={retimeWord}
-              onMove={moveWord}
-              lanes={timelineLanes}
-              selectedSticker={selectedSticker}
-              onSelectSticker={(id) => {
-                setSelectedWord(null);
-                setSelectedSticker(id);
-              }}
-            />
+        {/* Desktop: word timeline under the menu and inspector; the preview
+            runs the full height beside it, like CapCut */}
+        {duration > 0 && (
+          <div className="hidden min-w-0 lg:col-span-2 lg:col-start-1 lg:row-start-3 lg:block">
+            <div className="studio-panel overflow-hidden rounded-xl border border-border bg-card">
+              <WordTrack
+                words={words}
+                duration={duration}
+                time={time}
+                cuts={removeSilence ? silences : []}
+                selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
+                onSelect={(index) => {
+                  setSelectedSticker(null);
+                  setSelectedWord(index);
+                }}
+                onSeek={seekTo}
+                onRetime={retimeWord}
+                onMove={moveWord}
+                lanes={timelineLanes}
+                selectedSticker={selectedSticker}
+                onSelectSticker={(id) => {
+                  setSelectedWord(null);
+                  setSelectedSticker(id);
+                }}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Phone: tools for the selected word replace the bottom menu */}
       {!isDesktop && selectedWordValid != null && (
