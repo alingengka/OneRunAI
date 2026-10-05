@@ -52,6 +52,7 @@ import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay
 import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
 import { WordTrack, type TimelineLanes } from "@/components/editor/WordTrack";
 import { MobileWordBar } from "@/components/editor/MobileWordBar";
+import { Inspector } from "@/components/editor/Inspector";
 import { computePeaks, makeThumbnails } from "@/lib/media/timeline-assets";
 import { CaptionList } from "@/components/editor/CaptionList";
 import { StyleControls } from "@/components/editor/StyleControls";
@@ -1440,6 +1441,36 @@ function Studio() {
   // Space bar plays / pauses, except while typing in a text field.
   const togglePlayRef = useRef(togglePlay);
   togglePlayRef.current = togglePlay;
+  // Delete / Backspace removes the selected word or sticker (desktop, like CapCut).
+  const deleteSelectionRef = useRef<() => boolean>(() => false);
+  deleteSelectionRef.current = () => {
+    if (selectedWordValid != null) {
+      updateWords(words.filter((_, i) => i !== selectedWordValid));
+      setSelectedWord(null);
+      return true;
+    }
+    if (selectedSticker) {
+      removeSticker(selectedSticker);
+      return true;
+    }
+    return false;
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
+      ) {
+        return;
+      }
+      if (deleteSelectionRef.current()) event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.code !== "Space" && event.key !== " ") return;
@@ -1697,13 +1728,13 @@ function Studio() {
         </div>
       )}
 
-      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[176px_minmax(0,1fr)_minmax(320px,400px)] lg:gap-4 lg:p-4 lg:pb-3">
+      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)_320px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-3 lg:p-3 lg:pb-2">
         {/* Desktop menu */}
         <nav
           aria-label="เมนูเครื่องมือ"
-          className="studio-panel hidden min-h-0 flex-col gap-1 rounded-xl border border-border bg-card p-2 lg:flex"
+          className="studio-panel hidden gap-1 rounded-xl border border-border bg-card p-1.5 lg:col-start-1 lg:row-start-1 lg:flex"
         >
-          {SECTIONS.map(({ id, label, tab: target, icon: Icon }) => {
+          {SECTIONS.map(({ id, label, short, tab: target, icon: Icon }) => {
             const current = sectionOf(tab) === id;
             return (
               <button
@@ -1714,22 +1745,23 @@ function Studio() {
                   if (!current) setTab(target);
                   play("hover");
                 }}
+                title={label}
                 className={cn(
-                  "flex h-11 items-center gap-3 rounded-lg px-3 text-left text-sm transition-colors",
+                  "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[11px] transition-colors",
                   current
                     ? "bg-accent font-semibold text-foreground"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
               >
                 <Icon className={cn("h-[18px] w-[18px] shrink-0", current && "text-primary")} />
-                {label}
+                <span className="truncate">{short}</span>
               </button>
             );
           })}
         </nav>
 
         {/* Controls panel */}
-        <section className="studio-panel order-3 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-3 sm:p-5 lg:order-none">
+        <section className="studio-panel order-3 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-3 sm:p-5 lg:order-none lg:col-start-1 lg:row-start-2 lg:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 empty:hidden sm:mb-4">
             <h2 className="hidden text-lg font-bold sm:block">
               {SECTIONS.find((s) => s.id === sectionOf(tab))?.label}
@@ -2507,7 +2539,7 @@ function Studio() {
                 onChange={updateWords}
                 onRetranscribe={(start, end) => void retranscribeRange(start, end)}
                 busy={retryingSync}
-                popoverEdit={isDesktop}
+                popoverEdit={false}
               />
 
               {words.some((w) => w.confidenceLabel === "low" || w.confidenceLabel === "review") && (
@@ -2615,7 +2647,7 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
           <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4">
             <div className="mb-3 hidden items-center justify-between lg:flex">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -2662,7 +2694,7 @@ function Studio() {
                 tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]",
                 expanded
                   ? "fixed left-1/2 top-1/2 z-[70] h-[100dvh] w-auto max-w-[100vw] -translate-x-1/2 -translate-y-1/2"
-                  : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh] lg:h-[min(600px,calc(100dvh-480px))]",
+                  : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh] lg:h-[clamp(300px,calc(100dvh-540px),720px)]",
               )}
             >
               {videoUrl ? (
@@ -2813,6 +2845,29 @@ function Studio() {
           </div>
         </section>
 
+        {/* Desktop: settings for the selection, on the right */}
+        <Inspector
+          className="hidden lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:block"
+          words={words}
+          duration={duration}
+          selectedWord={selectedWordValid}
+          lineRange={selectedLineRange}
+          sticker={stickers.find((sticker) => sticker.id === selectedSticker) ?? null}
+          stickerLabel={
+            timelineLanes.stickers?.find((item) => item.id === selectedSticker)?.label ?? ""
+          }
+          style={style}
+          busy={retryingSync}
+          onWordsChange={updateWords}
+          onSelectWord={setSelectedWord}
+          onPreview={previewRange}
+          onRetranscribe={(start, end) => void retranscribeRange(start, end)}
+          onStickerChange={updateSticker}
+          onStickerRemove={removeSticker}
+          onOpenStickers={() => setTab("stickers")}
+          onStyleChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+        />
+
         {/* Phone: word timeline right under the video */}
         {duration > 0 && (
           <div className="studio-panel order-2 min-w-0 shrink-0 overflow-hidden rounded-xl border border-border bg-card lg:hidden">
@@ -2863,11 +2918,17 @@ function Studio() {
               cuts={removeSilence ? silences : []}
               selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
               onSelect={(index) => {
+                setSelectedSticker(null);
                 setSelectedWord(index);
-                if (sectionOf(tab) !== "captions") setTab("text");
               }}
               onSeek={seekTo}
               onRetime={retimeWord}
+              lanes={timelineLanes}
+              selectedSticker={selectedSticker}
+              onSelectSticker={(id) => {
+                setSelectedWord(null);
+                setSelectedSticker(id);
+              }}
             />
           </div>
         </div>
