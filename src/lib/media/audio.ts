@@ -12,12 +12,13 @@ export type SilenceOptions = {
 export const defaultSilenceOptions: SilenceOptions = {
   thresholdDb: -34,
   minSilence: 0.35,
-  padding: 0.12,
+  padding: 0.08,
 };
 
 function newAudioContext(): AudioContext {
   const Ctx: typeof AudioContext =
-    window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
   return new Ctx();
 }
 
@@ -74,7 +75,11 @@ async function decodeWithWebCodecs(file: Blob): Promise<AudioBuffer | null> {
     if (!first) return null;
     const channels = first.numberOfChannels;
     const length = parts.reduce((sum, part) => sum + part.length, 0);
-    const out = new AudioBuffer({ length, numberOfChannels: channels, sampleRate: first.sampleRate });
+    const out = new AudioBuffer({
+      length,
+      numberOfChannels: channels,
+      sampleRate: first.sampleRate,
+    });
     for (let c = 0; c < channels; c++) {
       const data = out.getChannelData(c);
       let offset = 0;
@@ -155,8 +160,8 @@ export function detectSpeechSegments(buffer: AudioBuffer, opts: SilenceOptions):
   const speechLevel = sorted[Math.floor(sorted.length * 0.92)] ?? noiseFloor;
   const relative = speechLevel * Math.pow(10, opts.thresholdDb / 20);
   // hysteresis: open the gate on a clear level, close it only well below
-  const openLevel = Math.max(noiseFloor * 2.4, relative, 0.00008);
-  const closeLevel = Math.max(noiseFloor * 1.5, openLevel * 0.55);
+  const openLevel = Math.max(noiseFloor * 1.6, relative, 0.00008);
+  const closeLevel = Math.max(noiseFloor * 1.2, openLevel * 0.55);
 
   const frameDur = hop / sr;
   const releaseFrames = Math.max(1, Math.round(opts.minSilence / frameDur));
@@ -206,7 +211,6 @@ export function detectSpeechSegments(buffer: AudioBuffer, opts: SilenceOptions):
     .filter((s) => s.end - s.start > 0.12);
 }
 
-
 /**
  * Prevent choppy edits by joining tiny pauses (breaths and gaps between words)
  * and keeping a small amount of room around each spoken phrase.
@@ -215,7 +219,7 @@ export function smoothSpeechSegments(
   segments: Segment[],
   duration: number,
   joinGap = 0.18,
-  edgePadding = 0.08,
+  edgePadding = 0.04,
 ): Segment[] {
   return segments.reduce<Segment[]>((result, segment) => {
     const next = {
@@ -233,9 +237,15 @@ export function smoothSpeechSegments(
 }
 
 /** Split a longer speech region at low-energy valleys for tighter caption timing. */
-export function refineSpeechSegments(buffer: AudioBuffer, segments: Segment[], maxLength = 4): Segment[] {
+export function refineSpeechSegments(
+  buffer: AudioBuffer,
+  segments: Segment[],
+  maxLength = 4,
+): Segment[] {
   const sr = buffer.sampleRate;
-  const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i));
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) =>
+    buffer.getChannelData(i),
+  );
   const refined: Segment[] = [];
   for (const segment of segments) {
     let start = segment.start;
@@ -252,7 +262,10 @@ export function refineSpeechSegments(buffer: AudioBuffer, segments: Segment[], m
         for (const data of channels) {
           for (let i = from; i < to; i++) energy += Math.abs(data[i] ?? 0);
         }
-        if (energy < bestEnergy) { bestEnergy = energy; best = t; }
+        if (energy < bestEnergy) {
+          bestEnergy = energy;
+          best = t;
+        }
       }
       refined.push({ start, end: best });
       start = best;
@@ -276,7 +289,9 @@ export function invertSegments(segments: Segment[], duration: number): Segment[]
 /** Encode an AudioBuffer to 16-bit mono 16kHz WAV (safe for transcription upload). */
 export function encodeWav16k(buffer: AudioBuffer): Blob {
   const targetRate = 16000;
-  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) =>
+    buffer.getChannelData(channel),
+  );
   const ratio = buffer.sampleRate / targetRate;
   const length = Math.floor(buffer.length / ratio);
   const out = new Int16Array(length);
@@ -373,9 +388,15 @@ function encodePcmWav(samples: Float32Array, sampleRate: number): Blob {
  * Encode only the given segments (speech) of the buffer to a 16 kHz mono WAV.
  * Used so transcription hears exactly the audio a caption chunk covers.
  */
-export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[], reduceNoise = false): Blob {
+export function encodeSegmentsWav16k(
+  buffer: AudioBuffer,
+  segs: Segment[],
+  reduceNoise = false,
+): Blob {
   const targetRate = 16000;
-  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) => buffer.getChannelData(channel));
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, channel) =>
+    buffer.getChannelData(channel),
+  );
   const ratio = buffer.sampleRate / targetRate;
   const total = segs.reduce(
     (n, s) => n + Math.max(0, Math.floor(((s.end - s.start) * buffer.sampleRate) / ratio)),
@@ -388,7 +409,10 @@ export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[], reduc
     const count = Math.floor(((s.end - s.start) * buffer.sampleRate) / ratio);
     for (let i = 0; i < count && w < total; i++) {
       const sourceIndex = Math.min(buffer.length - 1, from + Math.floor(i * ratio));
-      const sourceEnd = Math.max(sourceIndex + 1, Math.min(buffer.length, from + Math.floor((i + 1) * ratio)));
+      const sourceEnd = Math.max(
+        sourceIndex + 1,
+        Math.min(buffer.length, from + Math.floor((i + 1) * ratio)),
+      );
       let mixed = 0;
       let mixedCount = 0;
       for (const channel of channels) {
@@ -399,13 +423,21 @@ export function encodeSegmentsWav16k(buffer: AudioBuffer, segs: Segment[], reduc
       }
       const sample = mixedCount ? mixed / mixedCount : 0;
       const previousIndex = Math.max(0, sourceIndex - Math.max(1, Math.floor(ratio)));
-      const previous = channels.reduce((sum, channel) => sum + (channel[previousIndex] ?? 0), 0) / Math.max(1, channels.length);
+      const previous =
+        channels.reduce((sum, channel) => sum + (channel[previousIndex] ?? 0), 0) /
+        Math.max(1, channels.length);
       const highPassed = sample - previous * 0.96;
       const cleaned = reduceNoise
-        ? (Math.abs(highPassed) < 0.006 ? highPassed * 0.12 : highPassed * 1.15)
+        ? Math.abs(highPassed) < 0.006
+          ? highPassed * 0.12
+          : highPassed * 1.15
         : sample;
       const fadeSamples = Math.min(count / 2, Math.floor(targetRate * 0.012));
-      const edgeGain = Math.min(1, i / Math.max(1, fadeSamples), (count - i) / Math.max(1, fadeSamples));
+      const edgeGain = Math.min(
+        1,
+        i / Math.max(1, fadeSamples),
+        (count - i) / Math.max(1, fadeSamples),
+      );
       outSamples[w++] = cleaned * Math.max(0, edgeGain);
     }
   }
@@ -471,7 +503,8 @@ export function addChunkOverlap(
     if (last && index < chunks.length - 1) last.end = Math.min(duration, last.end + seconds);
     return copy.reduce<Segment[]>((merged, segment) => {
       const previous = merged[merged.length - 1];
-      if (previous && segment.start <= previous.end) previous.end = Math.max(previous.end, segment.end);
+      if (previous && segment.start <= previous.end)
+        previous.end = Math.max(previous.end, segment.end);
       else merged.push(segment);
       return merged;
     }, []);
@@ -488,7 +521,14 @@ export function addChunkOverlap(
 export function reconcileSegmentsWithWords(
   segments: Segment[],
   words: { start: number; end: number }[],
-  opts: { duration?: number; pad?: number; joinGap?: number; maxGrow?: number; maxWord?: number; nearGap?: number } = {},
+  opts: {
+    duration?: number;
+    pad?: number;
+    joinGap?: number;
+    maxGrow?: number;
+    maxWord?: number;
+    nearGap?: number;
+  } = {},
 ): Segment[] {
   const maxWord = opts.maxWord ?? 1.2;
   const valid = words
@@ -503,10 +543,9 @@ export function reconcileSegmentsWithWords(
   const joinGap = opts.joinGap ?? 0.08;
   // ขยายขอบได้แค่เล็กน้อยเท่านั้น (กันพยางค์ขาด) ไม่ใช่ยืดจนคลุมช่วงเงียบ
   const maxGrow = opts.maxGrow ?? 0.12;
-  const duration = opts.duration ?? Math.max(
-    segments[segments.length - 1]?.end ?? 0,
-    valid[valid.length - 1]?.end ?? 0,
-  );
+  const duration =
+    opts.duration ??
+    Math.max(segments[segments.length - 1]?.end ?? 0, valid[valid.length - 1]?.end ?? 0);
   const clamp = (t: number) => Math.max(0, Math.min(duration, t));
 
   const grown: Segment[] = segments.map((s) => ({ ...s }));
@@ -549,6 +588,89 @@ export function reconcileSegmentsWithWords(
 }
 
 /**
+ * Parts of the speech segments that no transcribed word covers, at least
+ * `minLength` long. The recognisers sometimes drop a phrase (often the end of
+ * a chunk); these ranges are sent again so captions are not missing there.
+ */
+export function uncoveredSpeech(
+  segments: Segment[],
+  words: { start: number; end: number }[],
+  opts: { minLength?: number; slack?: number } = {},
+): Segment[] {
+  const minLength = opts.minLength ?? 0.6;
+  const slack = opts.slack ?? 0.15;
+  const spans = words
+    .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end))
+    .map((w) => ({ start: w.start - slack, end: w.end + slack }))
+    .sort((a, b) => a.start - b.start);
+  const out: Segment[] = [];
+  for (const segment of segments) {
+    let cursor = segment.start;
+    for (const span of spans) {
+      if (span.end <= cursor) continue;
+      if (span.start >= segment.end) break;
+      if (span.start > cursor && span.start - cursor >= minLength) {
+        out.push({ start: cursor, end: Math.min(span.start, segment.end) });
+      }
+      cursor = Math.max(cursor, span.end);
+      if (cursor >= segment.end) break;
+    }
+    if (segment.end - cursor >= minLength) out.push({ start: cursor, end: segment.end });
+  }
+  return out;
+}
+
+/**
+ * Keep ranges built from measured word times (Scribe), for cutting dead air.
+ *
+ * The loudness gate alone misses pauses in noisy places (street, bus) and,
+ * worse, clips quiet syllables there, while its padding leaves ~0.2 s of
+ * silence on each side of every cut even in a quiet room. With real word
+ * times the spoken parts are known: keep each word with `pad` around it,
+ * join gaps shorter than `minGap` (pauses inside a sentence), and cut the
+ * rest. Loud parts with no recognised word in them (laughs, a missed word)
+ * are kept when they are at least `keepUnworded` long, so a word the
+ * recogniser skipped is not cut away. Only use measured word times, never
+ * estimated ones.
+ */
+export function splitSegmentsAtWordGaps(
+  segments: Segment[],
+  words: { start: number; end: number }[],
+  opts: { minGap?: number; pad?: number; keepUnworded?: number; duration?: number } = {},
+): Segment[] {
+  const minGap = opts.minGap ?? 0.35;
+  const pad = opts.pad ?? 0.08;
+  const keepUnworded = opts.keepUnworded ?? 0.6;
+  const timed = words
+    .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end >= w.start)
+    .sort((a, b) => a.start - b.start);
+  if (!timed.length) return segments;
+  const duration =
+    opts.duration ??
+    Math.max(segments[segments.length - 1]?.end ?? 0, timed[timed.length - 1]!.end + pad);
+
+  const spans: Segment[] = timed.map((w) => ({
+    start: Math.max(0, w.start - pad),
+    end: Math.min(duration, w.end + pad),
+  }));
+  for (const segment of segments) {
+    const hasWord = timed.some((w) => w.end > segment.start && w.start < segment.end);
+    if (!hasWord && segment.end - segment.start >= keepUnworded) spans.push({ ...segment });
+  }
+  // Pauses shorter than minGap (between the padded spans) stay in.
+  const joinWithin = Math.max(0, minGap - 2 * pad);
+  return spans
+    .sort((a, b) => a.start - b.start)
+    .reduce<Segment[]>((acc, s) => {
+      const last = acc[acc.length - 1];
+      if (last && s.start - last.end <= joinWithin) last.end = Math.max(last.end, s.end);
+      else acc.push({ ...s });
+      return acc;
+    }, [])
+    .filter((s) => s.end - s.start > 0.05);
+}
+
+/**
  * ระดับเสียงรบกวนพื้นหลัง (RMS) จากคลิป ใช้เป็น threshold ของ noise gate ตอน export
  * ใช้เปอร์เซ็นไทล์ที่ 15 แบบเดียวกับ detectSpeechSegments เพื่อให้สอดคล้องกัน
  */
@@ -570,4 +692,3 @@ export function estimateNoiseFloor(buffer: AudioBuffer): number {
   frames.sort((a, b) => a - b);
   return frames[Math.floor(frames.length * 0.15)] ?? 0;
 }
-

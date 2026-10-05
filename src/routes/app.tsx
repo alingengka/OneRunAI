@@ -52,6 +52,7 @@ import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay
 import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
 import { WordTrack, type TimelineLanes } from "@/components/editor/WordTrack";
 import { MobileWordBar } from "@/components/editor/MobileWordBar";
+import { moveWordTo } from "@/lib/word-actions";
 import { Inspector } from "@/components/editor/Inspector";
 import { computePeaks, makeThumbnails } from "@/lib/media/timeline-assets";
 import { CaptionList } from "@/components/editor/CaptionList";
@@ -77,6 +78,8 @@ import {
   encodeWav16k,
   invertSegments,
   reconcileSegmentsWithWords,
+  splitSegmentsAtWordGaps,
+  uncoveredSpeech,
   estimateNoiseFloor,
   refineSpeechSegments,
   smoothSpeechSegments,
@@ -223,6 +226,9 @@ const LANGUAGES: { code: LangCode; label: string; font: string }[] = [
   { code: "en", label: "English", font: "'Inter', system-ui, sans-serif" },
 ];
 
+/** Cuts up to this long are fast-forwarded in the preview; longer ones are seeked. */
+const FAST_SKIP_MAX = 1.2;
+
 /** How many subtitle chunks are transcribed at the same time. */
 const TRANSCRIBE_CONCURRENCY = 3;
 
@@ -295,6 +301,8 @@ function Studio() {
   const [frameHeight, setFrameHeight] = useState(0);
   const [frameWidth, setFrameWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const previewSlotRef = useRef<HTMLDivElement>(null);
+  const [previewSlot, setPreviewSlot] = useState({ width: 0, height: 0 });
   useEffect(() => {
     if (!expanded) return;
     const onKey = (event: KeyboardEvent) => {
@@ -335,6 +343,22 @@ function Studio() {
     setExportType(preset.type);
   }, []);
   const [tiktokPreview, setTiktokPreview] = useState(false);
+  useEffect(() => {
+    const el = previewSlotRef.current;
+    if (!el) return;
+    const measure = () => setPreviewSlot({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  /** Tallest 9:16 (or TikTok-frame) player that fits the right column. */
+  const desktopFrameHeight =
+    isDesktop && !expanded && previewSlot.height > 0
+      ? Math.floor(
+          Math.min(previewSlot.height, previewSlot.width * (tiktokPreview ? 1920 / 886 : 16 / 9)),
+        )
+      : 0;
   const [autoResync, setAutoResync] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -514,18 +538,51 @@ function Studio() {
 
   // playback clock + silence skipping
   const lastClockRef = useRef(0);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  /** Fast-forwarding through a cut right now (muted, high playbackRate). */
+  const skippingRef = useRef(false);
   useEffect(() => {
     let raf = 0;
+    const endSkip = (v: HTMLVideoElement) => {
+      if (!skippingRef.current) return;
+      skippingRef.current = false;
+      v.playbackRate = 1;
+      v.muted = mutedRef.current;
+    };
     const tick = () => {
       const v = videoRef.current;
       if (v) {
         const t = v.currentTime;
-        if (removeSilence && keepSegments.length) {
-          const gap = silences.find((g) => t >= g.start && t < g.end - 0.02);
-          if (gap) {
+        // Only while playing: scrubbing a paused video through a cut must not jump.
+        const gap =
+          removeSilence && keepSegments.length && !v.paused
+            ? silences.find((g) => t >= g.start && t < g.end - 0.03)
+            : undefined;
+        if (gap) {
+          const remaining = gap.end - t;
+          let fastForward = remaining <= FAST_SKIP_MAX;
+          if (fastForward) {
+            // A seek stalls the picture and sound on phones; racing through a
+            // short cut muted at up to 16x does not. The rate eases off near
+            // the end so playback lands on the next spoken part.
+            try {
+              v.playbackRate = Math.min(16, Math.max(1, remaining / 0.03));
+              if (!skippingRef.current) {
+                skippingRef.current = true;
+                v.muted = true;
+              }
+            } catch {
+              fastForward = false; // browser refuses high rates: seek instead
+            }
+          }
+          if (!fastForward) {
+            endSkip(v);
             const next = keepSegments.find((s) => s.start >= gap.end - 0.001);
             v.currentTime = next ? next.start : v.duration;
           }
+        } else {
+          endSkip(v);
         }
         // ~30 updates a second is smooth for captions; phones run requestAnimationFrame
         // at 120Hz, and re-rendering the editor that often made playback stutter.
@@ -780,8 +837,9 @@ function Studio() {
       // go to Scribe, which handles long audio and returns word times; Lao
       // runs several engines per chunk, so it stays a little shorter.
       const baseChunks = buildAsrChunks(transcriptionSegments, buffer.duration, {
-        min: lang === "lo" ? 10 : 20,
-        max: lang === "lo" ? 24 : 45,
+        // Lao: long audio makes the models drop the end of what was said.
+        min: lang === "lo" ? 5 : 20,
+        max: lang === "lo" ? 14 : 45,
         gap: lang === "lo" ? 0.8 : 0.55,
         pad: lang === "lo" ? 0.25 : 0.12,
       });
@@ -904,6 +962,44 @@ function Studio() {
             setWords([...allWords]);
           },
         );
+        // Safety net: speech the engines skipped (often the end of a chunk).
+        // The analysis heard voice there but no word landed in it, so send
+        // just that part again.
+        const skipped = uncoveredSpeech(segs, allWords).slice(0, 8);
+        if (skipped.length) {
+          const pad = 0.2;
+          await runInOrderPool(
+            skipped.length,
+            TRANSCRIBE_CONCURRENCY,
+            (i) =>
+              transcribeChunk(
+                [
+                  {
+                    start: Math.max(0, skipped[i]!.start - pad),
+                    end: Math.min(buffer!.duration, skipped[i]!.end + pad),
+                  },
+                ],
+                1,
+              ),
+            (_i, out) => {
+              if (!("aligned" in out) || !out.aligned?.length) return;
+              // The gap sits between existing words: add only words that do
+              // not overlap them, then keep time order.
+              const fill = out.aligned.filter(
+                (word) =>
+                  !allWords.some(
+                    (other) => word.start < other.end - 0.02 && word.end > other.start + 0.02,
+                  ),
+              );
+              if (!fill.length) return;
+              texts.push(fill.map((word) => word.text).join(" "));
+              allWords.push(...fill);
+              allWords.sort((a, b) => a.start - b.start);
+              setWords([...allWords]);
+            },
+          );
+        }
+
         if (stillMissing.length) {
           const ranges = stillMissing
             .map(
@@ -946,10 +1042,14 @@ function Studio() {
       allWords.splice(0, allWords.length, ...closeSpeechGaps(allWords, segs));
       // งาน A: ใช้เวลาคำจริงขยายขอบช่วงพูด ไม่ให้ energy gate ตัดพยางค์ต้น/ท้ายขาด
 
-      const timingForCuts = measured.length ? measured : allWords;
-      const reconciled = reconcileSegmentsWithWords(segs, timingForCuts, {
-        duration: buffer.duration,
-      });
+      // Measured word times (Scribe) show every pause, even in a noisy place,
+      // so cuts come from the words; estimated times only nudge the edges.
+      const reconciled = measured.length
+        ? splitSegmentsAtWordGaps(segs, measured, {
+            minGap: Math.max(0.25, minSilence),
+            duration: buffer.duration,
+          })
+        : reconcileSegmentsWithWords(segs, allWords, { duration: buffer.duration });
       if (reconciled.length) setSegments(reconciled);
       const ruled = applyRulesToWords(allWords, lexRules);
       if (ruled.changed) setLexRules(ruled.rules);
@@ -1378,6 +1478,16 @@ function Studio() {
   };
 
   /** Retime one word from the bottom timeline (drag handles). */
+  /** A word dragged on the timeline to a new place (may pass other words). */
+  const moveWord = (index: number, start: number, end: number) => {
+    const moved = moveWordTo(words, index, start, end, duration);
+    updateWords(moved);
+    // Keep the dragged word selected at its new position in the list.
+    const target = words[index];
+    const at = moved.findIndex((w) => w.text === target?.text && Math.abs(w.start - start) < 1e-6);
+    if (at >= 0) setSelectedWord(at);
+  };
+
   const retimeWord = (index: number, start: number, end: number) => {
     updateWords(
       normalizeWordTimes(
@@ -1728,7 +1838,7 @@ function Studio() {
         </div>
       )}
 
-      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(340px,400px)_minmax(0,1fr)_320px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-3 lg:p-3 lg:pb-2">
+      <div className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(340px,400px)_minmax(300px,1fr)_minmax(360px,1.15fr)] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-3 lg:p-3 lg:pb-2">
         {/* Desktop menu */}
         <nav
           aria-label="เมนูเครื่องมือ"
@@ -2647,18 +2757,8 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
-          <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4">
-            <div className="mb-3 hidden items-center justify-between lg:flex">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Smartphone className="h-4 w-4" /> TikTok Preview
-              </div>
-              <Switch
-                checked={tiktokPreview}
-                onCheckedChange={setTiktokPreview}
-                aria-label="เปิดพรีวิว TikTok"
-              />
-            </div>
+        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
+          <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
             {expanded && (
               <>
                 <div className="fixed inset-0 z-[65] bg-black" aria-hidden="true" />
@@ -2687,89 +2787,95 @@ function Studio() {
                 </div>
               </>
             )}
+            {/* Desktop: the player fills all the height of the right column (CapCut). */}
             <div
-              ref={frameRef}
-              className={cn(
-                "mx-auto max-w-full overflow-hidden bg-preview",
-                tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]",
-                expanded
-                  ? "fixed left-1/2 top-1/2 z-[70] h-[100dvh] w-auto max-w-[100vw] -translate-x-1/2 -translate-y-1/2"
-                  : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh] lg:h-[clamp(300px,calc(100dvh-540px),720px)]",
-              )}
+              ref={previewSlotRef}
+              className="lg:flex lg:min-h-0 lg:flex-1 lg:items-center lg:justify-center"
             >
-              {videoUrl ? (
-                <video
-                  ref={videoRef}
-                  src={videoUrl}
-                  preload="auto"
-                  // iOS Safari shows a blank box until a video has played once
-                  onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
-                  className="h-full w-full object-cover will-change-transform"
-                  style={{
-                    transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,
-                  }}
-                  playsInline
-                  onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-                  onEnded={() => setPlaying(false)}
-                  onClick={togglePlay}
-                />
-              ) : (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
-                >
-                  <Upload className="h-6 w-6" />
-                  แตะเพื่ออัปโหลดคลิป
-                </button>
-              )}
-              <BrollOverlay
-                scenes={scenes}
-                sceneElements={sceneElements}
-                time={time}
-                playing={playing}
-              />
-              {captionsOn && (
-                <CaptionOverlay
-                  group={activeGroup}
+              <div
+                ref={frameRef}
+                style={desktopFrameHeight ? { height: desktopFrameHeight } : undefined}
+                title={
+                  videoUrl
+                    ? "ลากข้อความเพื่อย้าย · ลากจุดมุมเพื่อย่อ/ขยาย · ลากปุ่มด้านบนเพื่อหมุน · ดับเบิลคลิกเพื่อแก้ข้อความ"
+                    : undefined
+                }
+                className={cn(
+                  "mx-auto max-w-full overflow-hidden bg-preview",
+                  tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]",
+                  expanded
+                    ? "fixed left-1/2 top-1/2 z-[70] h-[100dvh] w-auto max-w-[100vw] -translate-x-1/2 -translate-y-1/2"
+                    : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh]",
+                )}
+              >
+                {videoUrl ? (
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    preload="auto"
+                    // iOS Safari shows a blank box until a video has played once
+                    onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
+                    className="h-full w-full object-cover will-change-transform"
+                    style={{
+                      transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,
+                    }}
+                    playsInline
+                    onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                    onEnded={() => setPlaying(false)}
+                    onClick={togglePlay}
+                  />
+                ) : (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
+                  >
+                    <Upload className="h-6 w-6" />
+                    แตะเพื่ออัปโหลดคลิป
+                  </button>
+                )}
+                <BrollOverlay
+                  scenes={scenes}
+                  sceneElements={sceneElements}
                   time={time}
-                  style={style}
-                  height={frameHeight}
-                  safeArea={tiktokPreview}
-                  onPositionChange={({ posX, posY }) =>
-                    setStyle((current) => ({ ...current, posX, posY }))
-                  }
-                  onEditText={(text) => editActiveGroupText(text)}
-                  onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-                  showHandles={!playing && !(tab === "stickers" && selectedSticker)}
+                  playing={playing}
                 />
-              )}
-              <ViralTextOverlay
-                scenes={scenes}
-                sceneElements={sceneElements}
-                time={time}
-                height={frameHeight}
-              />
-              {stickers.length > 0 && (
-                <StickerOverlay
-                  stickers={stickers}
+                {captionsOn && (
+                  <CaptionOverlay
+                    group={activeGroup}
+                    time={time}
+                    style={style}
+                    height={frameHeight}
+                    safeArea={tiktokPreview}
+                    onPositionChange={({ posX, posY }) =>
+                      setStyle((current) => ({ ...current, posX, posY }))
+                    }
+                    onEditText={(text) => editActiveGroupText(text)}
+                    onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+                    showHandles={!playing && !(tab === "stickers" && selectedSticker)}
+                  />
+                )}
+                <ViralTextOverlay
+                  scenes={scenes}
+                  sceneElements={sceneElements}
                   time={time}
-                  width={frameWidth}
                   height={frameHeight}
-                  selectedId={selectedSticker}
-                  onSelect={setSelectedSticker}
-                  onChange={updateSticker}
-                  onRemove={removeSticker}
-                  interactive={!playing}
                 />
-              )}
-              {tiktokPreview && <TikTokSafeAreaOverlay />}
+                {stickers.length > 0 && (
+                  <StickerOverlay
+                    stickers={stickers}
+                    time={time}
+                    width={frameWidth}
+                    height={frameHeight}
+                    selectedId={selectedSticker}
+                    onSelect={setSelectedSticker}
+                    onChange={updateSticker}
+                    onRemove={removeSticker}
+                    interactive={!playing}
+                  />
+                )}
+                {tiktokPreview && <TikTokSafeAreaOverlay />}
+              </div>
             </div>
-            {videoUrl && (
-              <p className="mt-2 hidden text-center text-xs text-muted-foreground lg:block">
-                ลากข้อความเพื่อย้าย · ลากจุดมุมเพื่อย่อ/ขยาย · ลากปุ่มด้านบนเพื่อหมุน ·
-                ดับเบิลคลิกเพื่อแก้ข้อความ
-              </p>
-            )}
 
             <div className="mt-2 space-y-2 lg:mt-4 lg:space-y-3">
               <div className="relative hidden h-2 w-full overflow-hidden rounded-full bg-secondary lg:block">
@@ -2830,6 +2936,16 @@ function Studio() {
                 >
                   {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
+                {/* Desktop: TikTok safe-area frame toggle sits with the player controls. */}
+                <label className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground lg:flex">
+                  <Smartphone className="h-4 w-4" />
+                  TikTok
+                  <Switch
+                    checked={tiktokPreview}
+                    onCheckedChange={setTiktokPreview}
+                    aria-label="เปิดพรีวิว TikTok"
+                  />
+                </label>
                 <Button
                   size="icon"
                   variant="ghost"
@@ -2847,7 +2963,7 @@ function Studio() {
 
         {/* Desktop: settings for the selection, on the right */}
         <Inspector
-          className="hidden lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:block"
+          className="hidden lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:block"
           words={words}
           duration={duration}
           selectedWord={selectedWordValid}
@@ -2883,6 +2999,7 @@ function Studio() {
               }}
               onSeek={seekTo}
               onRetime={retimeWord}
+              onMove={moveWord}
               compact
               centered
               lanes={timelineLanes}
@@ -2923,6 +3040,7 @@ function Studio() {
               }}
               onSeek={seekTo}
               onRetime={retimeWord}
+              onMove={moveWord}
               lanes={timelineLanes}
               selectedSticker={selectedSticker}
               onSelectSticker={(id) => {
