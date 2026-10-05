@@ -301,6 +301,8 @@ function Studio() {
   const [frameHeight, setFrameHeight] = useState(0);
   const [frameWidth, setFrameWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
+  const previewSlotRef = useRef<HTMLDivElement>(null);
+  const [previewSlot, setPreviewSlot] = useState({ width: 0, height: 0 });
   useEffect(() => {
     if (!expanded) return;
     const onKey = (event: KeyboardEvent) => {
@@ -341,6 +343,22 @@ function Studio() {
     setExportType(preset.type);
   }, []);
   const [tiktokPreview, setTiktokPreview] = useState(false);
+  useEffect(() => {
+    const el = previewSlotRef.current;
+    if (!el) return;
+    const measure = () => setPreviewSlot({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  /** Tallest 9:16 (or TikTok-frame) player that fits the right column. */
+  const desktopFrameHeight =
+    isDesktop && !expanded && previewSlot.height > 0
+      ? Math.floor(
+          Math.min(previewSlot.height, previewSlot.width * (tiktokPreview ? 1920 / 886 : 16 / 9)),
+        )
+      : 0;
   const [autoResync, setAutoResync] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -2739,18 +2757,8 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
-          <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4">
-            <div className="mb-3 hidden items-center justify-between lg:flex">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Smartphone className="h-4 w-4" /> TikTok Preview
-              </div>
-              <Switch
-                checked={tiktokPreview}
-                onCheckedChange={setTiktokPreview}
-                aria-label="เปิดพรีวิว TikTok"
-              />
-            </div>
+        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-3 lg:row-span-2 lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col">
+          <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
             {expanded && (
               <>
                 <div className="fixed inset-0 z-[65] bg-black" aria-hidden="true" />
@@ -2779,89 +2787,95 @@ function Studio() {
                 </div>
               </>
             )}
+            {/* Desktop: the player fills all the height of the right column (CapCut). */}
             <div
-              ref={frameRef}
-              className={cn(
-                "mx-auto max-w-full overflow-hidden bg-preview",
-                tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]",
-                expanded
-                  ? "fixed left-1/2 top-1/2 z-[70] h-[100dvh] w-auto max-w-[100vw] -translate-x-1/2 -translate-y-1/2"
-                  : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh] lg:h-[clamp(300px,calc(100dvh-540px),720px)]",
-              )}
+              ref={previewSlotRef}
+              className="lg:flex lg:min-h-0 lg:flex-1 lg:items-center lg:justify-center"
             >
-              {videoUrl ? (
-                <video
-                  ref={videoRef}
-                  src={videoUrl}
-                  preload="auto"
-                  // iOS Safari shows a blank box until a video has played once
-                  onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
-                  className="h-full w-full object-cover will-change-transform"
-                  style={{
-                    transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,
-                  }}
-                  playsInline
-                  onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-                  onEnded={() => setPlaying(false)}
-                  onClick={togglePlay}
-                />
-              ) : (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
-                >
-                  <Upload className="h-6 w-6" />
-                  แตะเพื่ออัปโหลดคลิป
-                </button>
-              )}
-              <BrollOverlay
-                scenes={scenes}
-                sceneElements={sceneElements}
-                time={time}
-                playing={playing}
-              />
-              {captionsOn && (
-                <CaptionOverlay
-                  group={activeGroup}
+              <div
+                ref={frameRef}
+                style={desktopFrameHeight ? { height: desktopFrameHeight } : undefined}
+                title={
+                  videoUrl
+                    ? "ลากข้อความเพื่อย้าย · ลากจุดมุมเพื่อย่อ/ขยาย · ลากปุ่มด้านบนเพื่อหมุน · ดับเบิลคลิกเพื่อแก้ข้อความ"
+                    : undefined
+                }
+                className={cn(
+                  "mx-auto max-w-full overflow-hidden bg-preview",
+                  tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]",
+                  expanded
+                    ? "fixed left-1/2 top-1/2 z-[70] h-[100dvh] w-auto max-w-[100vw] -translate-x-1/2 -translate-y-1/2"
+                    : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh]",
+                )}
+              >
+                {videoUrl ? (
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    preload="auto"
+                    // iOS Safari shows a blank box until a video has played once
+                    onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
+                    className="h-full w-full object-cover will-change-transform"
+                    style={{
+                      transform: `scale(${previewMotion.scale}) translate(${previewMotion.translateX * 100}%, ${previewMotion.translateY * 100}%)`,
+                    }}
+                    playsInline
+                    onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                    onEnded={() => setPlaying(false)}
+                    onClick={togglePlay}
+                  />
+                ) : (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
+                  >
+                    <Upload className="h-6 w-6" />
+                    แตะเพื่ออัปโหลดคลิป
+                  </button>
+                )}
+                <BrollOverlay
+                  scenes={scenes}
+                  sceneElements={sceneElements}
                   time={time}
-                  style={style}
-                  height={frameHeight}
-                  safeArea={tiktokPreview}
-                  onPositionChange={({ posX, posY }) =>
-                    setStyle((current) => ({ ...current, posX, posY }))
-                  }
-                  onEditText={(text) => editActiveGroupText(text)}
-                  onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-                  showHandles={!playing && !(tab === "stickers" && selectedSticker)}
+                  playing={playing}
                 />
-              )}
-              <ViralTextOverlay
-                scenes={scenes}
-                sceneElements={sceneElements}
-                time={time}
-                height={frameHeight}
-              />
-              {stickers.length > 0 && (
-                <StickerOverlay
-                  stickers={stickers}
+                {captionsOn && (
+                  <CaptionOverlay
+                    group={activeGroup}
+                    time={time}
+                    style={style}
+                    height={frameHeight}
+                    safeArea={tiktokPreview}
+                    onPositionChange={({ posX, posY }) =>
+                      setStyle((current) => ({ ...current, posX, posY }))
+                    }
+                    onEditText={(text) => editActiveGroupText(text)}
+                    onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+                    showHandles={!playing && !(tab === "stickers" && selectedSticker)}
+                  />
+                )}
+                <ViralTextOverlay
+                  scenes={scenes}
+                  sceneElements={sceneElements}
                   time={time}
-                  width={frameWidth}
                   height={frameHeight}
-                  selectedId={selectedSticker}
-                  onSelect={setSelectedSticker}
-                  onChange={updateSticker}
-                  onRemove={removeSticker}
-                  interactive={!playing}
                 />
-              )}
-              {tiktokPreview && <TikTokSafeAreaOverlay />}
+                {stickers.length > 0 && (
+                  <StickerOverlay
+                    stickers={stickers}
+                    time={time}
+                    width={frameWidth}
+                    height={frameHeight}
+                    selectedId={selectedSticker}
+                    onSelect={setSelectedSticker}
+                    onChange={updateSticker}
+                    onRemove={removeSticker}
+                    interactive={!playing}
+                  />
+                )}
+                {tiktokPreview && <TikTokSafeAreaOverlay />}
+              </div>
             </div>
-            {videoUrl && (
-              <p className="mt-2 hidden text-center text-xs text-muted-foreground lg:block">
-                ลากข้อความเพื่อย้าย · ลากจุดมุมเพื่อย่อ/ขยาย · ลากปุ่มด้านบนเพื่อหมุน ·
-                ดับเบิลคลิกเพื่อแก้ข้อความ
-              </p>
-            )}
 
             <div className="mt-2 space-y-2 lg:mt-4 lg:space-y-3">
               <div className="relative hidden h-2 w-full overflow-hidden rounded-full bg-secondary lg:block">
@@ -2922,6 +2936,16 @@ function Studio() {
                 >
                   {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
+                {/* Desktop: TikTok safe-area frame toggle sits with the player controls. */}
+                <label className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground lg:flex">
+                  <Smartphone className="h-4 w-4" />
+                  TikTok
+                  <Switch
+                    checked={tiktokPreview}
+                    onCheckedChange={setTiktokPreview}
+                    aria-label="เปิดพรีวิว TikTok"
+                  />
+                </label>
                 <Button
                   size="icon"
                   variant="ghost"
