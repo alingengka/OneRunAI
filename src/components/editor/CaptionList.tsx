@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { LINE_BREAK, type CaptionGroup, type Word } from "@/lib/captions";
-import { normalizeWordTimes } from "@/lib/caption-editing";
+import { editWordAt, lineBreakAfter, newWordAfter, removeWordAt } from "@/lib/word-actions";
 import { ColorSwatches } from "./ColorSwatches";
 
 type Props = {
@@ -23,6 +23,11 @@ type Props = {
   onChange: (words: Word[]) => void;
   onRetranscribe: (start: number, end: number) => void;
   busy: boolean;
+  /**
+   * Open the per-word popover on selection (desktop). On phones the word
+   * toolbar at the bottom edits the selected word instead.
+   */
+  popoverEdit?: boolean;
 };
 
 function fmtTime(t: number) {
@@ -42,6 +47,7 @@ function CaptionListView({
   onChange,
   onRetranscribe,
   busy,
+  popoverEdit = true,
 }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const selectedWord = selected != null ? words[selected] : undefined;
@@ -53,18 +59,12 @@ function CaptionListView({
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [selected]);
 
-  const commit = (next: Word[]) => onChange(normalizeWordTimes(next, duration));
-
   const editWord = (index: number, patch: Partial<Word>) => {
-    commit(words.map((word, i) => (i === index ? { ...word, ...patch } : word)));
-  };
-
-  const insertAfter = (index: number, word: Word) => {
-    commit([...words.slice(0, index + 1), word, ...words.slice(index + 1)]);
+    onChange(editWordAt(words, index, patch, duration));
   };
 
   const removeAt = (index: number) => {
-    onChange(words.filter((_, i) => i !== index));
+    onChange(removeWordAt(words, index));
     onSelect(null);
   };
 
@@ -119,7 +119,7 @@ function CaptionListView({
                 return (
                   <Popover
                     key={`${index}-${word.start}`}
-                    open={isSelected}
+                    open={isSelected && popoverEdit}
                     onOpenChange={(open) => {
                       if (!open && isSelected) onSelect(null);
                     }}
@@ -163,7 +163,7 @@ function CaptionListView({
                         </span>
                       </button>
                     </PopoverAnchor>
-                    {isSelected && selectedWord && (
+                    {isSelected && popoverEdit && selectedWord && (
                       <PopoverContent
                         align="start"
                         className="w-80 space-y-3"
@@ -255,13 +255,7 @@ function CaptionListView({
                           <Button
                             variant="ghost"
                             className="justify-start"
-                            onClick={() =>
-                              insertAfter(index, {
-                                text: LINE_BREAK,
-                                start: selectedWord.end,
-                                end: selectedWord.end,
-                              })
-                            }
+                            onClick={() => onChange(lineBreakAfter(words, index, duration))}
                           >
                             <CornerDownLeft className="mr-2 h-4 w-4" /> ขึ้นบรรทัดใหม่หลังคำนี้
                           </Button>
@@ -269,16 +263,7 @@ function CaptionListView({
                             variant="ghost"
                             className="justify-start"
                             onClick={() => {
-                              const next = words[index + 1];
-                              const end = Math.min(
-                                next ? next.start : duration,
-                                selectedWord.end + 0.4,
-                              );
-                              insertAfter(index, {
-                                text: "คำใหม่",
-                                start: selectedWord.end,
-                                end: Math.max(end, selectedWord.end + 0.06),
-                              });
+                              onChange(newWordAfter(words, index, duration));
                               onSelect(index + 1);
                             }}
                           >
