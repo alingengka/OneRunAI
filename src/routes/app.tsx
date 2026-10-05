@@ -1914,61 +1914,57 @@ function Studio() {
           {tab === "tools" && (
             <div className="space-y-8">
               <section aria-labelledby="ai-tools-heading">
-                <div className="mb-1">
-                  <h2 id="ai-tools-heading" className="text-base font-bold text-foreground">
-                    เครื่องมือ AI
-                  </h2>
-                </div>
+                {/* The panel header already says "เครื่องมือ AI". */}
+                <h2 id="ai-tools-heading" className="sr-only">
+                  เครื่องมือ AI
+                </h2>
 
                 <div className="divide-y divide-border">
                   <div className="py-4">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-                          <Captions className="h-5 w-5" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">AI Captions</p>
-                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                            ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ
-                          </p>
-                        </div>
-                      </div>
-                      <div className="col-span-2 row-start-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
-                        <Button
-                          size="sm"
-                          onClick={runTranscribe}
-                          disabled={transcribing || !file || analyzing}
-                        >
-                          {transcribing || analyzing ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-4 w-4" />
-                          )}
-                          สร้างซับด้วย AI
-                        </Button>
-                        {analyzing ? (
-                          <span className="text-xs text-muted-foreground">
-                            กำลังเตรียมไฟล์เสียง…
-                          </span>
-                        ) : null}
-
-                        <Button size="sm" variant="outline" onClick={() => setTab("styles")}>
-                          สไตล์
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setTab("text")}>
-                          แก้ไข
-                        </Button>
+                    <div className="flex items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                        <Captions className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">AI Captions</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          ถอดเสียงและสร้างซับอัตโนมัติ ปรับได้ทีละคำ
+                        </p>
                       </div>
                       <Switch
-                        className="col-start-2 row-start-1 sm:col-start-3"
+                        className="mt-1 shrink-0"
                         checked={captionsOn}
                         onCheckedChange={setCaptionsOn}
                         aria-label="เปิดคำบรรยาย"
                       />
                     </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 sm:ml-[52px]">
+                      <Button
+                        size="sm"
+                        onClick={runTranscribe}
+                        disabled={transcribing || !file || analyzing}
+                      >
+                        {transcribing || analyzing ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-4 w-4" />
+                        )}
+                        สร้างซับด้วย AI
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setTab("styles")}>
+                        สไตล์
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setTab("text")}>
+                        แก้ไข
+                      </Button>
+                      {analyzing ? (
+                        <span className="basis-full text-xs text-muted-foreground">
+                          กำลังเตรียมไฟล์เสียง…
+                        </span>
+                      ) : null}
+                    </div>
 
-                    <div className="mt-4 ml-0 border-l-2 border-primary/20 pl-3 sm:ml-12">
+                    <div className="mt-4 ml-0 border-l-2 border-primary/20 pl-3 sm:ml-[52px]">
                       <Label className="text-[11px] uppercase text-muted-foreground">
                         ภาษาต้นฉบับในวิดีโอ
                       </Label>
@@ -2033,22 +2029,26 @@ function Studio() {
                   </div>
 
                   <div className="py-4">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-                          <AudioLines className="h-5 w-5" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">เสียงประกอบ</p>
-                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                            เพิ่มจังหวะเสียงให้ข้อความและการเปลี่ยนซีน
-                          </p>
-                        </div>
+                    <div className="flex items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                        <AudioLines className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">เสียงประกอบ</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          เพิ่มจังหวะเสียงให้ข้อความและการเปลี่ยนซีน
+                        </p>
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => setTab("audio")}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        onClick={() => setTab("audio")}
+                      >
                         แก้ไข
                       </Button>
                       <Switch
+                        className="mt-1 shrink-0"
                         checked={sfx.enabled}
                         onCheckedChange={(enabled) =>
                           setSfx((current) => ({ ...current, enabled }))
@@ -2056,7 +2056,7 @@ function Studio() {
                         aria-label="เปิดเสียงประกอบ"
                       />
                     </div>
-                    <div className="mt-4 ml-0 space-y-2 border-l-2 border-primary/20 pl-3 sm:ml-12">
+                    <div className="mt-4 ml-0 space-y-2 border-l-2 border-primary/20 pl-3 sm:ml-[52px]">
                       <Label className="flex justify-between text-xs text-muted-foreground">
                         <span>ระดับเสียงประกอบ</span>
                         <span className="font-mono text-foreground">
@@ -2141,20 +2141,18 @@ function Studio() {
                   </div>
 
                   <div className="py-4">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-                          <Scissors className="h-5 w-5" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">ตัดช่วงเงียบ</p>
-                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                            ลบ dead-air ออกจากวิดีโออัตโนมัติ
-                          </p>
-                        </div>
+                    <div className="flex items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
+                        <Scissors className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">ตัดช่วงเงียบ</p>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          ลบ dead-air ออกจากวิดีโออัตโนมัติ
+                        </p>
                       </div>
                       <Button
-                        className="col-span-2 row-start-2 justify-self-start sm:col-span-1 sm:col-start-2 sm:row-start-1"
+                        className="shrink-0"
                         size="sm"
                         variant="outline"
                         disabled={!file || analyzing}
@@ -2163,13 +2161,13 @@ function Studio() {
                         {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ปรับค่า
                       </Button>
                       <Switch
-                        className="col-start-2 row-start-1 sm:col-start-3"
+                        className="mt-1 shrink-0"
                         checked={removeSilence}
                         onCheckedChange={setRemoveSilence}
                         aria-label="ตัดช่วงเงียบ"
                       />
                     </div>
-                    <div className="mt-5 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-12">
+                    <div className="mt-5 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-[52px]">
                       <div className="space-y-2">
                         <Label className="flex justify-between text-xs text-muted-foreground">
                           <span>ความไวเสียง</span>
