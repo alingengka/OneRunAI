@@ -555,6 +555,10 @@ function Studio() {
 
   // playback clock + silence skipping
   const lastClockRef = useRef(0);
+  const transformRef = useRef("");
+  useEffect(() => {
+    transformRef.current = ""; // a new <video> element starts untransformed
+  }, [videoUrl]);
   const scenesRef = useRef(scenes);
   scenesRef.current = scenes;
   const sceneElementsRef = useRef(sceneElements);
@@ -634,7 +638,12 @@ function Studio() {
         // element directly so it does not need a React render.
         const motion = motionAt(now, scenesRef.current, sceneElementsRef.current);
         const transform = `scale(${motion.scale}) translate(${motion.translateX * 100}%, ${motion.translateY * 100}%)`;
-        if (v.style.transform !== transform) v.style.transform = transform;
+        // Compare with what we last wrote: the browser normalises the style
+        // string, and re-setting it every frame recomposited the video.
+        if (transformRef.current !== transform) {
+          transformRef.current = transform;
+          v.style.transform = transform;
+        }
         const coarse = coarseTimeRef.current;
         if (
           v.paused

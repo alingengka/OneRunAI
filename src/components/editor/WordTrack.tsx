@@ -124,6 +124,8 @@ export function WordTrack({
    * video back to where it was, so playback looked frozen.
    */
   const touchingRef = useRef(false);
+  const clockRef = useRef(clock);
+  clockRef.current = clock;
   const gestureUntilRef = useRef(0);
   const seekFrameRef = useRef(0);
 
@@ -219,10 +221,17 @@ export function WordTrack({
     if (!el || !centered || pinchRef.current) return;
     if (!touchingRef.current && performance.now() > gestureUntilRef.current) return;
     if (Math.abs(el.scrollLeft - expectedScrollRef.current) <= 1) return;
+    // Touching the track pauses playback first, so a scroll while the video
+    // plays is the track following it, never the user scrubbing. On iPhones
+    // treating it as a scrub seeked the playing video backwards (stutter).
+    if (clockRef.current?.() != null) return;
     userScrollAtRef.current = performance.now();
-    const t = Math.max(0, Math.min(duration, el.scrollLeft / ppsRef.current));
     cancelAnimationFrame(seekFrameRef.current);
-    seekFrameRef.current = requestAnimationFrame(() => onSeek(t));
+    seekFrameRef.current = requestAnimationFrame(() => {
+      const now = scrollRef.current;
+      if (!now) return;
+      onSeek(Math.max(0, Math.min(duration, now.scrollLeft / ppsRef.current)));
+    });
   };
   useEffect(() => () => cancelAnimationFrame(seekFrameRef.current), []);
 
@@ -241,6 +250,9 @@ export function WordTrack({
     if (centered) {
       // Follow the video unless the user is dragging the track right now.
       if (touchingRef.current || performance.now() - userScrollAtRef.current < 250) return;
+      // While playing, the per-frame follow loop owns the scroll position;
+      // `time` lags behind then and would pull the track back.
+      if (clockRef.current?.() != null) return;
       if (Math.abs(el.scrollLeft - time * pps) > 0.5) setScroll(time * pps);
       return;
     }
@@ -251,8 +263,6 @@ export function WordTrack({
     // setScroll only touches refs and the element.
   }, [time, drag, centered, pps, half]);
 
-  const clockRef = useRef(clock);
-  clockRef.current = clock;
   const playheadRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef(drag);
   dragRef.current = drag;
