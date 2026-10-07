@@ -102,7 +102,7 @@ const th: LandingCopy = {
     accent: "ไวรัล",
     tail: "ด้วย OneRun",
     subtitle:
-      "อัปโหลดคลิป แล้วให้ AI ถอดเสียงลาวเป็นซับทีละคำ ตัดช่วงเงียบ ใส่สไตล์ สติกเกอร์ และ B-roll ให้พร้อมโพสต์ TikTok, Reels และ Shorts",
+      "อัปโหลดคลิป แล้วให้ AI ถอดเสียงลาวเป็นซับทีละคำ ใส่สไตล์ สติกเกอร์ และ B-roll ให้พร้อมโพสต์ TikTok, Reels และ Shorts",
     howButton: "ดูวิธีใช้",
     note: "ไม่ต้องผูกบัตร · ใช้ผ่านเบราว์เซอร์ได้ทั้งมือถือและคอม",
   },
@@ -116,8 +116,8 @@ const th: LandingCopy = {
         text: "AI หลายตัวช่วยกันถอดเสียงลาวเป็นอักษรลาวทีละคำ คำอังกฤษที่พูดปนก็ไม่หลุด",
       },
       {
-        title: "ตัดช่วงเงียบอัตโนมัติ",
-        text: "ลบช่วงพูดเว้นว่างให้คลิปกระชับ จังหวะไวแบบคลิปไวรัล",
+        title: "ลดเสียงรบกวน",
+        text: "กรองเสียงลม เสียงฮัม และปรับเสียงพูดให้ชัดขึ้นตอนส่งออกวิดีโอ",
       },
       { title: "สไตล์ซับพร้อมใช้", text: "Podcast สองบรรทัด ไฮไลต์คำ แถบสี และเปลี่ยนสีทีละคำได้" },
       {
@@ -143,7 +143,7 @@ const th: LandingCopy = {
     title: "3 ขั้นตอน คลิปพร้อมโพสต์",
     steps: [
       { title: "อัปโหลดคลิป", text: "เลือกไฟล์จากมือถือหรือคอม รองรับ MP4 และ MOV" },
-      { title: "AI ใส่ซับให้", text: "ถอดเสียงลาว ตัดช่วงเงียบ และจัดจังหวะคำให้อัตโนมัติ" },
+      { title: "AI ใส่ซับให้", text: "ถอดเสียงลาวและจัดจังหวะคำให้อัตโนมัติ" },
       { title: "แต่งแล้วส่งออก", text: "เลือกสไตล์ ใส่สติกเกอร์และ B-roll แล้วโพสต์ได้เลย" },
     ],
   },
@@ -227,7 +227,7 @@ const lo: LandingCopy = {
     accent: "ໄວຣັລ",
     tail: "ດ້ວຍ OneRun",
     subtitle:
-      "ອັບໂຫຼດຄລິບ ແລ້ວໃຫ້ AI ຖອດສຽງລາວເປັນຊັບເທື່ອລະຄຳ ຕັດຊ່ວງງຽບ ໃສ່ສະໄຕລ໌ ສະຕິກເກີ ແລະ B-roll ໃຫ້ພ້ອມໂພສ TikTok, Reels ແລະ Shorts",
+      "ອັບໂຫຼດຄລິບ ແລ້ວໃຫ້ AI ຖອດສຽງລາວເປັນຊັບເທື່ອລະຄຳ ໃສ່ສະໄຕລ໌ ສະຕິກເກີ ແລະ B-roll ໃຫ້ພ້ອມໂພສ TikTok, Reels ແລະ Shorts",
     howButton: "ເບິ່ງວິທີໃຊ້",
     note: "ບໍ່ຕ້ອງຜູກບັດ · ໃຊ້ຜ່ານບຣາວເຊີໄດ້ທັງມືຖືແລະຄອມ",
   },
@@ -241,8 +241,8 @@ const lo: LandingCopy = {
         text: "AI ຫຼາຍໂຕຊ່ວຍກັນຖອດສຽງລາວເປັນອັກສອນລາວເທື່ອລະຄຳ ຄຳອັງກິດທີ່ເວົ້າປົນກໍບໍ່ຫຼຸດ",
       },
       {
-        title: "ຕັດຊ່ວງງຽບອັດຕະໂນມັດ",
-        text: "ລຶບຊ່ວງທີ່ຢຸດເວົ້າອອກ ໃຫ້ຄລິບກະທັດຮັດ ຈັງຫວະໄວແບບຄລິບໄວຣັລ",
+        title: "ຫຼຸດສຽງລົບກວນ",
+        text: "ກອງສຽງລົມ ສຽງຮຳ ແລະປັບສຽງເວົ້າໃຫ້ຊັດຂຶ້ນຕອນສົ່ງອອກວິດີໂອ",
       },
       {
         title: "ສະໄຕລ໌ຊັບພ້ອມໃຊ້",
@@ -271,7 +271,7 @@ const lo: LandingCopy = {
     title: "3 ຂັ້ນຕອນ ຄລິບພ້ອມໂພສ",
     steps: [
       { title: "ອັບໂຫຼດຄລິບ", text: "ເລືອກໄຟລ໌ຈາກມືຖືຫຼືຄອມ ຮອງຮັບ MP4 ແລະ MOV" },
-      { title: "AI ໃສ່ຊັບໃຫ້", text: "ຖອດສຽງລາວ ຕັດຊ່ວງງຽບ ແລະຈັດຈັງຫວະຄຳໃຫ້ອັດຕະໂນມັດ" },
+      { title: "AI ໃສ່ຊັບໃຫ້", text: "ຖອດສຽງລາວ ແລະຈັດຈັງຫວະຄຳໃຫ້ອັດຕະໂນມັດ" },
       { title: "ແຕ່ງແລ້ວສົ່ງອອກ", text: "ເລືອກສະໄຕລ໌ ໃສ່ສະຕິກເກີແລະ B-roll ແລ້ວໂພສໄດ້ເລີຍ" },
     ],
   },
@@ -355,7 +355,7 @@ const en: LandingCopy = {
     accent: "viral",
     tail: "clips with OneRun",
     subtitle:
-      "Upload a clip and let AI turn Lao speech into word-by-word subtitles, cut the silences, and add styles, stickers and B-roll, ready for TikTok, Reels and Shorts.",
+      "Upload a clip and let AI turn Lao speech into word-by-word subtitles, then add styles, stickers and B-roll, ready for TikTok, Reels and Shorts.",
     howButton: "See how it works",
     note: "No card needed · Works in the browser on phone and computer",
   },
@@ -369,8 +369,8 @@ const en: LandingCopy = {
         text: "Several AI models work together to transcribe Lao into Lao script word by word, English words mixed in included.",
       },
       {
-        title: "Automatic silence cutting",
-        text: "Removes the pauses so your clip stays tight with a fast, viral pace.",
+        title: "Noise reduction",
+        text: "Filters out wind and hum and makes the voice clearer when you export.",
       },
       {
         title: "Ready-made caption styles",
@@ -404,7 +404,7 @@ const en: LandingCopy = {
       },
       {
         title: "AI adds subtitles",
-        text: "Transcribes Lao, cuts silences and times every word for you.",
+        text: "Transcribes Lao and times every word for you.",
       },
       {
         title: "Style and export",
