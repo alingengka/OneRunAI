@@ -15,8 +15,6 @@ import {
   Sparkles,
   Upload,
   Wand2,
-  Volume2,
-  VolumeX,
 } from "lucide-react";
 import { OneRunLogo } from "@/components/brand/OneRunLogo";
 import {
@@ -108,22 +106,18 @@ function Reveal({
 }
 
 /**
- * A phone playing a real clip edited with OneRun. Plays muted and looped
- * only while on screen (saves data on phones); a tap turns the sound on.
+ * A phone playing a real clip edited with OneRun: silent and looped, and
+ * only while on screen (saves data on phones).
  */
 function ShowcasePhone({
   src,
   poster,
   label,
-  muted,
-  onToggleSound,
   className,
 }: {
   src: string;
   poster: string;
   label: string;
-  muted: boolean;
-  onToggleSound: () => void;
   className?: string;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -137,16 +131,10 @@ function ShowcasePhone({
     observer.observe(video);
     return () => observer.disconnect();
   }, []);
-  useEffect(() => {
-    if (ref.current) ref.current.muted = muted;
-  }, [muted]);
   return (
-    <button
-      type="button"
-      onClick={onToggleSound}
-      aria-label={`${label} — ${muted ? "เปิดเสียง" : "ปิดเสียง"}`}
+    <div
       className={cn(
-        "group relative aspect-[9/16] w-[150px] shrink-0 overflow-hidden rounded-[1.6rem] border border-white/15 bg-black shadow-[0_30px_80px_-20px_rgba(124,58,237,0.55)] sm:w-[200px]",
+        "relative aspect-[9/16] w-[150px] shrink-0 overflow-hidden rounded-[1.6rem] border border-white/15 bg-black shadow-[0_30px_80px_-20px_rgba(124,58,237,0.55)] sm:w-[200px]",
         className,
       )}
     >
@@ -154,16 +142,14 @@ function ShowcasePhone({
         ref={ref}
         src={src}
         poster={poster}
+        aria-label={label}
         muted
         loop
         playsInline
         preload="metadata"
         className="h-full w-full object-cover"
       />
-      <span className="absolute bottom-2 right-2 grid h-7 w-7 place-items-center rounded-full bg-black/55 text-white backdrop-blur transition group-hover:bg-black/75">
-        {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
-      </span>
-    </button>
+    </div>
   );
 }
 
@@ -181,8 +167,6 @@ function Landing() {
   const yearly = pricing.data?.plans.find((plan) => plan.id === "yearly");
   const trial = pricing.data?.trial;
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
-  /** The showcase clip playing with sound, at most one at a time. */
-  const [soundOn, setSoundOn] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>("th");
   useEffect(() => setLang(initialLang()), []);
   useEffect(() => {
@@ -331,8 +315,6 @@ function Landing() {
                 src={`/showcase/${id}.mp4`}
                 poster={`/showcase/${id}.jpg`}
                 label={label}
-                muted={soundOn !== id}
-                onToggleSound={() => setSoundOn((current) => (current === id ? null : id))}
                 className={
                   i === 0
                     ? "absolute left-1/2 top-1/2 -translate-x-[115%] -translate-y-[46%] -rotate-[8deg] opacity-90"
