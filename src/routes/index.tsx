@@ -15,6 +15,8 @@ import {
   Sparkles,
   Upload,
   Wand2,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { OneRunLogo } from "@/components/brand/OneRunLogo";
 import {
@@ -105,67 +107,71 @@ function Reveal({
   );
 }
 
-type PhoneLook = "podcast" | "karaoke" | "bar";
-
-/** A phone showing a stylised clip with Lao captions appearing word by word. */
-function Phone({
-  look,
-  lines,
-  scene,
+/**
+ * A phone playing a real clip edited with OneRun. Plays muted and looped
+ * only while on screen (saves data on phones); a tap turns the sound on.
+ */
+function ShowcasePhone({
+  src,
+  poster,
+  label,
+  muted,
+  onToggleSound,
   className,
 }: {
-  look: PhoneLook;
-  lines: string[][];
-  scene: string;
+  src: string;
+  poster: string;
+  label: string;
+  muted: boolean;
+  onToggleSound: () => void;
   className?: string;
 }) {
-  const words = lines.flat();
-  const cycle = words.length * 0.55 + 1.4;
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const video = ref.current;
+    if (!video || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) void video.play().catch(() => undefined);
+      else video.pause();
+    });
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (ref.current) ref.current.muted = muted;
+  }, [muted]);
   return (
-    <div
+    <button
+      type="button"
+      onClick={onToggleSound}
+      aria-label={`${label} — ${muted ? "เปิดเสียง" : "ปิดเสียง"}`}
       className={cn(
-        "relative aspect-[9/19] w-[150px] shrink-0 overflow-hidden rounded-[1.6rem] border border-white/15 bg-black shadow-[0_30px_80px_-20px_rgba(124,58,237,0.55)] sm:w-[190px]",
+        "group relative aspect-[9/16] w-[150px] shrink-0 overflow-hidden rounded-[1.6rem] border border-white/15 bg-black shadow-[0_30px_80px_-20px_rgba(124,58,237,0.55)] sm:w-[200px]",
         className,
       )}
     >
-      <div className="absolute inset-0" style={{ background: scene }} />
-      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />
-      <div className="absolute left-1/2 top-2 h-4 w-14 -translate-x-1/2 rounded-full bg-black/80" />
-      <div
-        className={cn(
-          "absolute inset-x-3 bottom-[22%] font-['Noto_Sans_Lao'] font-black leading-tight",
-          look === "podcast" ? "text-left" : "text-center",
-        )}
-        style={{ textShadow: look === "bar" ? undefined : "0 2px 8px rgba(0,0,0,0.85)" }}
-      >
-        {lines.map((line, li) => (
-          <div
-            key={li}
-            className={cn(
-              look === "podcast" && li === 1
-                ? "text-[1.55rem] text-[#ffd400] sm:text-[1.9rem]"
-                : "text-[1rem] text-white sm:text-[1.2rem]",
-              look === "bar" && "mb-1 inline-block rounded-sm bg-[#facc15] px-1.5 text-[#111]",
-            )}
-          >
-            {line.map((word) => (
-              <span
-                key={word}
-                className={cn("onerun-word inline-block", look === "karaoke" && "onerun-karaoke")}
-                style={{
-                  animationDelay: `${words.indexOf(word) * 0.55}s`,
-                  animationDuration: `${cycle}s`,
-                }}
-              >
-                {word}
-              </span>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
+      <video
+        ref={ref}
+        src={src}
+        poster={poster}
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        className="h-full w-full object-cover"
+      />
+      <span className="absolute bottom-2 right-2 grid h-7 w-7 place-items-center rounded-full bg-black/55 text-white backdrop-blur transition group-hover:bg-black/75">
+        {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+      </span>
+    </button>
   );
 }
+
+const SHOWCASE = [
+  { id: "lao-2", label: "ตัวอย่างคลิปซับลาว" },
+  { id: "thai-1", label: "ตัวอย่างคลิปซับไทย" },
+  { id: "lao-1", label: "ตัวอย่างคลิปซับลาว" },
+] as const;
 
 function Landing() {
   const { session } = useSession();
@@ -175,6 +181,8 @@ function Landing() {
   const yearly = pricing.data?.plans.find((plan) => plan.id === "yearly");
   const trial = pricing.data?.trial;
   const [billing, setBilling] = useState<"monthly" | "yearly">("monthly");
+  /** The showcase clip playing with sound, at most one at a time. */
+  const [soundOn, setSoundOn] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>("th");
   useEffect(() => setLang(initialLang()), []);
   useEffect(() => {
@@ -317,27 +325,23 @@ function Landing() {
             delay={150}
             className="relative flex h-[360px] items-center justify-center sm:h-[460px]"
           >
-            <Phone
-              look="karaoke"
-              scene="linear-gradient(160deg,#1e3a8a,#0f172a 55%,#312e81)"
-              lines={[
-                ["ມື້ນີ້", "ຂ້ອຍ", "ຈະ"],
-                ["ພາ", "ໄປ", "ກິນ"],
-              ]}
-              className="absolute left-1/2 top-1/2 -translate-x-[115%] -translate-y-[46%] -rotate-[8deg] opacity-90"
-            />
-            <Phone
-              look="bar"
-              scene="linear-gradient(200deg,#7c2d12,#1c1917 60%,#451a03)"
-              lines={[["ລາຄາ", "ບໍ່", "ແພງ"]]}
-              className="absolute left-1/2 top-1/2 translate-x-[15%] -translate-y-[46%] rotate-[8deg] opacity-90"
-            />
-            <Phone
-              look="podcast"
-              scene="linear-gradient(180deg,#4c1d95,#1e1b4b 50%,#0b0a12)"
-              lines={[["ໃສ່ຊັບ"], ["ໂຄດງ່າຍ"]]}
-              className="relative z-10 -translate-y-[4%]"
-            />
+            {SHOWCASE.map(({ id, label }, i) => (
+              <ShowcasePhone
+                key={id}
+                src={`/showcase/${id}.mp4`}
+                poster={`/showcase/${id}.jpg`}
+                label={label}
+                muted={soundOn !== id}
+                onToggleSound={() => setSoundOn((current) => (current === id ? null : id))}
+                className={
+                  i === 0
+                    ? "absolute left-1/2 top-1/2 -translate-x-[115%] -translate-y-[46%] -rotate-[8deg] opacity-90"
+                    : i === 1
+                      ? "absolute left-1/2 top-1/2 translate-x-[15%] -translate-y-[46%] rotate-[8deg] opacity-90"
+                      : "relative z-10 -translate-y-[4%]"
+                }
+              />
+            ))}
           </Reveal>
         </section>
 
