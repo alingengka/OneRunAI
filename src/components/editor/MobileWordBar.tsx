@@ -34,7 +34,7 @@ type Props = {
  * and shrinks only the visual viewport, so a fixed sheet has to be lifted by
  * the difference to sit right above the keyboard.
  */
-function useKeyboardInset(): number {
+export function useKeyboardInset(): number {
   const [inset, setInset] = useState(0);
   useEffect(() => {
     const vv = window.visualViewport;

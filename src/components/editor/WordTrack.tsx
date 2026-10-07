@@ -59,6 +59,8 @@ type Props = {
   lanes?: TimelineLanes;
   selectedSticker?: string | null;
   onSelectSticker?: (id: string) => void;
+  /** Drag a selected sticker/text block to move it, or its edges to trim it. */
+  onStickerTime?: (id: string, start: number, end: number) => void;
   className?: string;
 };
 
@@ -100,6 +102,7 @@ export function WordTrack({
   lanes,
   selectedSticker = null,
   onSelectSticker,
+  onStickerTime,
   className,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -264,6 +267,14 @@ export function WordTrack({
   }, [time, drag, centered, pps, half]);
 
   const playheadRef = useRef<HTMLDivElement>(null);
+  const laneDragRef = useRef<{
+    id: string;
+    mode: "move" | "start" | "end";
+    x: number;
+    start: number;
+    end: number;
+    moved: boolean;
+  } | null>(null);
   const dragRef = useRef(drag);
   dragRef.current = drag;
   useEffect(() => {
@@ -387,7 +398,7 @@ export function WordTrack({
     onSeek(Math.max(0, Math.min(duration, t)));
   };
 
-  const blockHeight = centered ? 40 : compact ? 34 : 40;
+  const blockHeight = centered ? 36 : compact ? 34 : 40;
 
   const wordBlocks = useMemo(
     () =>
@@ -493,12 +504,26 @@ export function WordTrack({
   const peaks = useMemo(() => lanes?.peaks ?? [], [lanes?.peaks]);
   const peakStep = lanes?.peakStep ?? 0.05;
   const stickerItems = lanes?.stickers ?? [];
+  // Overlapping stickers/texts go on separate rows, like CapCut's stacked tracks.
+  const stickerRows = useMemo(() => {
+    const ends: number[] = [];
+    const rowOf = new Map<string, number>();
+    for (const item of [...stickerItems].sort((a, b) => a.start - b.start)) {
+      let row = ends.findIndex((end) => end <= item.start + 0.001);
+      if (row < 0) row = ends.length;
+      ends[row] = item.end;
+      rowOf.set(item.id, row);
+    }
+    return { rowOf, count: Math.max(1, ends.length) };
+  }, [stickerItems]);
   const showRuler = !compact || centered;
   const RULER = centered ? 18 : 24;
-  const GAP = 6;
-  const videoH = thumbs.length ? 40 : 0;
-  const stickerH = stickerItems.length ? 26 : 0;
-  const audioH = peaks.length ? 24 : 0;
+  // Phones get slimmer lanes so the tool panel under the timeline has room.
+  const GAP = centered ? 4 : 6;
+  const videoH = thumbs.length ? (centered ? 30 : 40) : 0;
+  const stickerRowH = centered ? 22 : 26;
+  const stickerH = stickerItems.length ? stickerRows.count * (stickerRowH + 2) - 2 : 0;
+  const audioH = peaks.length ? (centered ? 16 : 24) : 0;
   let cursor = showRuler ? RULER + 4 : compact ? 9 : 30;
   const videoTop = cursor;
   if (videoH) cursor += videoH + GAP;
@@ -652,26 +677,101 @@ export function WordTrack({
               className="absolute"
               style={{ left: origin, width, top: stickerTop, height: stickerH }}
             >
-              {stickerItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={() => onSelectSticker?.(item.id)}
-                  className={cn(
-                    "absolute top-0 h-full overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-[11px]",
-                    selectedSticker === item.id
-                      ? "border-2 border-amber-400 bg-amber-500/25"
-                      : "border-amber-700/60 bg-amber-900/40 text-amber-100",
-                  )}
-                  style={{
-                    left: item.start * pps,
-                    width: Math.max(18, (item.end - item.start) * pps - 2),
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
+              {stickerItems.map((item) => {
+                const selectedItem = selectedSticker === item.id;
+                const beginLaneDrag = (
+                  event: ReactPointerEvent<HTMLElement>,
+                  mode: "move" | "start" | "end",
+                ) => {
+                  event.stopPropagation();
+                  if (!selectedItem || !onStickerTime) return;
+                  event.preventDefault();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  laneDragRef.current = {
+                    id: item.id,
+                    mode,
+                    x: event.clientX,
+                    start: item.start,
+                    end: item.end,
+                    moved: false,
+                  };
+                };
+                const moveLaneDrag = (event: ReactPointerEvent<HTMLElement>) => {
+                  const d = laneDragRef.current;
+                  if (!d || d.id !== item.id || !onStickerTime) return;
+                  event.stopPropagation();
+                  const dt = (event.clientX - d.x) / ppsRef.current;
+                  if (Math.abs(event.clientX - d.x) > 3) d.moved = true;
+                  const len = d.end - d.start;
+                  if (d.mode === "move") {
+                    const start = Math.max(0, Math.min(duration - len, d.start + dt));
+                    onStickerTime(item.id, start, start + len);
+                  } else if (d.mode === "start") {
+                    onStickerTime(item.id, Math.max(0, Math.min(d.end - 0.2, d.start + dt)), d.end);
+                  } else {
+                    onStickerTime(
+                      item.id,
+                      d.start,
+                      Math.min(duration, Math.max(d.start + 0.2, d.end + dt)),
+                    );
+                  }
+                };
+                const endLaneDrag = (event: ReactPointerEvent<HTMLElement>) => {
+                  event.stopPropagation();
+                  laneDragRef.current = null;
+                };
+                return (
+                  <div
+                    key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${item.label}${selectedItem ? " — ลากเพื่อเลื่อนเวลา" : ""}`}
+                    onPointerDown={(event) => beginLaneDrag(event, "move")}
+                    onPointerMove={moveLaneDrag}
+                    onPointerUp={endLaneDrag}
+                    onPointerCancel={endLaneDrag}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectSticker?.(item.id);
+                    }}
+                    className={cn(
+                      "absolute overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-[11px]",
+                      selectedItem
+                        ? "cursor-grab touch-none border-2 border-amber-400 bg-amber-500/25"
+                        : "border-amber-700/60 bg-amber-900/40 text-amber-100",
+                    )}
+                    style={{
+                      left: item.start * pps,
+                      width: Math.max(18, (item.end - item.start) * pps - 2),
+                      top: (stickerRows.rowOf.get(item.id) ?? 0) * (stickerRowH + 2),
+                      height: stickerRowH,
+                      lineHeight: `${stickerRowH - 4}px`,
+                    }}
+                  >
+                    {item.label}
+                    {selectedItem && onStickerTime && (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          onPointerDown={(event) => beginLaneDrag(event, "start")}
+                          onPointerMove={moveLaneDrag}
+                          onPointerUp={endLaneDrag}
+                          onPointerCancel={endLaneDrag}
+                          className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize touch-none bg-amber-400/80"
+                        />
+                        <span
+                          aria-hidden="true"
+                          onPointerDown={(event) => beginLaneDrag(event, "end")}
+                          onPointerMove={moveLaneDrag}
+                          onPointerUp={endLaneDrag}
+                          onPointerCancel={endLaneDrag}
+                          className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize touch-none bg-amber-400/80"
+                        />
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
