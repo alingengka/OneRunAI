@@ -11,7 +11,6 @@ import {
   Loader2,
   Pause,
   Play,
-  Scissors,
   Smartphone,
   Sparkles,
   Upload,
@@ -120,6 +119,7 @@ import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt, type MotionKind } from "@/lib/media/motion";
 import { Clocked, createPlaybackClock, nextBoundaryAfter } from "@/lib/playback-clock";
+import { PlaybackDebug } from "@/components/editor/PlaybackDebug";
 import { isPriming, markUserPlay, primeFirstFrame } from "@/lib/media/first-frame";
 import {
   addSceneElement,
@@ -165,8 +165,7 @@ export const Route = createFileRoute("/app")({
       { title: "OneRunAI — AI Short Video Editor" },
       {
         name: "description",
-        content:
-          "ตัดคลิปสั้น สร้างซับไตเติลอัตโนมัติแบบทีละคำ ตัดช่วงเงียบ และส่งออกวิดีโอพร้อมโพสต์ด้วย OneRunAI",
+        content: "สร้างซับไตเติลอัตโนมัติแบบทีละคำ ใส่สไตล์ และส่งออกวิดีโอพร้อมโพสต์ด้วย OneRunAI",
       },
       { property: "og:title", content: "OneRunAI — AI Short Video Editor" },
       {
@@ -304,6 +303,11 @@ function Studio() {
    * re-render the whole editor every frame.
    */
   const clock = useMemo(() => createPlaybackClock(), []);
+  // ?debug=1 shows playback numbers on the preview (for phone stutter reports).
+  const [debugPlayback, setDebugPlayback] = useState(false);
+  useEffect(() => {
+    setDebugPlayback(new URLSearchParams(window.location.search).get("debug") === "1");
+  }, []);
   const [time, setCoarseTime] = useState(0);
   const setTime = useCallback(
     (t: number) => {
@@ -345,7 +349,6 @@ function Studio() {
   const [languages, setLanguages] = useState<LangCode[]>(["th"]);
 
   const [captionsOn, setCaptionsOn] = useState(true);
-  const [removeSilence, setRemoveSilence] = useState(false);
   const [noiseReduction, setNoiseReduction] = useState(false);
   const [resolution, setResolution] = useState<ExportResolution>("1080");
   const [exportFps, setExportFps] = useState(30);
@@ -429,22 +432,22 @@ function Studio() {
     (t: number) => droppedRanges.some((r) => t >= r.start - 0.001 && t <= r.end + 0.001),
     [droppedRanges],
   );
-  /** ช่วงที่จะเก็บไว้จริง = ช่วงพูด ลบซีนที่ผู้ใช้ปิดไว้ */
-  const keepSegments = useMemo(
-    () => segments.filter((s) => !isDropped((s.start + s.end) / 2)),
-    [segments, isDropped],
-  );
+  /**
+   * What goes into the export: the whole clip minus scenes the user turned
+   * off. Silence cutting was removed (users trim in CapCut first); speech
+   * segments are still detected, but only to split audio for transcription.
+   */
   const outputSegments = useMemo(() => {
-    if (removeSilence) return keepSegments;
     if (!duration) return [];
     const ranges = [...droppedRanges].sort((a, b) => a.start - b.start);
     return invertSegments(ranges, duration);
-  }, [removeSilence, keepSegments, droppedRanges, duration]);
+  }, [droppedRanges, duration]);
   const visibleWords = useMemo(() => words.filter((w) => !isDropped(w.start)), [words, isDropped]);
 
+  /** Parts left out of the export (turned-off scenes), skipped in the preview. */
   const silences = useMemo(
-    () => (duration ? invertSegments(keepSegments, duration) : []),
-    [keepSegments, duration],
+    () => (duration ? invertSegments(outputSegments, duration) : []),
+    [outputSegments, duration],
   );
   const groups = useMemo(
     () =>
@@ -519,10 +522,6 @@ function Studio() {
     const visible = activeGroup.words.filter((w) => w.text !== LINE_BREAK).length;
     return per > 0 ? Math.max(1, Math.ceil(visible / per)) : 1;
   }, [activeGroup, style.wordsPerLine]);
-  const savedSeconds = useMemo(
-    () => silences.reduce((sum, s) => sum + (s.end - s.start), 0),
-    [silences],
-  );
 
   // สถานะจริงของหน้าตัดต่อ ให้ชุดทดสอบ regression (guard:lao) อ่านผ่านเบราว์เซอร์ได้
   useEffect(() => {
@@ -599,7 +598,7 @@ function Studio() {
         const t = v.currentTime;
         // Only while playing: scrubbing a paused video through a cut must not jump.
         const gap =
-          removeSilence && keepSegments.length && !v.paused
+          silences.length && !v.paused
             ? silences.find((g) => t >= g.start && t < g.end - 0.03)
             : undefined;
         if (gap) {
@@ -621,7 +620,7 @@ function Studio() {
           }
           if (!fastForward) {
             endSkip(v);
-            const next = keepSegments.find((s) => s.start >= gap.end - 0.001);
+            const next = outputSegments.find((s) => s.start >= gap.end - 0.001);
             v.currentTime = next ? next.start : v.duration;
           }
         } else {
@@ -659,7 +658,7 @@ function Studio() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [removeSilence, keepSegments, silences, clock]);
+  }, [outputSegments, silences, clock]);
 
   useEffect(() => {
     setAudioEnabled(sfx.enabled);
@@ -699,7 +698,6 @@ function Studio() {
       noiseFloorRef.current = estimateNoiseFloor(buffer);
       setSegments(segs);
       setDuration((d) => d || buffer!.duration);
-      toast.success(`พบช่วงพูด ${segs.length} ช่วง`);
       play("success");
       return { buffer, segs };
     } catch (e) {
@@ -794,9 +792,8 @@ function Studio() {
     }
     const pending = analyze(f, threshold, minSilence).catch(() => undefined);
     analysisPromiseRef.current = pending;
-    const r = await pending;
+    await pending;
     if (analysisPromiseRef.current === pending) analysisPromiseRef.current = null;
-    if (r) setRemoveSilence(true); // AI Edit: ตัดช่วงเงียบอัตโนมัติทันที
   };
 
   // ── บันทึกงานอัตโนมัติ (ช่วงที่ตัด + ซับที่แก้แล้ว) ก่อนปิดหน้า ──────────
@@ -885,7 +882,6 @@ function Studio() {
     restoredProjectRef.current = true;
     if (p.sfx) setSfx(p.sfx);
     setDuration((d) => d || p.duration);
-    setRemoveSilence(true);
     setCaptionsOn(true);
     toast.success(`โหลดงานที่บันทึกไว้ (${p.fileName}) แล้ว — อัปโหลดคลิปเดิมเพื่อดูพรีวิว`);
   };
@@ -1171,8 +1167,7 @@ function Studio() {
       setTranscript(wordsToTranscript(ruled.words));
       setWords(ruled.words);
       setCaptionsOn(true);
-      setRemoveSilence(true);
-      toast.success("สร้างซับไตเติล + ตัดช่วงเงียบเรียบร้อย");
+      toast.success("สร้างซับไตเติลเรียบร้อย");
       play("success");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ถอดเสียงไม่สำเร็จ");
@@ -1400,11 +1395,11 @@ function Studio() {
   const baseName = () => (file?.name ?? "clip").replace(/\.[^.]+$/, "");
 
   const exportTrimmedVideo = () => {
-    if (!videoUrl || !keepSegments.length) {
+    if (!videoUrl || !outputSegments.length) {
       toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน");
       return;
     }
-    void runJob("ตัดช่วงเงียบและเรนเดอร์วิดีโอ", async (signal, onProgress) => {
+    void runJob("เรนเดอร์วิดีโอ", async (signal, onProgress) => {
       const blob = await exportTrimmedWebm(videoUrl, [...outputSegments], onProgress, {
         noiseReduction,
         noiseFloor: noiseFloorRef.current,
@@ -1412,12 +1407,12 @@ function Studio() {
         signal,
       });
       if (signal.aborted) return;
-      saveBlob(blob, `${baseName()}-nosilence.webm`);
-      toast.success("ได้วิดีโอที่ตัดช่วงเงียบออกแล้ว");
+      saveBlob(blob, `${baseName()}-onerun.webm`);
+      toast.success("ได้วิดีโอ .webm แล้ว");
     });
   };
 
-  /** ส่งออกวิดีโอสำเร็จรูป: ตัดช่วงเงียบ + ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
+  /** ส่งออกวิดีโอสำเร็จรูป: ฝังซับลงในภาพ ใช้โพสต์ได้เลย */
   const updateSticker = (id: string, patch: Partial<Sticker>) =>
     setStickers((current) => current.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   const removeSticker = (id: string) => {
@@ -1430,7 +1425,7 @@ function Studio() {
       exportSrt();
       return;
     }
-    if (!videoUrl || !keepSegments.length) {
+    if (!videoUrl || !outputSegments.length) {
       toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน");
       return;
     }
@@ -1542,7 +1537,7 @@ function Studio() {
   };
 
   const exportCapCutPackage = () => {
-    if (!videoUrl || !keepSegments.length || !groups.length) {
+    if (!videoUrl || !outputSegments.length || !groups.length) {
       toast.error("ต้องมีวิดีโอ ช่วงตัด และซับก่อน");
       return;
     }
@@ -1754,7 +1749,7 @@ function Studio() {
     toast.success("ดาวน์โหลด .srt แล้ว — ลากเข้า CapCut ได้เลย");
   };
   const exportEdl = () => {
-    if (!keepSegments.length) {
+    if (!outputSegments.length) {
       toast.error("ยังไม่ได้วิเคราะห์เสียง");
       return;
     }
@@ -1763,7 +1758,7 @@ function Studio() {
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
   const exportJson = () => {
-    if (!keepSegments.length) {
+    if (!outputSegments.length) {
       toast.error("ยังไม่ได้วิเคราะห์เสียง");
       return;
     }
@@ -1781,7 +1776,7 @@ function Studio() {
     toast.success("ดาวน์โหลดไฟล์ cut list แล้ว");
   };
   const exportXml = () => {
-    if (!keepSegments.length) {
+    if (!outputSegments.length) {
       toast.error("ยังไม่ได้วิเคราะห์เสียง");
       return;
     }
@@ -1797,7 +1792,7 @@ function Studio() {
       }),
       "application/xml",
     );
-    toast.success("ดาวน์โหลด .xml (timeline ตัดช่วงเงียบ) แล้ว");
+    toast.success("ดาวน์โหลด .xml (timeline) แล้ว");
   };
 
   const seekTo = (t: number) => {
@@ -1934,7 +1929,7 @@ function Studio() {
             }}
             onExport={() => exportFinalVideo()}
             busy={rendering}
-            disabled={exportType === "srt" ? !groups.length : !keepSegments.length}
+            disabled={exportType === "srt" ? !groups.length : !outputSegments.length}
           />
           <AccountMenu />
         </div>
@@ -2295,71 +2290,6 @@ function Studio() {
                       aria-label="ลดเสียงรบกวน"
                     />
                   </div>
-
-                  <div className="py-4">
-                    <div className="flex items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-                        <Scissors className="h-5 w-5" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold">ตัดช่วงเงียบ</p>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                          ลบ dead-air ออกจากวิดีโออัตโนมัติ
-                        </p>
-                      </div>
-                      <Button
-                        className="shrink-0"
-                        size="sm"
-                        variant="outline"
-                        disabled={!file || analyzing}
-                        onClick={() => file && void analyze(file, threshold, minSilence)}
-                      >
-                        {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ปรับค่า
-                      </Button>
-                      <Switch
-                        className="mt-1 shrink-0"
-                        checked={removeSilence}
-                        onCheckedChange={setRemoveSilence}
-                        aria-label="ตัดช่วงเงียบ"
-                      />
-                    </div>
-                    <div className="mt-5 ml-0 grid gap-5 border-l-2 border-primary/20 pl-3 sm:ml-[52px]">
-                      <div className="space-y-2">
-                        <Label className="flex justify-between text-xs text-muted-foreground">
-                          <span>ความไวเสียง</span>
-                          <span className="font-mono text-foreground">{threshold} dB</span>
-                        </Label>
-                        <Slider
-                          value={[threshold]}
-                          min={-60}
-                          max={-15}
-                          step={1}
-                          onValueChange={([v]) => setThreshold(v ?? -34)}
-                          onValueCommit={() => file && void analyze(file, threshold, minSilence)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="flex justify-between text-xs text-muted-foreground">
-                          <span>ช่วงเงียบขั้นต่ำ</span>
-                          <span className="font-mono text-foreground">
-                            {minSilence.toFixed(2)}s
-                          </span>
-                        </Label>
-                        <Slider
-                          value={[minSilence]}
-                          min={0.1}
-                          max={1.5}
-                          step={0.05}
-                          onValueChange={([v]) => setMinSilence(v ?? 0.35)}
-                          onValueCommit={() => file && void analyze(file, threshold, minSilence)}
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        ตัดออกได้ {savedSeconds.toFixed(1)}s · เหลือ{" "}
-                        {keptDuration(segments).toFixed(1)}s
-                      </p>
-                    </div>
-                  </div>
                 </div>
               </section>
 
@@ -2517,8 +2447,7 @@ function Studio() {
           {tab === "export" && (
             <div className="space-y-3">
               <div className="rounded-xl border border-border bg-secondary/40 p-3 text-xs">
-                พร้อมส่งออก: {keepSegments.length} ช่วง · ความยาวสุดท้าย{" "}
-                {keptDuration(keepSegments).toFixed(1)}s · ตัดออก {savedSeconds.toFixed(1)}s · ซับ{" "}
+                พร้อมส่งออก: ความยาว {keptDuration(outputSegments).toFixed(1)}s · ซับ{" "}
                 {groups.length} บล็อก
               </div>
 
@@ -2527,8 +2456,7 @@ function Studio() {
                   ส่งออกวิดีโอสำเร็จรูป (ไม่ต้องใช้ CapCut)
                 </p>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  ตัดช่วงเงียบ + ซีนที่ปิดไว้ แล้วฝังซับลงในภาพตามสไตล์ปัจจุบัน โพสต์ลง TikTok /
-                  Reels ได้ทันที
+                  ฝังซับลงในภาพตามสไตล์ปัจจุบัน (ไม่รวมซีนที่ปิดไว้) โพสต์ลง TikTok / Reels ได้ทันที
                 </p>
                 <div className="mb-3 space-y-2">
                   <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -2570,8 +2498,8 @@ function Studio() {
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    ใช้ได้เฉพาะปุ่ม "เรนเดอร์วิดีโอพร้อมซับ" (เรนเดอร์ผ่าน canvas) — ไฟล์ .webm
-                    ตัดช่วงเงียบและ CapCut Package ยังใช้ความละเอียดต้นฉบับ
+                    ใช้ได้เฉพาะปุ่ม "เรนเดอร์วิดีโอพร้อมซับ" (เรนเดอร์ผ่าน canvas) — ไฟล์ .webm และ
+                    CapCut Package ยังใช้ความละเอียดต้นฉบับ
                   </p>
                   {resolution === "4k" ? (
                     <p className="text-[11px] text-amber-500">
@@ -2584,7 +2512,7 @@ function Studio() {
                 <Button
                   size="sm"
                   onClick={() => exportFinalVideo(captionsOn ? "captions" : "clean")}
-                  disabled={rendering || !keepSegments.length}
+                  disabled={rendering || !outputSegments.length}
                 >
                   {rendering ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2598,14 +2526,14 @@ function Studio() {
               <div className="rounded-xl border border-border p-4">
                 <p className="mb-1 text-sm font-medium">ส่งออกเข้า CapCut / โปรแกรมตัดต่อ</p>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอตัดช่วงเงียบ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว
-                  Import ทั้งสองไฟล์เข้า CapCut
+                  ดาวน์โหลดแพ็กเกจเดียวที่มีวิดีโอ + SRT ซึ่งใช้ไทม์ไลน์เดียวกัน แล้ว Import
+                  ทั้งสองไฟล์เข้า CapCut
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
                     onClick={exportCapCutPackage}
-                    disabled={rendering || !keepSegments.length || !groups.length}
+                    disabled={rendering || !outputSegments.length || !groups.length}
                   >
                     {rendering ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2620,14 +2548,14 @@ function Studio() {
                   <Button
                     size="sm"
                     onClick={exportTrimmedVideo}
-                    disabled={rendering || !keepSegments.length}
+                    disabled={rendering || !outputSegments.length}
                   >
                     {rendering ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
                       <Download className="mr-2 h-4 w-4" />
                     )}
-                    วิดีโอตัดช่วงเงียบ .webm
+                    วิดีโอ .webm
                   </Button>
                   <Button size="sm" variant="secondary" onClick={exportXml}>
                     <FileDown className="mr-2 h-4 w-4" /> .xml
@@ -3043,6 +2971,7 @@ function Studio() {
               </div>
             </div>
 
+            {debugPlayback && <PlaybackDebug videoRef={videoRef} />}
             <div className="mt-2 space-y-2 lg:mt-4 lg:space-y-3">
               <div className="relative hidden h-2 w-full overflow-hidden rounded-full bg-secondary lg:block">
                 {duration > 0 &&
@@ -3165,7 +3094,7 @@ function Studio() {
               words={words}
               duration={duration}
               time={time}
-              cuts={removeSilence ? silences : []}
+              cuts={silences}
               selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
               onSelect={(index) => {
                 setSelectedSticker(null);
@@ -3207,7 +3136,7 @@ function Studio() {
                 words={words}
                 duration={duration}
                 time={time}
-                cuts={removeSilence ? silences : []}
+                cuts={silences}
                 selected={selectedWord != null && selectedWord < words.length ? selectedWord : null}
                 onSelect={(index) => {
                   setSelectedSticker(null);

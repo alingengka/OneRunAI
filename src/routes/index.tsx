@@ -4,13 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ArrowRight,
+  AudioLines,
   Captions,
   Check,
   Download,
   Film,
   Languages,
   Palette,
-  Scissors,
   Smile,
   Sparkles,
   Upload,
@@ -36,12 +36,12 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "AI ถอดเสียงภาษาลาวเป็นซับทีละคำ ตัดช่วงเงียบ ใส่สไตล์ สติกเกอร์ และ B-roll แล้วส่งออกพร้อมโพสต์ TikTok, Reels, Shorts ทดลองใช้ฟรี 5 วัน",
+          "AI ถอดเสียงภาษาลาวเป็นซับทีละคำ ใส่สไตล์ สติกเกอร์ และ B-roll แล้วส่งออกพร้อมโพสต์ TikTok, Reels, Shorts ทดลองใช้ฟรี 5 วัน",
       },
       { property: "og:title", content: "OneRunAI — ใส่ซับลาวให้คลิปไวรัลด้วย OneRun" },
       {
         property: "og:description",
-        content: "ซับลาวแม่นยำ ตัดช่วงเงียบ สไตล์ไวรัล ส่งออกพร้อมโพสต์ ทดลองใช้ฟรี 5 วัน",
+        content: "ซับลาวแม่นยำ สไตล์ไวรัล ส่งออกพร้อมโพสต์ ทดลองใช้ฟรี 5 วัน",
       },
     ],
   }),
@@ -52,7 +52,7 @@ export const Route = createFileRoute("/")({
 const PROMO = { code: "ONERUN", monthlyKip: 99_000, yearlyKip: 990_000 };
 
 const NAV_HREFS = ["#features", "#how", "#pricing", "#faq"] as const;
-const FEATURE_ICONS = [Captions, Scissors, Palette, Smile, Film, Languages, Download];
+const FEATURE_ICONS = [Captions, AudioLines, Palette, Smile, Film, Languages, Download];
 /** Bento cards that span two columns. */
 const WIDE_FEATURES = new Set([0, 6]);
 const STEP_ICONS = [Upload, Wand2, Sparkles];

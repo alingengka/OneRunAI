@@ -526,10 +526,10 @@ export function WordTrack({
     <div data-word-track="" className={cn("relative flex min-w-0 flex-col", className)}>
       {!compact && !centered && (
         <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border px-3">
-          <span className="text-sm font-semibold">ไทม์ไลน์คำ</span>
+          <span className="shrink-0 whitespace-nowrap text-sm font-semibold">ไทม์ไลน์คำ</span>
           <span className="hidden truncate text-xs text-muted-foreground md:inline">
             ลากคำไปวางตรงไหนก็ได้ · ลากขอบคำเพื่อยืด/หด · เลื่อนลูกกลิ้ง/บีบนิ้วบนแทร็กแพดเพื่อซูม ·
-            ลายทาง = ช่วงเงียบที่ถูกตัด
+            ลายทาง = ซีนที่ปิดไว้
           </span>
           <div className="ml-auto flex items-center gap-1">
             <Button
