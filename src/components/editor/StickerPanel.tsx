@@ -83,7 +83,9 @@ function GraphicThumb({
 }
 
 const label = (sticker: Sticker) =>
-  sticker.kind === "emoji"
+  sticker.kind === "text"
+    ? `ข้อความ: ${sticker.asset}`
+    : sticker.kind === "emoji"
     ? (EMOJIS.find((e) => e.code === sticker.asset)?.char ?? "🙂")
     : sticker.kind === "image"
       ? "รูปของฉัน"

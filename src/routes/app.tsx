@@ -156,7 +156,14 @@ import {
 import { ExportMenu, loadExportPreset, type ExportType } from "@/components/editor/ExportMenu";
 import { StickerOverlay } from "@/components/editor/StickerOverlay";
 import { StickerPanel } from "@/components/editor/StickerPanel";
-import { EMOJIS, suggestEmojiStickers, type Sticker } from "@/lib/media/stickers";
+import {
+  DEFAULT_TEXT_FONT,
+  EMOJIS,
+  newStickerId,
+  suggestEmojiStickers,
+  type Sticker,
+} from "@/lib/media/stickers";
+import { MobileTextSheet } from "@/components/editor/MobileTextSheet";
 import { AccountMenu } from "@/components/account/AccountMenu";
 
 export const Route = createFileRoute("/app")({
@@ -334,6 +341,8 @@ function Studio() {
   }, [expanded]);
   const [stickers, setStickers] = useState<Sticker[]>([]);
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
+  /** Phone: the text layer open in the bottom edit sheet. */
+  const [textSheet, setTextSheet] = useState<string | null>(null);
 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [transcript, setTranscript] = useState("");
@@ -487,7 +496,9 @@ function Studio() {
         label:
           sticker.kind === "emoji"
             ? (EMOJIS.find((emoji) => emoji.code === sticker.asset)?.char ?? "😀")
-            : "สติกเกอร์",
+            : sticker.kind === "text"
+              ? `T ${sticker.asset.replace(/\s+/g, " ").slice(0, 24)}`
+              : "สติกเกอร์",
       })),
     }),
     [timelineThumbs, peaks, stickers],
@@ -1423,6 +1434,42 @@ function Studio() {
   const removeSticker = (id: string) => {
     setStickers((current) => current.filter((s) => s.id !== id));
     setSelectedSticker((current) => (current === id ? null : current));
+    setTextSheet((current) => (current === id ? null : current));
+  };
+  /** Free text layer at the playhead (CapCut "Add text"), selected and ready to type. */
+  const addTextLayer = () => {
+    const start = Math.max(0, Math.min(time, Math.max(0, duration - 0.5)));
+    const layer: Sticker = {
+      id: newStickerId(),
+      kind: "text",
+      asset: "ข้อความ",
+      start,
+      end: Math.min(duration || start + 3, start + 3),
+      x: 50,
+      y: 35,
+      size: 6,
+      rotation: 0,
+      color: "#ffffff",
+      stroke: "#111111",
+      font: DEFAULT_TEXT_FONT,
+    };
+    videoRef.current?.pause();
+    setStickers((current) => [...current, layer]);
+    setSelectedWord(null);
+    setSelectedSticker(layer.id);
+    if (!isDesktop) setTextSheet(layer.id);
+  };
+  const duplicateSticker = (id: string) => {
+    const source = stickers.find((s) => s.id === id);
+    if (!source) return;
+    const copy = { ...source, id: newStickerId(), y: Math.min(95, source.y + 8) };
+    setStickers((current) => [...current, copy]);
+    setSelectedSticker(copy.id);
+    if (textSheet) setTextSheet(copy.id);
+  };
+  const editTextLayer = (id: string) => {
+    setSelectedSticker(id);
+    if (!isDesktop) setTextSheet(id);
   };
 
   const exportFinalVideo = (type: ExportType = exportType) => {
@@ -2049,7 +2096,7 @@ function Studio() {
                       ]
                     : [
                         ["scenes", "ซีน & B-roll"],
-                        ["stickers", "สติกเกอร์"],
+                        ["stickers", "ข้อความ & สติกเกอร์"],
                       ]) as [Tab, string][]
                 ).map(([key, label]) => (
                   <button
@@ -2398,6 +2445,11 @@ function Studio() {
             </div>
           )}
 
+          {tab === "stickers" && (
+            <Button className="mb-3 w-full" onClick={addTextLayer} disabled={!videoUrl}>
+              <Type className="mr-2 h-4 w-4" /> เพิ่มข้อความ
+            </Button>
+          )}
           {tab === "stickers" && (
             <StickerPanel
               stickers={stickers}
@@ -2969,6 +3021,7 @@ function Studio() {
                           onSelect={setSelectedSticker}
                           onChange={updateSticker}
                           onRemove={removeSticker}
+                          onEdit={editTextLayer}
                           interactive={!playing}
                         />
                       )}
@@ -3034,6 +3087,18 @@ function Studio() {
                   <span className="hidden sm:inline"> / {fmt(duration)}</span>
                 </span>
                 <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-10 shrink-0 gap-1 px-2.5 font-semibold"
+                  onClick={addTextLayer}
+                  disabled={!videoUrl}
+                  aria-label="เพิ่มข้อความ"
+                  title="เพิ่มข้อความ"
+                >
+                  <Type className="h-4 w-4" />
+                  <span className="hidden sm:inline">ข้อความ</span>
+                </Button>
+                <Button
                   size="icon"
                   variant="ghost"
                   className="h-10 w-10 shrink-0"
@@ -3091,6 +3156,7 @@ function Studio() {
           onRetranscribe={(start, end) => void retranscribeRange(start, end)}
           onStickerChange={updateSticker}
           onStickerRemove={removeSticker}
+          onStickerDuplicate={duplicateSticker}
           onOpenStickers={() => setTab("stickers")}
           onStyleChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
         />
@@ -3116,6 +3182,7 @@ function Studio() {
               clock={playClock}
               lanes={timelineLanes}
               selectedSticker={selectedSticker}
+              onStickerTime={(id, start, end) => updateSticker(id, { start, end })}
               onSelectSticker={(id) => {
                 setSelectedWord(null);
                 setSelectedSticker(id);
@@ -3156,6 +3223,7 @@ function Studio() {
                 clock={playClock}
                 lanes={timelineLanes}
                 selectedSticker={selectedSticker}
+                onStickerTime={(id, start, end) => updateSticker(id, { start, end })}
                 onSelectSticker={(id) => {
                   setSelectedWord(null);
                   setSelectedSticker(id);
@@ -3165,6 +3233,21 @@ function Studio() {
           </div>
         )}
       </div>
+
+      {/* Phone: editing a text layer */}
+      {!isDesktop &&
+        (() => {
+          const layer = textSheet ? stickers.find((s) => s.id === textSheet) : undefined;
+          return layer ? (
+            <MobileTextSheet
+              sticker={layer}
+              onChange={(patch) => updateSticker(layer.id, patch)}
+              onDuplicate={() => duplicateSticker(layer.id)}
+              onRemove={() => removeSticker(layer.id)}
+              onClose={() => setTextSheet(null)}
+            />
+          ) : null;
+        })()}
 
       {/* Phone: tools for the selected word replace the bottom menu */}
       {!isDesktop && selectedWordValid != null && (

@@ -7,7 +7,8 @@
 
 /** "image" and "lottie" are the user's own uploads (data URL / Lottie JSON text). */
 /** "animated" is a GIF/WebP sticker from KLIPY, drawn frame by frame. */
-export type StickerKind = "emoji" | "graphic" | "image" | "lottie" | "animated";
+/** "text" is a free text layer (CapCut "Add text"); its words live in `asset`. */
+export type StickerKind = "emoji" | "graphic" | "image" | "lottie" | "animated" | "text";
 
 export type GraphicId =
   "arrow" | "circle" | "underline" | "sparkles" | "follow" | "heart" | "check" | "burst";
@@ -27,9 +28,87 @@ export type Sticker = {
   size: number;
   /** degrees */
   rotation: number;
-  /** main color for motion graphics */
+  /** main color for motion graphics; the fill color of a text layer */
   color?: string | undefined;
+  /** text layers: outline color (none when unset) */
+  stroke?: string | undefined;
+  /** text layers: color of a rounded plate behind the text (none when unset) */
+  background?: string | undefined;
+  /** text layers: CSS font-family */
+  font?: string | undefined;
+  /** text layers: 0–1 */
+  opacity?: number | undefined;
 };
+
+export const DEFAULT_TEXT_FONT = "'Noto Sans Lao', 'Noto Sans Thai', 'Inter', sans-serif";
+
+/** `size` of a text layer is its line height in % of the frame height. */
+function textFont(sticker: Sticker, px: number): string {
+  return `800 ${px}px ${sticker.font || DEFAULT_TEXT_FONT}`;
+}
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+/** Lines and pixel size of a text layer drawn on a frame `height` px tall. */
+export function textLayout(
+  sticker: Sticker,
+  height: number,
+  ctx?: CanvasRenderingContext2D,
+): { lines: string[]; px: number; lineHeight: number; width: number; height: number; pad: number } {
+  const px = Math.max(4, (sticker.size / 100) * height);
+  const lines = (sticker.asset || " ").split("\n");
+  let c = ctx ?? measureCtx;
+  if (!c && typeof document !== "undefined") {
+    c = measureCtx = document.createElement("canvas").getContext("2d");
+  }
+  let width = px * 0.6 * Math.max(...lines.map((l) => l.length));
+  if (c) {
+    c.save();
+    c.font = textFont(sticker, px);
+    width = Math.max(...lines.map((line) => c!.measureText(line).width));
+    c.restore();
+  }
+  const lineHeight = px * 1.3;
+  const pad = sticker.background ? px * 0.35 : sticker.stroke ? px * 0.12 : 0;
+  return { lines, px, lineHeight, width, height: lineHeight * lines.length, pad };
+}
+
+/** Size of a sticker's box on a frame `height` px tall (text boxes fit their text). */
+export function stickerBoxPx(sticker: Sticker, height: number): { w: number; h: number } {
+  if (sticker.kind !== "text") {
+    const box = (sticker.size / 100) * height;
+    return { w: box, h: box };
+  }
+  const t = textLayout(sticker, height);
+  return { w: t.width + t.pad * 2, h: t.height + t.pad * 2 };
+}
+
+function drawTextLayer(ctx: CanvasRenderingContext2D, sticker: Sticker, height: number) {
+  const t = textLayout(sticker, height, ctx);
+  ctx.globalAlpha *= sticker.opacity ?? 1;
+  if (sticker.background) {
+    const w = t.width + t.pad * 2;
+    const h = t.height + t.pad * 2;
+    ctx.fillStyle = sticker.background;
+    ctx.beginPath();
+    ctx.roundRect(-w / 2, -h / 2, w, h, t.px * 0.3);
+    ctx.fill();
+  }
+  ctx.font = textFont(sticker, t.px);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  t.lines.forEach((line, i) => {
+    const y = (i - (t.lines.length - 1) / 2) * t.lineHeight;
+    if (sticker.stroke) {
+      ctx.strokeStyle = sticker.stroke;
+      ctx.lineWidth = t.px * 0.2;
+      ctx.strokeText(line, 0, y);
+    }
+    ctx.fillStyle = sticker.color ?? "#ffffff";
+    ctx.fillText(line, 0, y);
+  });
+}
 
 export type EmojiAsset = { code: string; char: string; keywords: string[] };
 
@@ -411,7 +490,8 @@ function stickerEnvelope(sticker: Sticker, time: number): { alpha: number; scale
   const exit = clamp01(left / 0.18);
   return {
     alpha: Math.min(enter, exit),
-    scale: sticker.kind === "graphic" ? 1 : 0.6 + 0.4 * easeBack(local / 0.3),
+    scale:
+      sticker.kind === "graphic" || sticker.kind === "text" ? 1 : 0.6 + 0.4 * easeBack(local / 0.3),
   };
 }
 
@@ -576,7 +656,19 @@ export function createStickerLayer(resolution = 512): StickerLayer {
       const lotties = new Set(stickers.filter((s) => s.kind === "lottie").map((s) => s.asset));
       const pics = new Set(stickers.filter((s) => s.kind === "image").map((s) => s.asset));
       const gifs = new Set(stickers.filter((s) => s.kind === "animated").map((s) => s.asset));
+      // Text layers draw with web fonts; a canvas only uses a font once it is loaded.
+      const fonts =
+        typeof document !== "undefined" && document.fonts
+          ? [
+              ...new Set(
+                stickers.filter((s) => s.kind === "text").map((s) => s.font || DEFAULT_TEXT_FONT),
+              ),
+            ].map((family) =>
+              document.fonts.load(`800 64px ${family}`, "ສະບາຍດີ ABC ก").catch(() => undefined),
+            )
+          : [];
       await Promise.all([
+        ...fonts,
         ...[...gifs].map(loadAnimated),
         ...[...codes].map((code) => load(code)),
         ...[...lotties].map((json) => load(json, "lottie")),
@@ -594,7 +686,9 @@ export function createStickerLayer(resolution = 512): StickerLayer {
         ctx.translate((sticker.x / 100) * width, (sticker.y / 100) * height);
         if (sticker.rotation) ctx.rotate((sticker.rotation * Math.PI) / 180);
         ctx.scale(scale, scale);
-        if (sticker.kind === "animated") {
+        if (sticker.kind === "text") {
+          drawTextLayer(ctx, sticker, height);
+        } else if (sticker.kind === "animated") {
           const anim = readyAnimations.get(sticker.asset);
           if (!anim) void loadAnimated(sticker.asset);
           else {

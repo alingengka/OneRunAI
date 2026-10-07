@@ -8,6 +8,7 @@ import type { Sticker } from "@/lib/media/stickers";
 import { editWordAt, lineBreakAfter, newWordAfter, removeWordAt } from "@/lib/word-actions";
 import { ColorSwatches } from "./ColorSwatches";
 import { CaptionColorControls, CaptionLayoutControls } from "./CaptionLayoutControls";
+import { TextLayerControls } from "./TextLayerControls";
 
 type Props = {
   words: Word[];
@@ -25,6 +26,7 @@ type Props = {
   onRetranscribe: (start: number, end: number) => void;
   onStickerChange: (id: string, patch: Partial<Sticker>) => void;
   onStickerRemove: (id: string) => void;
+  onStickerDuplicate: (id: string) => void;
   onOpenStickers: () => void;
   onStyleChange: (patch: Partial<CaptionStyle>) => void;
   className?: string;
@@ -92,6 +94,7 @@ export function Inspector({
   onRetranscribe,
   onStickerChange,
   onStickerRemove,
+  onStickerDuplicate,
   onOpenStickers,
   onStyleChange,
   className,
@@ -187,6 +190,36 @@ export function Inspector({
               <Trash2 className="mr-2 h-4 w-4" /> ลบคำ
             </Button>
           </div>
+        </div>
+      ) : sticker?.kind === "text" ? (
+        <div className="space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+            ข้อความที่เลือก
+          </p>
+          <TextLayerControls
+            sticker={sticker}
+            onChange={(patch) => onStickerChange(sticker.id, patch)}
+            onDuplicate={() => onStickerDuplicate(sticker.id)}
+            onRemove={() => onStickerRemove(sticker.id)}
+          />
+          <TimeFields
+            id="inspector-text"
+            start={sticker.start}
+            end={sticker.end}
+            onStart={(start) =>
+              onStickerChange(sticker.id, {
+                start: Math.max(0, Math.min(start, sticker.end - 0.1)),
+              })
+            }
+            onEnd={(end) =>
+              onStickerChange(sticker.id, {
+                end: Math.min(duration, Math.max(end, sticker.start + 0.1)),
+              })
+            }
+          />
+          <p className="text-xs text-muted-foreground">
+            ลากข้อความบนพรีวิวเพื่อย้าย ใช้มุมเพื่อหมุนหรือย่อขยาย ลากแถบบนไทม์ไลน์เพื่อเปลี่ยนเวลา
+          </p>
         </div>
       ) : sticker ? (
         <div className="space-y-4">

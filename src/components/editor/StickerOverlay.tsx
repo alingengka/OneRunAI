@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { RotateCw, X } from "lucide-react";
+import { Pencil, RotateCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { createStickerLayer, type Sticker, type StickerLayer } from "@/lib/media/stickers";
+import {
+  createStickerLayer,
+  stickerBoxPx,
+  type Sticker,
+  type StickerLayer,
+} from "@/lib/media/stickers";
 
 type Props = {
   stickers: Sticker[];
@@ -13,6 +18,8 @@ type Props = {
   onSelect: (id: string | null) => void;
   onChange: (id: string, patch: Partial<Sticker>) => void;
   onRemove: (id: string) => void;
+  /** open the editor for a text layer (pencil handle, double tap) */
+  onEdit?: (id: string) => void;
   /** allow dragging and resizing (off while playing) */
   interactive: boolean;
 };
@@ -51,6 +58,7 @@ export function StickerOverlay({
   onSelect,
   onChange,
   onRemove,
+  onEdit,
   interactive,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -148,7 +156,7 @@ export function StickerOverlay({
     } else {
       const dist = Math.hypot(event.clientX - drag.cx, event.clientY - drag.cy);
       onChange(drag.id, {
-        size: Math.round(clamp((drag.startSize * dist) / drag.startDist, 4, 80)),
+        size: Math.round(clamp((drag.startSize * dist) / drag.startDist, 2, 80) * 10) / 10,
       });
     }
   };
@@ -168,14 +176,18 @@ export function StickerOverlay({
       {interactive &&
         visible.map((sticker) => {
           // at least a fingertip wide, so small stickers stay easy to grab on phones
-          const box = Math.max(44, (sticker.size / 100) * height);
+          const size = stickerBoxPx(sticker, height);
+          const isText = sticker.kind === "text";
           const selected = sticker.id === selectedId;
           return (
             <div
               key={sticker.id}
               role="button"
               tabIndex={0}
-              aria-label="สติกเกอร์ — ลากเพื่อย้าย"
+              aria-label={
+                isText ? `ข้อความ “${sticker.asset}” — ลากเพื่อย้าย` : "สติกเกอร์ — ลากเพื่อย้าย"
+              }
+              onDoubleClick={() => isText && onEdit?.(sticker.id)}
               onPointerDown={(event) => begin(event, sticker, "move")}
               onPointerMove={move}
               onPointerUp={end}
@@ -192,8 +204,8 @@ export function StickerOverlay({
               style={{
                 left: `${sticker.x}%`,
                 top: `${sticker.y}%`,
-                width: box,
-                height: box,
+                width: Math.max(44, size.w),
+                height: Math.max(44, size.h),
                 transform: `translate(-50%, -50%) rotate(${sticker.rotation}deg)`,
               }}
             >
@@ -211,6 +223,20 @@ export function StickerOverlay({
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
+                  {isText && onEdit && (
+                    <button
+                      type="button"
+                      aria-label="แก้ข้อความ"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEdit(sticker.id);
+                      }}
+                      className="absolute -left-3.5 -top-3.5 grid h-7 w-7 place-items-center rounded-full bg-white text-black shadow-md before:absolute before:-inset-3 before:content-['']"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <span
                     role="button"
                     aria-label="ลากเพื่อย่อหรือขยายสติกเกอร์"
