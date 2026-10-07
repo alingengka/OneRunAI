@@ -120,6 +120,7 @@ import { buildCapCutPackage } from "@/lib/capcut-package";
 import type { SoundPack } from "@/lib/audio-system";
 import { motionAt, type MotionKind } from "@/lib/media/motion";
 import { Clocked, createPlaybackClock, nextBoundaryAfter } from "@/lib/playback-clock";
+import { PlaybackDebug } from "@/components/editor/PlaybackDebug";
 import { isPriming, markUserPlay, primeFirstFrame } from "@/lib/media/first-frame";
 import {
   addSceneElement,
@@ -304,6 +305,11 @@ function Studio() {
    * re-render the whole editor every frame.
    */
   const clock = useMemo(() => createPlaybackClock(), []);
+  // ?debug=1 shows playback numbers on the preview (for phone stutter reports).
+  const [debugPlayback, setDebugPlayback] = useState(false);
+  useEffect(() => {
+    setDebugPlayback(new URLSearchParams(window.location.search).get("debug") === "1");
+  }, []);
   const [time, setCoarseTime] = useState(0);
   const setTime = useCallback(
     (t: number) => {
@@ -3043,6 +3049,7 @@ function Studio() {
               </div>
             </div>
 
+            {debugPlayback && <PlaybackDebug videoRef={videoRef} />}
             <div className="mt-2 space-y-2 lg:mt-4 lg:space-y-3">
               <div className="relative hidden h-2 w-full overflow-hidden rounded-full bg-secondary lg:block">
                 {duration > 0 &&
