@@ -269,7 +269,7 @@ function Studio() {
       for (const warning of res.warnings ?? []) {
         if (warnedRef.current.has(warning)) continue;
         warnedRef.current.add(warning);
-        toast.warning(warning, { duration: 12000 });
+        toast.warning(warning, { duration: 6000 });
       }
       return res;
     },
@@ -277,6 +277,8 @@ function Studio() {
   );
   const translate = useServerFn(translateLines);
   const videoRef = useRef<HTMLVideoElement>(null);
+  /** The tool panel; a new tab starts at its top, not where the last one was scrolled. */
+  const panelRef = useRef<HTMLElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -340,6 +342,9 @@ function Studio() {
   const [words, setWords] = useState<Word[]>([]);
   const [style, setStyle] = useState<CaptionStyle>(baseStyle);
   const [tab, setTab] = useState<Tab>("tools");
+  useEffect(() => {
+    panelRef.current?.scrollTo({ top: 0 });
+  }, [tab]);
   const [selectedWord, setSelectedWord] = useState<number | null>(null);
   const isDesktop = useIsDesktop();
   const [timelineThumbs, setTimelineThumbs] = useState<{ thumbs: string[]; step: number } | null>(
@@ -2022,7 +2027,10 @@ function Studio() {
         </nav>
 
         {/* Controls panel */}
-        <section className="studio-panel order-3 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-3 sm:p-5 lg:order-none lg:col-start-1 lg:row-start-2 lg:p-4">
+        <section
+          ref={panelRef}
+          className="studio-panel order-3 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-3 sm:p-5 lg:order-none lg:col-start-1 lg:row-start-2 lg:p-4"
+        >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 empty:hidden sm:mb-4">
             <h2 className="hidden text-lg font-bold sm:block">
               {SECTIONS.find((s) => s.id === sectionOf(tab))?.label}

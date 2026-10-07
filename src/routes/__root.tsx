@@ -131,7 +131,7 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** Phones show toasts above the bottom toolbar so they never cover the header buttons. */
+/** Phones place toasts under the header, clear of the editing controls. */
 function usePhoneLayout() {
   const [phone, setPhone] = useState(false);
   useEffect(() => {
@@ -152,10 +152,13 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <Outlet />
+      {/* Phones: just under the header, over the top of the preview, so
+          messages never cover the controls and timeline below it. */}
       <Toaster
-        position={phone ? "bottom-center" : "top-center"}
-        mobileOffset={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom))" }}
-        {...(phone ? { offset: { bottom: "5rem" } } : {})}
+        position="top-center"
+        visibleToasts={phone ? 2 : 3}
+        mobileOffset={{ top: "calc(4.25rem + env(safe-area-inset-top))" }}
+        {...(phone ? { offset: { top: "4.25rem" } } : {})}
       />
     </QueryClientProvider>
   );

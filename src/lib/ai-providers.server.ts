@@ -70,6 +70,42 @@ const GEMINI_FALLBACK_MODELS = (
 /** Models that recently answered 429, skipped until the time stored here. */
 const cooledDown = new Map<string, number>();
 const COOLDOWN_MS = 10 * 60 * 1000;
+/** Models Google answered 404 for (retired), skipped for a day. */
+const RETIRED_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Flash models this key can use right now, newest first (full models before
+ * "lite"). Google retires model names over time; asking the API means a
+ * retirement degrades to the next model instead of failing transcription.
+ */
+let discovered: { at: number; models: string[] } | null = null;
+async function discoverFlashModels(apiKey: string): Promise<string[]> {
+  if (discovered && Date.now() - discovered.at < 60 * 60 * 1000) return discovered.models;
+  try {
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+      { headers: { "x-goog-api-key": apiKey } },
+    );
+    if (!response.ok) return [];
+    const payload = (await response.json()) as {
+      models?: { name?: string; supportedGenerationMethods?: string[] }[];
+    };
+    const version = (name: string) => Number(/gemini-(\d+(?:\.\d+)?)/.exec(name)?.[1] ?? 0);
+    const models = (payload.models ?? [])
+      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m) => (m.name ?? "").replace(/^models\//, ""))
+      .filter((name) => /^gemini-[\d.]+-flash/.test(name))
+      .filter((name) => !/(image|tts|live|audio|embedding|thinking)/.test(name))
+      .sort((a, b) => {
+        const lite = Number(a.includes("lite")) - Number(b.includes("lite"));
+        return lite || version(b) - version(a) || a.length - b.length;
+      });
+    discovered = { at: Date.now(), models };
+    return models;
+  } catch {
+    return [];
+  }
+}
 
 function isCoolingDown(model: string): boolean {
   const until = cooledDown.get(model);
@@ -98,12 +134,21 @@ export async function geminiChat(
       ? [model]
       : [model, ...GEMINI_FALLBACK_MODELS.filter((name) => name !== model)];
   const models = chain.filter((name) => !isCoolingDown(name));
-  if (!models.length) {
-    throw new Error(`${label} failed [429]: Gemini quota is used up for ${chain.join(", ")}`);
-  }
   let lastError: Error | null = null;
-  for (const [index, candidate] of models.entries()) {
-    const hasNext = index < models.length - 1;
+  let searched = options.fallback === false;
+  for (let index = 0; ; index++) {
+    if (index >= models.length) {
+      // Everything configured is retired or out of quota: ask Google which
+      // flash models exist now and keep going with those.
+      if (searched) break;
+      searched = true;
+      for (const name of await discoverFlashModels(apiKey)) {
+        if (!models.includes(name) && !isCoolingDown(name)) models.push(name);
+      }
+      if (index >= models.length) break;
+    }
+    const candidate = models[index]!;
+    const hasNext = index < models.length - 1 || !searched;
     const response = await fetchWithRetry(
       `${GEMINI_BASE}/chat/completions`,
       {
@@ -132,13 +177,16 @@ export async function geminiChat(
       response.status === 404 || (response.status === 400 && /model/i.test(body));
     const limited = response.status === 429;
     if (limited) cooledDown.set(candidate, Date.now() + COOLDOWN_MS);
+    else if (unknownModel) cooledDown.set(candidate, Date.now() + RETIRED_MS);
     if (!unknownModel && !limited) break;
     console.error(
       `[gemini] ${candidate} unavailable [${response.status}], trying next model`,
       body.slice(0, 200),
     );
   }
-  throw lastError ?? new Error(`${label} failed`);
+  throw (
+    lastError ?? new Error(`${label} failed [429]: Gemini quota is used up for ${chain.join(", ")}`)
+  );
 }
 
 /** OpenAI audio transcription. The form must not include `model`. */

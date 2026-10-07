@@ -263,10 +263,14 @@ export async function transcribeAudioServer(input: {
   const warn = (engine: string, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[transcribe] ${engine} failed:`, message);
+    // Short, readable messages for people; the raw error stays in the logs.
+    const code = /\[(\d{3})\]/.exec(message)?.[1];
     warnings.push(
-      message.includes("[429]")
-        ? `${engine} ใช้งานเกินโควตาชั่วคราว ระบบใช้ตัวถอดเสียงอื่นแทน ซับอาจแม่นน้อยลง`
-        : `${engine} ใช้งานไม่ได้ ซับอาจไม่ครบหรือไม่แม่น: ${message.slice(0, 160)}`,
+      code === "429" || code === "404"
+        ? `${engine} ใช้งานไม่ได้ชั่วคราว ระบบใช้ตัวถอดเสียงอื่นแทน ซับอาจแม่นน้อยลง`
+        : code === "401" || code === "403"
+          ? `${engine} ปฏิเสธ API key (รหัส ${code}) — ตรวจสอบคีย์ใน Vercel`
+          : `${engine} ใช้งานไม่ได้${code ? ` (รหัส ${code})` : ""} ซับอาจไม่ครบหรือไม่แม่น`,
     );
   };
 

@@ -387,7 +387,7 @@ export function WordTrack({
     onSeek(Math.max(0, Math.min(duration, t)));
   };
 
-  const blockHeight = centered ? 40 : compact ? 34 : 40;
+  const blockHeight = centered ? 36 : compact ? 34 : 40;
 
   const wordBlocks = useMemo(
     () =>
@@ -495,10 +495,11 @@ export function WordTrack({
   const stickerItems = lanes?.stickers ?? [];
   const showRuler = !compact || centered;
   const RULER = centered ? 18 : 24;
-  const GAP = 6;
-  const videoH = thumbs.length ? 40 : 0;
-  const stickerH = stickerItems.length ? 26 : 0;
-  const audioH = peaks.length ? 24 : 0;
+  // Phones get slimmer lanes so the tool panel under the timeline has room.
+  const GAP = centered ? 4 : 6;
+  const videoH = thumbs.length ? (centered ? 30 : 40) : 0;
+  const stickerH = stickerItems.length ? (centered ? 22 : 26) : 0;
+  const audioH = peaks.length ? (centered ? 16 : 24) : 0;
   let cursor = showRuler ? RULER + 4 : compact ? 9 : 30;
   const videoTop = cursor;
   if (videoH) cursor += videoH + GAP;
