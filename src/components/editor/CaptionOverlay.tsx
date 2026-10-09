@@ -311,8 +311,9 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
               const active = i === shownIndex;
               const spoken = time >= word.start;
 
-              // typewriter: hide words not yet reached
-              if (anim === "typewriter" && !spoken) return null;
+              // typewriter: words not yet reached keep their place but stay
+              // hidden, so the line does not jump (the export does the same)
+              const hidden = anim === "typewriter" && !spoken;
 
               const karaokeLike = anim === "karaoke" || anim === "karaokePlus" || anim === "karaoke2";
               const emphasize = karaokeLike
@@ -346,6 +347,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                   key={`${word.start}-${i}`}
                   style={{
                     display: "inline-block",
+                    visibility: hidden ? "hidden" : undefined,
                     marginLeft: gapBefore,
                     padding: boxed ? `0 ${fontSize * 0.1}px` : undefined,
                     borderRadius: boxed ? fontSize * 0.12 : undefined,

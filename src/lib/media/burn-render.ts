@@ -364,21 +364,50 @@ export function createBurnRenderer(
     const centerY = (style.posY / 100) * height;
     let top = centerY - blockHeight / 2;
 
+    // Group entrance, exactly as CaptionOverlay draws it in the preview
+    // (pop, fade, slide, zoom, bounce, shake, slide 2).
+    let enterAlpha = 1;
+    let enterScale = 1;
+    let enterX = 0;
+    let enterY = 0;
+    if (anim === "pop") {
+      enterScale = 0.9 + p * 0.1;
+      enterAlpha = 0.3 + p * 0.7;
+    } else if (anim === "fade") {
+      enterAlpha = clamp01((time - group.start) / (0.3 / speed));
+    } else if (anim === "slideUp") {
+      enterY = (1 - p) * fontSize * 0.7;
+      enterAlpha = p;
+    } else if (anim === "zoom") {
+      enterScale = 0.6 + p * 0.4;
+      enterAlpha = p;
+    } else if (anim === "bounce") {
+      enterScale = p < 1 ? 1 + Math.sin(p * Math.PI) * 0.18 : 1;
+    } else if (anim === "shake") {
+      enterX = p < 1 ? Math.sin(p * Math.PI * 6) * fontSize * 0.06 : 0;
+    } else if (anim === "slideUp2") {
+      enterX = (1 - ease) * -fontSize * 1.6;
+      enterScale = 0.96 + ease * 0.04;
+      enterAlpha = ease;
+    }
+    const alpha = baseAlpha * enterAlpha;
+    if (alpha <= 0.001) return;
+
+    // The group's words in order, so "the word being said" matches the preview
+    // (between words it stays on the last word of the line).
+    const activeIndex = group.words.findIndex(
+      (w) => w.text !== LINE_BREAK && time >= w.start && time < w.end,
+    );
+    const shownWord = group.words[activeIndex === -1 ? group.words.length - 1 : activeIndex];
+
     ctx.save();
     setSpacing();
-    ctx.globalAlpha = baseAlpha;
-    if (style.rotation) {
-      ctx.translate(centerX, centerY);
-      ctx.rotate((style.rotation * Math.PI) / 180);
-      ctx.translate(-centerX, -centerY);
-    }
-
-    // สไลด์2: เลื่อนทั้งบล็อกเข้าจากด้านข้าง (คำยังถูกวาดครบทุกคำ)
-    const slid = anim === "slideUp2";
-    if (slid) {
-      ctx.save();
-      ctx.translate((1 - ease) * -fontSize * 1.6, 0);
-    }
+    ctx.globalAlpha = alpha;
+    ctx.translate(centerX, centerY);
+    if (style.rotation) ctx.rotate((style.rotation * Math.PI) / 180);
+    if (enterScale !== 1) ctx.scale(enterScale, enterScale);
+    ctx.translate(enterX, enterY);
+    ctx.translate(-centerX, -centerY);
 
     lines.forEach((line, i) => {
       const m = metrics[i]!;
@@ -423,23 +452,34 @@ export function createBurnRenderer(
         const bh = lineHeight * 1.12 * ease;
         const bottom = y + lineHeight * 0.56;
         ctx.fillStyle = ACCENT_PRIMARY_HEX;
-        ctx.globalAlpha = 0.85 * baseAlpha;
+        ctx.globalAlpha = 0.85 * alpha;
         ctx.beginPath();
         ctx.roundRect(left - fontSize * 0.24, bottom - bh, m.total + fontSize * 0.48, bh, fontSize * 0.18);
         ctx.fill();
-        ctx.globalAlpha = baseAlpha;
+        ctx.globalAlpha = alpha;
       }
 
       let x = left;
       ctx.font = m.font;
       line.words.forEach((word, wi) => {
         const w = m.widths[wi]!;
-        const highlighted = time >= word.start - 0.01 && time <= word.end + 0.01;
-        const spoken = time >= word.start - 0.01;
+        // Layout holds copies of the words, so match the said word by its timing.
+        const active = !!shownWord && word.start === shownWord.start && word.end === shownWord.end;
+        const spoken = time >= word.start;
         const wordProgress = clamp01((time - word.start) / (0.14 / speed));
-        if (highlighted && style.highlight === "box") {
+        // Typewriter: words not reached yet keep their place but stay hidden.
+        if (anim === "typewriter" && !spoken) {
+          x += w + (m.gaps[wi + 1] ?? 0);
+          return;
+        }
+        const karaokeLike = anim === "karaoke" || anim === "karaokePlus" || anim === "karaoke2";
+        const emphasize = karaokeLike
+          ? spoken && style.highlight !== "none"
+          : active && style.highlight !== "none";
+        const boxed = emphasize && style.highlight === "box";
+        if (boxed) {
           ctx.fillStyle = style.highlightColor;
-          ctx.globalAlpha = baseAlpha;
+          ctx.globalAlpha = alpha;
           const r = fontSize * 0.16;
           const bx = x - fontSize * 0.12;
           const by = y - lineHeight * 0.56;
@@ -450,12 +490,25 @@ export function createBurnRenderer(
           ctx.fill();
         }
 
-        // คาราโอเกะ+: ขยายคำที่กำลังถูกพูด (วาดรอบจุดกึ่งกลางของคำ)
-        const plusScale = anim === "karaokePlus" && highlighted ? 1 + wordProgress * 0.22 : 1;
-        if (plusScale !== 1) {
+        // Per-word motion of the word being said, as in the preview.
+        let wordScaleX = 1;
+        let wordScaleY = 1;
+        let wordShiftY = 0;
+        if (active && anim === "flip") {
+          wordScaleY = Math.max(0.02, Math.cos(((1 - wordProgress) * 80 * Math.PI) / 180));
+        } else if (active && anim === "karaoke") {
+          wordScaleX = wordScaleY = 1 + wordProgress * 0.08;
+        } else if (active && anim === "karaokePlus") {
+          wordScaleX = wordScaleY = 1 + wordProgress * 0.22;
+          wordShiftY = -wordProgress * 0.04 * lineHeight;
+        } else if (active && (anim === "pop" || anim === "bounce")) {
+          wordShiftY = -0.03 * lineHeight;
+        }
+        const moved = wordScaleX !== 1 || wordScaleY !== 1 || wordShiftY !== 0;
+        if (moved) {
           ctx.save();
-          ctx.translate(x + w / 2, y);
-          ctx.scale(plusScale, plusScale);
+          ctx.translate(x + w / 2, y + wordShiftY);
+          ctx.scale(wordScaleX, wordScaleY);
           ctx.translate(-(x + w / 2), -y);
         }
 
@@ -482,21 +535,13 @@ export function createBurnRenderer(
 
         const baseColor = word.color ?? m.ls.color ?? style.color;
         const karaokeColor = style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor;
-        const karaokeLike = anim === "karaoke" || anim === "karaokePlus" || anim === "karaoke2";
-        ctx.fillStyle =
-          anim === "highlight" && ease > 0.5
-            ? "#ffffff"
-            : karaokeLike && spoken
-              ? karaokeColor
-              : highlighted
-                ? style.highlight === "box"
-                  ? style.highlightTextColor
-                  : style.highlight === "color"
-                    ? style.highlightColor
-                    : baseColor
-                : baseColor;
+        ctx.fillStyle = boxed
+          ? style.highlightTextColor
+          : emphasize && (anim === "karaoke2" || style.highlight === "color")
+            ? style.highlightColor
+            : baseColor;
 
-        if (anim === "karaoke2" && highlighted) {
+        if (anim === "karaoke2" && active) {
           // คาราโอเกะ2: สีไล่จากบนลงล่างภายในคำที่กำลังถูกพูด
           const top = y - lineHeight * 0.6;
           const fillH = lineHeight * 1.2 * wordProgress;
@@ -520,7 +565,7 @@ export function createBurnRenderer(
         ctx.shadowBlur = 0;
         ctx.shadowOffsetY = 0;
         ctx.shadowColor = "transparent";
-        if (plusScale !== 1) ctx.restore();
+        if (moved) ctx.restore();
         x += w + (m.gaps[wi + 1] ?? 0);
       });
 
@@ -529,7 +574,6 @@ export function createBurnRenderer(
       top += lineHeight * m.scale;
     });
 
-    if (slid) ctx.restore();
     ctx.restore();
   };
 

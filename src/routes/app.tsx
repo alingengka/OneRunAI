@@ -11,7 +11,6 @@ import {
   Loader2,
   Pause,
   Play,
-  Smartphone,
   Sparkles,
   Upload,
   Waves,
@@ -47,7 +46,6 @@ import {
 } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
 import { CaptionOverlay } from "@/components/editor/CaptionOverlay";
-import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay";
 import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
 import { WordTrack, type TimelineLanes } from "@/components/editor/WordTrack";
 import { MobileWordBar } from "@/components/editor/MobileWordBar";
@@ -375,7 +373,6 @@ function Studio() {
     setExportFps(preset.fps);
     setExportType(preset.type);
   }, []);
-  const [tiktokPreview, setTiktokPreview] = useState(false);
   useEffect(() => {
     const el = previewSlotRef.current;
     if (!el) return;
@@ -388,9 +385,7 @@ function Studio() {
   /** Tallest 9:16 (or TikTok-frame) player that fits the right column. */
   const desktopFrameHeight =
     isDesktop && !expanded && previewSlot.height > 0
-      ? Math.floor(
-          Math.min(previewSlot.height, previewSlot.width * (tiktokPreview ? 1920 / 886 : 16 / 9)),
-        )
+      ? Math.floor(Math.min(previewSlot.height, previewSlot.width * (16 / 9)))
       : 0;
   const [autoResync, setAutoResync] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -2962,7 +2957,8 @@ function Studio() {
         {/* Right: preview */}
         <section
           className={cn(
-            "order-1 min-w-0 shrink-0 lg:order-none lg:row-start-1 lg:flex lg:min-h-0 lg:flex-col",
+            // The video runs the full height on the right, like CapCut.
+            "order-1 min-w-0 shrink-0 lg:order-none lg:row-span-full lg:flex lg:min-h-0 lg:flex-col",
             desktopInspector ? "lg:col-start-4" : "lg:col-start-3",
           )}
         >
@@ -3010,7 +3006,7 @@ function Studio() {
                 }
                 className={cn(
                   "mx-auto max-w-full overflow-hidden bg-preview",
-                  tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]",
+                  "aspect-[9/16]",
                   expanded
                     ? "fixed left-1/2 top-1/2 z-[70] h-[100dvh] w-auto max-w-[100vw] -translate-x-1/2 -translate-y-1/2"
                     : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh]",
@@ -3062,7 +3058,7 @@ function Studio() {
                           time={t}
                           style={style}
                           height={frameHeight}
-                          safeArea={tiktokPreview}
+                          safeArea={false}
                           onPositionChange={({ posX, posY }) =>
                             setStyle((current) => ({ ...current, posX, posY }))
                           }
@@ -3094,7 +3090,6 @@ function Studio() {
                     </>
                   )}
                 </Clocked>
-                {tiktokPreview && <TikTokSafeAreaOverlay />}
               </div>
             </div>
 
@@ -3156,16 +3151,6 @@ function Studio() {
                 >
                   {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
-                {/* Desktop: TikTok safe-area frame toggle sits with the player controls. */}
-                <label className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground lg:flex">
-                  <Smartphone className="h-4 w-4" />
-                  <span className="hidden 2xl:inline">TikTok</span>
-                  <Switch
-                    checked={tiktokPreview}
-                    onCheckedChange={setTiktokPreview}
-                    aria-label="เปิดพรีวิว TikTok"
-                  />
-                </label>
                 <Button
                   size="icon"
                   variant="ghost"
@@ -3253,7 +3238,7 @@ function Studio() {
         {/* Desktop: word timeline under the menu and inspector; the preview
             runs the full height beside it, like CapCut */}
         {duration > 0 && (
-          <div className="hidden min-w-0 lg:col-span-full lg:col-start-1 lg:row-start-2 lg:block">
+          <div className="hidden min-w-0 lg:col-start-1 lg:col-end-[-2] lg:row-start-2 lg:block">
             <div className="studio-panel overflow-hidden rounded-xl border border-border bg-card">
               <WordTrack
                 words={words}
