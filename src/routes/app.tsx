@@ -25,6 +25,8 @@ import {
   AudioLines,
   Clapperboard,
   Type,
+  Undo2,
+  Redo2,
   Zap,
   SlidersHorizontal,
   Palette,
@@ -1472,24 +1474,46 @@ function Studio() {
    * timing, place and look), so it can be moved, overlapped, trimmed, cut or
    * deleted on its own like a CapCut text clip.
    */
+  const textLayerFromGroup = (group: (typeof groups)[number]): Sticker => ({
+    id: newStickerId(),
+    kind: "text",
+    asset: joinCaptionWords(group.words, style.joinWords) || " ",
+    start: group.start,
+    end: Math.max(group.end, group.start + 0.2),
+    x: style.posX,
+    y: style.posY,
+    size: style.size,
+    rotation: 0,
+    color: style.color,
+    stroke: style.stroke === "none" ? undefined : style.strokeColor,
+    font: style.fontFamily,
+  });
+  /**
+   * Every caption line becomes its own free text clip at the time it is
+   * spoken (CapCut's auto captions): each can then be edited, split, resized,
+   * overlapped or moved without touching the others. Ctrl+Z brings the
+   * captions back.
+   */
+  const convertAllCaptions = () => {
+    if (!groups.length) {
+      toast.error("ยังไม่มีซับให้แปลง");
+      return;
+    }
+    const layers = groups.map(textLayerFromGroup);
+    const taken = new Set(groups.flatMap((g) => g.words));
+    updateWords(words.filter((w) => !taken.has(w)));
+    setStickers((current) => [...current, ...layers]);
+    setSelectedWord(null);
+    setSelectedSticker(layers[0]?.id ?? null);
+    toast.success(
+      `แปลงเป็นข้อความอิสระ ${layers.length} ชิ้นแล้ว — แก้ ย่อขยาย ซ้อน ตัด ได้ทีละชิ้น (Ctrl+Z เพื่อย้อน)`,
+    );
+  };
   const detachCaptionLine = (wordIndex: number) => {
     const word = words[wordIndex];
     const group = word ? groups.find((g) => g.words.includes(word)) : undefined;
     if (!group) return;
-    const layer: Sticker = {
-      id: newStickerId(),
-      kind: "text",
-      asset: joinCaptionWords(group.words, style.joinWords) || word!.text,
-      start: group.start,
-      end: Math.max(group.end, group.start + 0.2),
-      x: style.posX,
-      y: style.posY,
-      size: style.size,
-      rotation: 0,
-      color: style.color,
-      stroke: style.stroke === "none" ? undefined : style.strokeColor,
-      font: style.fontFamily,
-    };
+    const layer = textLayerFromGroup(group);
     const taken = new Set(group.words);
     updateWords(words.filter((w) => !taken.has(w)));
     setStickers((current) => [...current, layer]);
@@ -1783,6 +1807,118 @@ function Studio() {
     }
     return false;
   };
+  // ── Undo / redo (Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y) over words, texts, stickers
+  // and the caption style. Rapid changes (a drag, typing) are grouped into one
+  // step: a step is saved once things have been still for 400 ms.
+  type EditSnapshot = { words: Word[]; stickers: Sticker[]; style: CaptionStyle };
+  const historyRef = useRef<{
+    past: EditSnapshot[];
+    future: EditSnapshot[];
+    committed: EditSnapshot | null;
+    pendingBase: EditSnapshot | null;
+    restoring: boolean;
+    timer: number;
+  }>({ past: [], future: [], committed: null, pendingBase: null, restoring: false, timer: 0 });
+  useEffect(() => {
+    const h = historyRef.current;
+    const now = { words, stickers, style };
+    if (h.restoring || !h.committed) {
+      h.restoring = false;
+      h.committed = now;
+      return;
+    }
+    if (!h.pendingBase) h.pendingBase = h.committed;
+    window.clearTimeout(h.timer);
+    h.timer = window.setTimeout(() => {
+      if (h.pendingBase) {
+        h.past.push(h.pendingBase);
+        if (h.past.length > 100) h.past.shift();
+        h.future = [];
+      }
+      h.pendingBase = null;
+      h.committed = { words, stickers, style };
+    }, 400);
+  }, [words, stickers, style]);
+  const historyStepRef = useRef<(direction: "undo" | "redo") => boolean>(() => false);
+  historyStepRef.current = (direction) => {
+    const h = historyRef.current;
+    const current = { words, stickers, style };
+    // A change still settling counts as its own step first.
+    if (h.pendingBase) {
+      window.clearTimeout(h.timer);
+      h.past.push(h.pendingBase);
+      h.pendingBase = null;
+      h.future = [];
+    }
+    const from = direction === "undo" ? h.past : h.future;
+    const to = direction === "undo" ? h.future : h.past;
+    const snap = from.pop();
+    if (!snap) return false;
+    to.push(current);
+    h.restoring = true;
+    h.committed = snap;
+    setWords(snap.words);
+    setTranscript(wordsToTranscript(snap.words));
+    setStickers(snap.stickers);
+    setStyle(snap.style);
+    setSelectedWord(null);
+    setSelectedSticker((id) => (id && snap.stickers.some((s) => s.id === id) ? id : null));
+    return true;
+  };
+
+  // ── Copy / paste (Ctrl+C, Ctrl+V) for texts and stickers, like CapCut:
+  // the copy lands at the playhead, in the same place on the video.
+  const clipboardRef = useRef<Sticker | null>(null);
+  const clipboardKeyRef = useRef<(key: "c" | "v" | "x" | "d") => boolean>(() => false);
+  clipboardKeyRef.current = (key) => {
+    const selected = stickers.find((s) => s.id === selectedSticker);
+    if (key === "c" || key === "x") {
+      if (!selected) return false;
+      clipboardRef.current = selected;
+      if (key === "x") removeSticker(selected.id);
+      else toast.message("คัดลอกแล้ว — กด Ctrl+V เพื่อวาง");
+      return true;
+    }
+    const source = key === "d" ? selected : clipboardRef.current;
+    if (!source) return false;
+    const length = source.end - source.start;
+    const at = key === "d" ? source.start : (videoRef.current?.currentTime ?? time);
+    const start = Math.max(0, Math.min(at, Math.max(0, (duration || at + length) - length)));
+    const copy: Sticker = {
+      ...source,
+      id: newStickerId(),
+      start,
+      end: start + length,
+      ...(key === "d" ? { y: Math.min(95, source.y + 8) } : {}),
+    };
+    setStickers((current) => [...current, copy]);
+    setSelectedWord(null);
+    setSelectedSticker(copy.id);
+    return true;
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      // Inside a text field these keys keep their normal meaning.
+      if (
+        target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      let handled = false;
+      if (key === "z") handled = historyStepRef.current(event.shiftKey ? "redo" : "undo");
+      else if (key === "y") handled = historyStepRef.current("redo");
+      else if (key === "c" || key === "v" || key === "x" || key === "d") {
+        handled = clipboardKeyRef.current(key);
+      }
+      if (handled) event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Delete" && event.key !== "Backspace") return;
@@ -2005,6 +2141,30 @@ function Studio() {
           >
             <Upload className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">อัปโหลดคลิป</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden md:inline-flex"
+            aria-label="ย้อนกลับ (Ctrl+Z)"
+            title="ย้อนกลับ (Ctrl+Z)"
+            onClick={() => {
+              if (!historyStepRef.current("undo")) toast.message("ไม่มีอะไรให้ย้อนกลับ");
+            }}
+          >
+            <Undo2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden md:inline-flex"
+            aria-label="ทำซ้ำ (Ctrl+Shift+Z)"
+            title="ทำซ้ำ (Ctrl+Shift+Z)"
+            onClick={() => {
+              if (!historyStepRef.current("redo")) toast.message("ไม่มีอะไรให้ทำซ้ำ");
+            }}
+          >
+            <Redo2 className="h-4 w-4" />
           </Button>
           <Button variant="secondary" onClick={saveNow} className="hidden md:inline-flex">
             <Save className="mr-2 h-4 w-4" /> บันทึก
@@ -2835,6 +2995,21 @@ function Studio() {
 
           {tab === "text" && (
             <div className="space-y-5">
+              {groups.length > 0 && (
+                <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
+                  <Type className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold">อยากจัดวางซับได้อิสระแบบ CapCut?</p>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                      แปลงทุกบรรทัดเป็นข้อความแยกชิ้น ตรงเวลาที่พูดเหมือนเดิม แล้วแก้คำ ย่อขยาย
+                      ซ้อนกัน ตัด หรือลากเวลาได้ทีละชิ้น
+                    </p>
+                  </div>
+                  <Button size="sm" onClick={convertAllCaptions} className="shrink-0">
+                    แปลงทั้งหมด
+                  </Button>
+                </div>
+              )}
               <CaptionList
                 groups={groups}
                 words={words}
