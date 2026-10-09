@@ -50,13 +50,28 @@ function textFont(sticker: Sticker, px: number): string {
 let measureCtx: CanvasRenderingContext2D | null = null;
 
 /** Lines and pixel size of a text layer drawn on a frame `height` px tall. */
+/** Word pieces of a line; Lao and Thai have no spaces, so ask the browser where words end. */
+function wordPieces(line: string): string[] {
+  const Seg = (Intl as unknown as { Segmenter?: typeof Intl.Segmenter }).Segmenter;
+  if (Seg) {
+    return [...new Seg(undefined, { granularity: "word" }).segment(line)].map((p) => p.segment);
+  }
+  return line.split(/(\s+)/);
+}
+
+/**
+ * Lines and pixel size of a text layer drawn on a frame `height` px tall.
+ * With `maxWidth`, lines wider than it wrap at word boundaries (the frame
+ * is always 9:16, so preview and export wrap the same way).
+ */
 export function textLayout(
   sticker: Sticker,
   height: number,
   ctx?: CanvasRenderingContext2D,
+  maxWidth = height * (9 / 16) * 0.9,
 ): { lines: string[]; px: number; lineHeight: number; width: number; height: number; pad: number } {
   const px = Math.max(4, (sticker.size / 100) * height);
-  const lines = (sticker.asset || " ").split("\n");
+  let lines = (sticker.asset || " ").split("\n");
   let c = ctx ?? measureCtx;
   if (!c && typeof document !== "undefined") {
     c = measureCtx = document.createElement("canvas").getContext("2d");
@@ -65,7 +80,24 @@ export function textLayout(
   if (c) {
     c.save();
     c.font = textFont(sticker, px);
-    width = Math.max(...lines.map((line) => c!.measureText(line).width));
+    const measure = (text: string) => c!.measureText(text).width;
+    lines = lines.flatMap((line) => {
+      if (measure(line) <= maxWidth) return [line];
+      const out: string[] = [];
+      let current = "";
+      for (const piece of wordPieces(line)) {
+        const next = current + piece;
+        if (current.trim() && measure(next.trim()) > maxWidth) {
+          out.push(current.trim());
+          current = piece.trimStart();
+        } else {
+          current = next;
+        }
+      }
+      if (current.trim()) out.push(current.trim());
+      return out.length ? out : [line];
+    });
+    width = Math.max(...lines.map(measure));
     c.restore();
   }
   const lineHeight = px * 1.3;

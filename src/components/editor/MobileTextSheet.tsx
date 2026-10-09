@@ -8,6 +8,7 @@ type Props = {
   onChange: (patch: Partial<Sticker>) => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  onSplit: () => void;
   onClose: () => void;
 };
 
@@ -16,7 +17,14 @@ type Props = {
  * the screen, lifted above the keyboard, so the preview stays visible while
  * typing and styling.
  */
-export function MobileTextSheet({ sticker, onChange, onDuplicate, onRemove, onClose }: Props) {
+export function MobileTextSheet({
+  sticker,
+  onChange,
+  onDuplicate,
+  onRemove,
+  onSplit,
+  onClose,
+}: Props) {
   const keyboard = useKeyboardInset();
   return (
     <div
@@ -42,6 +50,7 @@ export function MobileTextSheet({ sticker, onChange, onDuplicate, onRemove, onCl
           onChange={onChange}
           onDuplicate={onDuplicate}
           onRemove={onRemove}
+          onSplit={onSplit}
           autoFocus={sticker.asset === "ข้อความ"}
         />
       </div>

@@ -11,7 +11,6 @@ import {
   Loader2,
   Pause,
   Play,
-  Smartphone,
   Sparkles,
   Upload,
   Waves,
@@ -47,7 +46,6 @@ import {
 } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
 import { CaptionOverlay } from "@/components/editor/CaptionOverlay";
-import { TikTokSafeAreaOverlay } from "@/components/editor/TikTokSafeAreaOverlay";
 import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
 import { WordTrack, type TimelineLanes } from "@/components/editor/WordTrack";
 import { MobileWordBar } from "@/components/editor/MobileWordBar";
@@ -61,6 +59,7 @@ import {
   alignWordsToSegments,
   baseStyle,
   groupCaptions,
+  joinCaptionWords,
   captionModeOf,
   LINE_BREAK,
   type CaptionStyle,
@@ -374,7 +373,6 @@ function Studio() {
     setExportFps(preset.fps);
     setExportType(preset.type);
   }, []);
-  const [tiktokPreview, setTiktokPreview] = useState(false);
   useEffect(() => {
     const el = previewSlotRef.current;
     if (!el) return;
@@ -387,9 +385,7 @@ function Studio() {
   /** Tallest 9:16 (or TikTok-frame) player that fits the right column. */
   const desktopFrameHeight =
     isDesktop && !expanded && previewSlot.height > 0
-      ? Math.floor(
-          Math.min(previewSlot.height, previewSlot.width * (tiktokPreview ? 1920 / 886 : 16 / 9)),
-        )
+      ? Math.floor(Math.min(previewSlot.height, previewSlot.width * (16 / 9)))
       : 0;
   const [autoResync, setAutoResync] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -477,6 +473,10 @@ function Studio() {
   );
   const selectedWordValid =
     selectedWord != null && selectedWord < words.length ? selectedWord : null;
+  /** Desktop: a word, text or sticker is selected, so its settings column shows. */
+  const desktopInspector =
+    isDesktop &&
+    (selectedWordValid != null || stickers.some((sticker) => sticker.id === selectedSticker));
   /** The caption line around the selected word (for "re-transcribe this line"). */
   const selectedLineRange = useMemo(() => {
     const word = selectedWordValid != null ? words[selectedWordValid] : undefined;
@@ -1467,6 +1467,52 @@ function Studio() {
     setSelectedSticker(copy.id);
     if (textSheet) setTextSheet(copy.id);
   };
+  /**
+   * Turns the caption line around a word into a free text layer (same words,
+   * timing, place and look), so it can be moved, overlapped, trimmed, cut or
+   * deleted on its own like a CapCut text clip.
+   */
+  const detachCaptionLine = (wordIndex: number) => {
+    const word = words[wordIndex];
+    const group = word ? groups.find((g) => g.words.includes(word)) : undefined;
+    if (!group) return;
+    const layer: Sticker = {
+      id: newStickerId(),
+      kind: "text",
+      asset: joinCaptionWords(group.words, style.joinWords) || word!.text,
+      start: group.start,
+      end: Math.max(group.end, group.start + 0.2),
+      x: style.posX,
+      y: style.posY,
+      size: style.size,
+      rotation: 0,
+      color: style.color,
+      stroke: style.stroke === "none" ? undefined : style.strokeColor,
+      font: style.fontFamily,
+    };
+    const taken = new Set(group.words);
+    updateWords(words.filter((w) => !taken.has(w)));
+    setStickers((current) => [...current, layer]);
+    setSelectedWord(null);
+    setSelectedSticker(layer.id);
+    if (!isDesktop) setTextSheet(layer.id);
+    toast.success("แยกเป็นข้อความอิสระแล้ว — ลากย้าย ยืดหด ตัด หรือลบได้");
+  };
+  /** Cuts a text or sticker in two at the playhead (CapCut "Split"). */
+  const splitStickerAtPlayhead = (id: string) => {
+    const source = stickers.find((s) => s.id === id);
+    const at = videoRef.current?.currentTime ?? time;
+    if (!source || at <= source.start + 0.1 || at >= source.end - 0.1) {
+      toast.error("เลื่อนเส้นเวลาไปไว้กลางข้อความก่อน แล้วค่อยกดตัด");
+      return;
+    }
+    const second = { ...source, id: newStickerId(), start: at };
+    setStickers((current) =>
+      current.flatMap((s) => (s.id === id ? [{ ...s, end: at }, second] : [s])),
+    );
+    setSelectedSticker(second.id);
+    if (textSheet) setTextSheet(second.id);
+  };
   const editTextLayer = (id: string) => {
     setSelectedSticker(id);
     if (!isDesktop) setTextSheet(id);
@@ -2035,17 +2081,21 @@ function Studio() {
 
       <div
         className={cn(
-          "mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:grid-cols-[minmax(340px,400px)_minmax(300px,1fr)_minmax(360px,1.15fr)] lg:gap-3 lg:p-3 lg:pb-3",
+          "mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 flex-col gap-2 overflow-hidden p-2 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:gap-3 sm:p-3 sm:pb-[calc(4.25rem+env(safe-area-inset-bottom))] lg:grid lg:gap-3 lg:p-3 lg:pb-3",
+          // Desktop (as in the editor design): menu · wide work panel · video,
+          // the word timeline across the whole bottom. Selecting a word, text
+          // or sticker opens its settings as an extra column beside the panel.
+          desktopInspector
+            ? "lg:grid-cols-[184px_minmax(0,1fr)_320px_minmax(340px,440px)]"
+            : "lg:grid-cols-[184px_minmax(0,1fr)_minmax(340px,440px)]",
           // The timeline row exists only once a clip is loaded.
-          duration > 0
-            ? "lg:grid-rows-[auto_minmax(0,1fr)_auto]"
-            : "lg:grid-rows-[auto_minmax(0,1fr)]",
+          duration > 0 ? "lg:grid-rows-[minmax(0,1fr)_auto]" : "lg:grid-rows-[minmax(0,1fr)]",
         )}
       >
         {/* Desktop menu */}
         <nav
           aria-label="เมนูเครื่องมือ"
-          className="studio-panel hidden gap-1 rounded-xl border border-border bg-card p-1.5 lg:col-start-1 lg:row-start-1 lg:flex"
+          className="studio-panel hidden min-h-0 flex-col gap-1 overflow-y-auto rounded-2xl border border-border bg-card p-2.5 lg:col-start-1 lg:row-start-1 lg:flex"
         >
           {SECTIONS.map(({ id, label, short, tab: target, icon: Icon }) => {
             const current = sectionOf(tab) === id;
@@ -2060,23 +2110,29 @@ function Studio() {
                 }}
                 title={label}
                 className={cn(
-                  "flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-1 py-1.5 text-[11px] transition-colors",
+                  "flex h-11 w-full min-w-0 items-center gap-3 rounded-xl px-3 text-left text-sm transition-colors",
                   current
                     ? "bg-accent font-semibold text-foreground"
                     : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                 )}
               >
                 <Icon className={cn("h-[18px] w-[18px] shrink-0", current && "text-primary")} />
-                <span className="truncate">{short}</span>
+                <span className="truncate">{label}</span>
               </button>
             );
           })}
+          <div className="mt-auto border-t border-border px-3 pt-3 text-xs text-muted-foreground">
+            ภาษาของคลิป
+            <span className="mt-1 block text-sm font-semibold text-foreground">
+              {LANGUAGES.find((language) => language.code === languages[0])?.label ?? "-"}
+            </span>
+          </div>
         </nav>
 
         {/* Controls panel */}
         <section
           ref={panelRef}
-          className="studio-panel order-3 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-3 sm:p-5 lg:order-none lg:col-start-1 lg:row-start-2 lg:p-4"
+          className="studio-panel order-3 min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-3 sm:p-5 lg:order-none lg:col-start-2 lg:row-start-1 lg:rounded-2xl lg:p-5"
         >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 empty:hidden sm:mb-4">
             <h2 className="hidden text-lg font-bold sm:block">
@@ -2899,7 +2955,13 @@ function Studio() {
         </section>
 
         {/* Right: preview */}
-        <section className="order-1 min-w-0 shrink-0 lg:order-none lg:col-start-3 lg:row-span-full lg:flex lg:min-h-0 lg:flex-col">
+        <section
+          className={cn(
+            // The video runs the full height on the right, like CapCut.
+            "order-1 min-w-0 shrink-0 lg:order-none lg:row-span-full lg:flex lg:min-h-0 lg:flex-col",
+            desktopInspector ? "lg:col-start-4" : "lg:col-start-3",
+          )}
+        >
           <div className="studio-panel rounded-xl border border-border bg-card p-2 sm:p-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
             {expanded && (
               <>
@@ -2944,7 +3006,7 @@ function Studio() {
                 }
                 className={cn(
                   "mx-auto max-w-full overflow-hidden bg-preview",
-                  tiktokPreview ? "aspect-[886/1920]" : "aspect-[9/16]",
+                  "aspect-[9/16]",
                   expanded
                     ? "fixed left-1/2 top-1/2 z-[70] h-[100dvh] w-auto max-w-[100vw] -translate-x-1/2 -translate-y-1/2"
                     : "relative h-[26dvh] w-auto rounded-xl shadow-primary-lg ring-1 ring-primary/20 sm:h-[30dvh]",
@@ -2996,7 +3058,7 @@ function Studio() {
                           time={t}
                           style={style}
                           height={frameHeight}
-                          safeArea={tiktokPreview}
+                          safeArea={false}
                           onPositionChange={({ posX, posY }) =>
                             setStyle((current) => ({ ...current, posX, posY }))
                           }
@@ -3028,35 +3090,12 @@ function Studio() {
                     </>
                   )}
                 </Clocked>
-                {tiktokPreview && <TikTokSafeAreaOverlay />}
               </div>
             </div>
 
             {debugPlayback && <PlaybackDebug videoRef={videoRef} />}
             <div className="mt-2 space-y-2 lg:mt-4 lg:space-y-3">
-              <div className="relative hidden h-2 w-full overflow-hidden rounded-full bg-secondary lg:block">
-                {duration > 0 &&
-                  silences.map((s, i) => (
-                    <div
-                      key={i}
-                      className="absolute top-0 h-full bg-destructive/60"
-                      style={{
-                        left: `${(s.start / duration) * 100}%`,
-                        width: `${((s.end - s.start) / duration) * 100}%`,
-                      }}
-                    />
-                  ))}
-                <Clocked clock={clock}>
-                  {(t) => (
-                    <div
-                      className="absolute top-0 h-full w-0.5 bg-primary"
-                      style={{ left: `${duration ? (t / duration) * 100 : 0}%` }}
-                    />
-                  )}
-                </Clocked>
-              </div>
-
-              <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:gap-y-3">
                 <Button
                   size="icon"
                   variant="secondary"
@@ -3070,7 +3109,7 @@ function Studio() {
                 <Clocked clock={clock}>
                   {(t) => (
                     <Slider
-                      className="min-w-0 flex-1"
+                      className="min-w-0 flex-1 lg:order-first lg:basis-full"
                       value={[t]}
                       min={0}
                       max={Math.max(duration, 0.1)}
@@ -3082,7 +3121,7 @@ function Studio() {
                     />
                   )}
                 </Clocked>
-                <span className="shrink-0 font-mono text-[11px] text-muted-foreground sm:text-xs">
+                <span className="shrink-0 font-mono text-[11px] text-muted-foreground sm:text-xs lg:flex-1">
                   <Clocked clock={clock}>{(t) => fmt(t)}</Clocked>
                   <span className="hidden sm:inline"> / {fmt(duration)}</span>
                 </span>
@@ -3096,7 +3135,7 @@ function Studio() {
                   title="เพิ่มข้อความ"
                 >
                   <Type className="h-4 w-4" />
-                  <span className="hidden sm:inline">ข้อความ</span>
+                  <span className="hidden sm:inline lg:hidden 2xl:inline">ข้อความ</span>
                 </Button>
                 <Button
                   size="icon"
@@ -3112,16 +3151,6 @@ function Studio() {
                 >
                   {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                 </Button>
-                {/* Desktop: TikTok safe-area frame toggle sits with the player controls. */}
-                <label className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground lg:flex">
-                  <Smartphone className="h-4 w-4" />
-                  TikTok
-                  <Switch
-                    checked={tiktokPreview}
-                    onCheckedChange={setTiktokPreview}
-                    aria-label="เปิดพรีวิว TikTok"
-                  />
-                </label>
                 <Button
                   size="icon"
                   variant="ghost"
@@ -3138,28 +3167,32 @@ function Studio() {
         </section>
 
         {/* Desktop: settings for the selection, on the right */}
-        <Inspector
-          className="hidden lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:block"
-          words={words}
-          duration={duration}
-          selectedWord={selectedWordValid}
-          lineRange={selectedLineRange}
-          sticker={stickers.find((sticker) => sticker.id === selectedSticker) ?? null}
-          stickerLabel={
-            timelineLanes.stickers?.find((item) => item.id === selectedSticker)?.label ?? ""
-          }
-          style={style}
-          busy={retryingSync}
-          onWordsChange={updateWords}
-          onSelectWord={setSelectedWord}
-          onPreview={previewRange}
-          onRetranscribe={(start, end) => void retranscribeRange(start, end)}
-          onStickerChange={updateSticker}
-          onStickerRemove={removeSticker}
-          onStickerDuplicate={duplicateSticker}
-          onOpenStickers={() => setTab("stickers")}
-          onStyleChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-        />
+        {desktopInspector && (
+          <Inspector
+            className="hidden lg:col-start-3 lg:row-start-1 lg:block"
+            words={words}
+            duration={duration}
+            selectedWord={selectedWordValid}
+            lineRange={selectedLineRange}
+            sticker={stickers.find((sticker) => sticker.id === selectedSticker) ?? null}
+            stickerLabel={
+              timelineLanes.stickers?.find((item) => item.id === selectedSticker)?.label ?? ""
+            }
+            style={style}
+            busy={retryingSync}
+            onWordsChange={updateWords}
+            onSelectWord={setSelectedWord}
+            onPreview={previewRange}
+            onRetranscribe={(start, end) => void retranscribeRange(start, end)}
+            onStickerChange={updateSticker}
+            onStickerRemove={removeSticker}
+            onStickerDuplicate={duplicateSticker}
+            onStickerSplit={splitStickerAtPlayhead}
+            onDetachLine={detachCaptionLine}
+            onOpenStickers={() => setTab("stickers")}
+            onStyleChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+          />
+        )}
 
         {/* Phone: word timeline right under the video */}
         {duration > 0 && (
@@ -3205,7 +3238,7 @@ function Studio() {
         {/* Desktop: word timeline under the menu and inspector; the preview
             runs the full height beside it, like CapCut */}
         {duration > 0 && (
-          <div className="hidden min-w-0 lg:col-span-2 lg:col-start-1 lg:row-start-3 lg:block">
+          <div className="hidden min-w-0 lg:col-start-1 lg:col-end-[-2] lg:row-start-2 lg:block">
             <div className="studio-panel overflow-hidden rounded-xl border border-border bg-card">
               <WordTrack
                 words={words}
@@ -3244,6 +3277,7 @@ function Studio() {
               onChange={(patch) => updateSticker(layer.id, patch)}
               onDuplicate={() => duplicateSticker(layer.id)}
               onRemove={() => removeSticker(layer.id)}
+              onSplit={() => splitStickerAtPlayhead(layer.id)}
               onClose={() => setTextSheet(null)}
             />
           ) : null;
@@ -3261,6 +3295,7 @@ function Studio() {
           onSelect={setSelectedWord}
           onPreview={previewRange}
           onRetranscribe={(start, end) => void retranscribeRange(start, end)}
+          onDetach={() => detachCaptionLine(selectedWordValid)}
         />
       )}
 

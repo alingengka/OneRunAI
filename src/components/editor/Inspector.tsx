@@ -1,4 +1,13 @@
-import { CornerDownLeft, MousePointerClick, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  CornerDownLeft,
+  MousePointerClick,
+  Play,
+  Plus,
+  RefreshCw,
+  Scissors,
+  Trash2,
+  Type,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +36,9 @@ type Props = {
   onStickerChange: (id: string, patch: Partial<Sticker>) => void;
   onStickerRemove: (id: string) => void;
   onStickerDuplicate: (id: string) => void;
+  onStickerSplit: (id: string) => void;
+  /** Turn the caption line around a word into a free text layer. */
+  onDetachLine: (wordIndex: number) => void;
   onOpenStickers: () => void;
   onStyleChange: (patch: Partial<CaptionStyle>) => void;
   className?: string;
@@ -95,6 +107,8 @@ export function Inspector({
   onStickerChange,
   onStickerRemove,
   onStickerDuplicate,
+  onStickerSplit,
+  onDetachLine,
   onOpenStickers,
   onStyleChange,
   className,
@@ -173,6 +187,14 @@ export function Inspector({
             <Button
               variant="ghost"
               className="justify-start"
+              onClick={() => onDetachLine(selectedWord)}
+              title="ย้าย ซ้อน ยืดหด ตัด หรือลบบรรทัดนี้ได้อิสระ แบบข้อความใน CapCut"
+            >
+              <Type className="mr-2 h-4 w-4" /> แยกบรรทัดนี้เป็นข้อความอิสระ
+            </Button>
+            <Button
+              variant="ghost"
+              className="justify-start"
               disabled={busy}
               onClick={() => onRetranscribe(lineRange.start, lineRange.end)}
             >
@@ -201,6 +223,7 @@ export function Inspector({
             onChange={(patch) => onStickerChange(sticker.id, patch)}
             onDuplicate={() => onStickerDuplicate(sticker.id)}
             onRemove={() => onStickerRemove(sticker.id)}
+            onSplit={() => onStickerSplit(sticker.id)}
           />
           <TimeFields
             id="inspector-text"
@@ -248,6 +271,13 @@ export function Inspector({
             ลากสติกเกอร์บนพรีวิวเพื่อย้าย ใช้มุมเพื่อหมุนหรือย่อขยาย
           </p>
           <div className="grid gap-1 border-t border-border pt-3">
+            <Button
+              variant="ghost"
+              className="justify-start"
+              onClick={() => onStickerSplit(sticker.id)}
+            >
+              <Scissors className="mr-2 h-4 w-4" /> ตัดที่ตำแหน่งเส้นเวลา
+            </Button>
             <Button variant="ghost" className="justify-start" onClick={onOpenStickers}>
               <MousePointerClick className="mr-2 h-4 w-4" /> เปลี่ยนสติกเกอร์ / ปรับเพิ่ม
             </Button>
