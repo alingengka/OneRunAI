@@ -54,8 +54,11 @@ type Props = {
   onStickerSplit: (id: string) => void;
   onOpenStickers: () => void;
   onStyleChange: (patch: Partial<CaptionStyle>) => void;
+<<<<<<< HEAD
   /** closes the panel (clears the selection) */
   onClose?: (() => void) | undefined;
+=======
+>>>>>>> origin/claude/happy-fermat-13d9xo
   /** the selected text clip (caption line or free text), edited CapCut-style */
   clip?: ClipEditing | null | undefined;
   className?: string;
@@ -84,7 +87,10 @@ export function Inspector({
   onStickerSplit,
   onOpenStickers,
   onStyleChange,
+<<<<<<< HEAD
   onClose,
+=======
+>>>>>>> origin/claude/happy-fermat-13d9xo
   clip,
   className,
 }: Props) {
@@ -102,6 +108,7 @@ export function Inspector({
         className,
       )}
     >
+<<<<<<< HEAD
       {onClose && (clip || word || sticker) && (
         <button
           type="button"
@@ -113,6 +120,8 @@ export function Inspector({
           <X className="h-4 w-4" />
         </button>
       )}
+=======
+>>>>>>> origin/claude/happy-fermat-13d9xo
       {clip ? (
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">{clip.title}</p>
