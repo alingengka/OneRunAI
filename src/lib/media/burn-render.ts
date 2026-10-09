@@ -246,337 +246,371 @@ export function createBurnRenderer(
   options: BurnRenderOptions = {},
 ): BurnRenderer {
   const sortedGroups = [...groups].sort((a, b) => a.start - b.start);
-  type LineMetric = {
-    widths: number[];
-    /** gap before each word of the line (0 between joined Thai/Lao words) */
-    gaps: number[];
-    /** size of this line relative to the caption size */
-    scale: number;
-    space: number;
-    total: number;
-    weight: number | string;
-    family: string;
-    ls: LineStyle;
-    gap: number;
-    /** ส่วนที่ต้องวาดสังเคราะห์ (เฉพาะฟอนต์ที่ไม่มีไฟล์จริง) */
-    em: TextEmphasis;
-    /** font string สำหรับ canvas (รวม italic จริงถ้ามีไฟล์) */
-    font: string;
-  };
-  type GroupLayout = { lines: StaticLine[]; metrics: LineMetric[]; blockHeight: number };
-  const layoutCache = new Map<CaptionGroup, GroupLayout>();
-  const fontSize = (style.size / 100) * height;
-  const baseGap = (style.lineGap ?? 0.08) * fontSize;
-  const lineHeight = fontSize * 1.18;
-  /** Canvas letterSpacing (Chrome, Edge, Safari 17+); ignored where unsupported. */
-  const letterSpacing = style.letterSpacing ? `${style.letterSpacing * fontSize}px` : "0px";
-  const setSpacing = () => {
-    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = letterSpacing;
-  };
-  const baseAlpha = Math.max(0.05, Math.min(1, style.opacity ?? 1));
+  /**
+   * Caption painter for one look. Every caption clip may carry its own style
+   * on top of the shared one, so painters are made per look and reused.
+   */
+  const makePainter = (style: CaptionStyle) => {
+    type LineMetric = {
+      widths: number[];
+      /** gap before each word of the line (0 between joined Thai/Lao words) */
+      gaps: number[];
+      /** size of this line relative to the caption size */
+      scale: number;
+      space: number;
+      total: number;
+      weight: number | string;
+      family: string;
+      ls: LineStyle;
+      gap: number;
+      /** ส่วนที่ต้องวาดสังเคราะห์ (เฉพาะฟอนต์ที่ไม่มีไฟล์จริง) */
+      em: TextEmphasis;
+      /** font string สำหรับ canvas (รวม italic จริงถ้ามีไฟล์) */
+      font: string;
+    };
+    type GroupLayout = { lines: StaticLine[]; metrics: LineMetric[]; blockHeight: number };
+    const layoutCache = new Map<CaptionGroup, GroupLayout>();
+    const fontSize = (style.size / 100) * height;
+    const baseGap = (style.lineGap ?? 0.08) * fontSize;
+    const lineHeight = fontSize * 1.18;
+    /** Canvas letterSpacing (Chrome, Edge, Safari 17+); ignored where unsupported. */
+    const letterSpacing = style.letterSpacing ? `${style.letterSpacing * fontSize}px` : "0px";
+    const setSpacing = () => {
+      (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = letterSpacing;
+    };
+    const baseAlpha = Math.max(0.05, Math.min(1, style.opacity ?? 1));
 
-  /** ความกว้างสูงสุดของข้อความ (ให้ตรงกับพรีวิวที่กว้าง 88% ของเฟรม) */
-  const maxTextWidth = width * 0.88;
+    /** ความกว้างสูงสุดของข้อความ (ให้ตรงกับพรีวิวที่กว้าง 88% ของเฟรม) */
+    const maxTextWidth = width * 0.88;
 
-  const layoutFor = (group: CaptionGroup): GroupLayout => {
-    const cached = layoutCache.get(group);
-    if (cached) return cached;
-    const sourceLines = layoutGroupStatic(group, style);
-    const lines: StaticLine[] = [];
-    const metrics: LineMetric[] = [];
+    const layoutFor = (group: CaptionGroup): GroupLayout => {
+      const cached = layoutCache.get(group);
+      if (cached) return cached;
+      const sourceLines = layoutGroupStatic(group, style);
+      const lines: StaticLine[] = [];
+      const metrics: LineMetric[] = [];
 
-    sourceLines.forEach((line, i) => {
-      const ls = lineStyleAt(style, i);
-      const wanted: TextEmphasis = { bold: ls.bold ?? style.bold, italic: ls.italic ?? style.italic };
-      const family = ls.fontFamily ?? style.fontFamily;
-      const { native, synthetic } = splitEmphasis(family, wanted);
-      const weight = emphasizedWeight(ls.fontWeight ?? style.fontWeight, native.bold);
-      const font = `${native.italic ? "italic " : ""}${weight} ${fontSize}px ${family}`;
-      ctx.font = font;
-      setSpacing();
-      const space = ctx.measureText(" ").width;
-      const pad = emphasisPad(fontSize, synthetic);
-      const gap = (ls.gap ?? 0) * fontSize;
-      const scale = ls.scale ?? 1;
-      // widths are measured at the base size; a scaled line wraps sooner
-      const lineMax = maxTextWidth / scale;
-      const wordWidths = line.words.map((w) => ctx.measureText(w.text).width + pad);
+      sourceLines.forEach((line, i) => {
+        const ls = lineStyleAt(style, i);
+        const wanted: TextEmphasis = { bold: ls.bold ?? style.bold, italic: ls.italic ?? style.italic };
+        const family = ls.fontFamily ?? style.fontFamily;
+        const { native, synthetic } = splitEmphasis(family, wanted);
+        const weight = emphasizedWeight(ls.fontWeight ?? style.fontWeight, native.bold);
+        const font = `${native.italic ? "italic " : ""}${weight} ${fontSize}px ${family}`;
+        ctx.font = font;
+        setSpacing();
+        const space = ctx.measureText(" ").width;
+        const pad = emphasisPad(fontSize, synthetic);
+        const gap = (ls.gap ?? 0) * fontSize;
+        const scale = ls.scale ?? 1;
+        // widths are measured at the base size; a scaled line wraps sooner
+        const lineMax = maxTextWidth / scale;
+        const wordWidths = line.words.map((w) => ctx.measureText(w.text).width + pad);
 
-      // ตัดบรรทัดตามความกว้างจริง เพื่อไม่ให้คำล้นออกนอกเฟรม (คำหายจากภาพ)
-      let chunk: StaticWord[] = [];
-      let chunkWidths: number[] = [];
-      let chunkGaps: number[] = [];
-      let chunkTotal = 0;
-      const flush = () => {
-        if (!chunk.length) return;
-        lines.push({ words: chunk });
-        metrics.push({ widths: chunkWidths, gaps: chunkGaps, scale, space, total: chunkTotal, weight, family, ls, gap, em: synthetic, font });
-        chunk = [];
-        chunkWidths = [];
-        chunkGaps = [];
-        chunkTotal = 0;
-      };
-      line.words.forEach((word, wi) => {
-        const w = wordWidths[wi]!;
-        const before = (prev: StaticWord | undefined) =>
-          prev && needsSpace(prev.text, word.text, style.joinWords) ? space : 0;
-        const next = chunkTotal + before(chunk[chunk.length - 1]) + w;
-        if (chunk.length && next > lineMax) flush();
-        const g = before(chunk[chunk.length - 1]);
-        chunkTotal += g + w;
-        chunk.push(word);
-        chunkWidths.push(w);
-        chunkGaps.push(g);
+        // ตัดบรรทัดตามความกว้างจริง เพื่อไม่ให้คำล้นออกนอกเฟรม (คำหายจากภาพ)
+        let chunk: StaticWord[] = [];
+        let chunkWidths: number[] = [];
+        let chunkGaps: number[] = [];
+        let chunkTotal = 0;
+        const flush = () => {
+          if (!chunk.length) return;
+          lines.push({ words: chunk });
+          metrics.push({ widths: chunkWidths, gaps: chunkGaps, scale, space, total: chunkTotal, weight, family, ls, gap, em: synthetic, font });
+          chunk = [];
+          chunkWidths = [];
+          chunkGaps = [];
+          chunkTotal = 0;
+        };
+        line.words.forEach((word, wi) => {
+          const w = wordWidths[wi]!;
+          const before = (prev: StaticWord | undefined) =>
+            prev && needsSpace(prev.text, word.text, style.joinWords) ? space : 0;
+          const next = chunkTotal + before(chunk[chunk.length - 1]) + w;
+          if (chunk.length && next > lineMax) flush();
+          const g = before(chunk[chunk.length - 1]);
+          chunkTotal += g + w;
+          chunk.push(word);
+          chunkWidths.push(w);
+          chunkGaps.push(g);
+        });
+        flush();
       });
-      flush();
-    });
 
-    const blockHeight = metrics.reduce(
-      (n, m, i) => n + lineHeight * m.scale + (i ? baseGap + m.gap : 0),
-      0,
-    );
-    const layout: GroupLayout = { lines, metrics, blockHeight };
-    // Measuring set the caption spacing; other overlays draw without it.
-    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
-    layoutCache.set(group, layout);
-    return layout;
-  };
+      const blockHeight = metrics.reduce(
+        (n, m, i) => n + lineHeight * m.scale + (i ? baseGap + m.gap : 0),
+        0,
+      );
+      const layout: GroupLayout = { lines, metrics, blockHeight };
+      // Measuring set the caption spacing; other overlays draw without it.
+      (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
+      layoutCache.set(group, layout);
+      return layout;
+    };
 
 
-  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
-  const drawCaption = (time: number) => {
-    if (options.captions === false || !sortedGroups.length) return;
-    const group = findWindow(sortedGroups, time, 0.02);
-    if (!group || time > group.end + 0.12) return;
-    const { lines, metrics, blockHeight } = layoutFor(group);
-    if (!lines.length) return;
+    const drawGroup = (group: CaptionGroup, time: number) => {
+      const { lines, metrics, blockHeight } = layoutFor(group);
+      if (!lines.length) return;
 
-    const anim = style.animation;
-    const speed = Math.max(0.25, style.animationSpeed ?? 1);
-    // ความคืบหน้าของการ "เข้า" กลุ่มซับ (ตรงกับพรีวิว)
-    const p = clamp01((time - group.start) / (0.18 / speed));
-    const ease = 1 - Math.pow(1 - p, 3);
-    const glowPulse = 0.5 + 0.5 * Math.sin((time - group.start) * Math.PI * 3);
+      const anim = style.animation;
+      const speed = Math.max(0.25, style.animationSpeed ?? 1);
+      // ความคืบหน้าของการ "เข้า" กลุ่มซับ (ตรงกับพรีวิว)
+      const p = clamp01((time - group.start) / (0.18 / speed));
+      const ease = 1 - Math.pow(1 - p, 3);
+      const glowPulse = 0.5 + 0.5 * Math.sin((time - group.start) * Math.PI * 3);
 
-    ctx.textBaseline = "middle";
-    const centerX = (style.posX / 100) * width;
-    const centerY = (style.posY / 100) * height;
-    let top = centerY - blockHeight / 2;
+      ctx.textBaseline = "middle";
+      const centerX = (style.posX / 100) * width;
+      const centerY = (style.posY / 100) * height;
+      let top = centerY - blockHeight / 2;
 
-    // Group entrance, exactly as CaptionOverlay draws it in the preview
-    // (pop, fade, slide, zoom, bounce, shake, slide 2).
-    let enterAlpha = 1;
-    let enterScale = 1;
-    let enterX = 0;
-    let enterY = 0;
-    if (anim === "pop") {
-      enterScale = 0.9 + p * 0.1;
-      enterAlpha = 0.3 + p * 0.7;
-    } else if (anim === "fade") {
-      enterAlpha = clamp01((time - group.start) / (0.3 / speed));
-    } else if (anim === "slideUp") {
-      enterY = (1 - p) * fontSize * 0.7;
-      enterAlpha = p;
-    } else if (anim === "zoom") {
-      enterScale = 0.6 + p * 0.4;
-      enterAlpha = p;
-    } else if (anim === "bounce") {
-      enterScale = p < 1 ? 1 + Math.sin(p * Math.PI) * 0.18 : 1;
-    } else if (anim === "shake") {
-      enterX = p < 1 ? Math.sin(p * Math.PI * 6) * fontSize * 0.06 : 0;
-    } else if (anim === "slideUp2") {
-      enterX = (1 - ease) * -fontSize * 1.6;
-      enterScale = 0.96 + ease * 0.04;
-      enterAlpha = ease;
-    }
-    const alpha = baseAlpha * enterAlpha;
-    if (alpha <= 0.001) return;
+      // Group entrance, exactly as CaptionOverlay draws it in the preview
+      // (pop, fade, slide, zoom, bounce, shake, slide 2).
+      let enterAlpha = 1;
+      let enterScale = 1;
+      let enterX = 0;
+      let enterY = 0;
+      if (anim === "pop") {
+        enterScale = 0.9 + p * 0.1;
+        enterAlpha = 0.3 + p * 0.7;
+      } else if (anim === "fade") {
+        enterAlpha = clamp01((time - group.start) / (0.3 / speed));
+      } else if (anim === "slideUp") {
+        enterY = (1 - p) * fontSize * 0.7;
+        enterAlpha = p;
+      } else if (anim === "zoom") {
+        enterScale = 0.6 + p * 0.4;
+        enterAlpha = p;
+      } else if (anim === "bounce") {
+        enterScale = p < 1 ? 1 + Math.sin(p * Math.PI) * 0.18 : 1;
+      } else if (anim === "shake") {
+        enterX = p < 1 ? Math.sin(p * Math.PI * 6) * fontSize * 0.06 : 0;
+      } else if (anim === "slideUp2") {
+        enterX = (1 - ease) * -fontSize * 1.6;
+        enterScale = 0.96 + ease * 0.04;
+        enterAlpha = ease;
+      }
+      const alpha = baseAlpha * enterAlpha;
+      if (alpha <= 0.001) return;
 
-    // The group's words in order, so "the word being said" matches the preview
-    // (between words it stays on the last word of the line).
-    const activeIndex = group.words.findIndex(
-      (w) => w.text !== LINE_BREAK && time >= w.start && time < w.end,
-    );
-    const shownWord = group.words[activeIndex === -1 ? group.words.length - 1 : activeIndex];
+      // The group's words in order, so "the word being said" matches the preview
+      // (between words it stays on the last word of the line).
+      const activeIndex = group.words.findIndex(
+        (w) => w.text !== LINE_BREAK && time >= w.start && time < w.end,
+      );
+      const shownWord = group.words[activeIndex === -1 ? group.words.length - 1 : activeIndex];
 
-    ctx.save();
-    setSpacing();
-    ctx.globalAlpha = alpha;
-    ctx.translate(centerX, centerY);
-    if (style.rotation) ctx.rotate((style.rotation * Math.PI) / 180);
-    if (enterScale !== 1) ctx.scale(enterScale, enterScale);
-    ctx.translate(enterX, enterY);
-    ctx.translate(-centerX, -centerY);
-
-    lines.forEach((line, i) => {
-      const m = metrics[i]!;
-      if (i) top += baseGap + m.gap;
-      const y = top + (lineHeight * m.scale) / 2;
-
-      // Scaled lines grow from their alignment edge (or center).
-      const anchorX =
-        style.textAlign === "left"
-          ? centerX - maxTextWidth / 2
-          : style.textAlign === "right"
-            ? centerX + maxTextWidth / 2
-            : centerX;
       ctx.save();
-      if (m.scale !== 1) {
-        ctx.translate(anchorX, y);
-        ctx.scale(m.scale, m.scale);
-        ctx.translate(-anchorX, -y);
-      }
-      const left =
-        style.textAlign === "left"
-          ? anchorX
-          : style.textAlign === "right"
-            ? anchorX - m.total
-            : anchorX - m.total / 2;
+      setSpacing();
+      ctx.globalAlpha = alpha;
+      ctx.translate(centerX, centerY);
+      if (style.rotation) ctx.rotate((style.rotation * Math.PI) / 180);
+      if (enterScale !== 1) ctx.scale(enterScale, enterScale);
+      ctx.translate(enterX, enterY);
+      ctx.translate(-centerX, -centerY);
 
-      if (style.plate) {
-        ctx.fillStyle = withAlpha(style.plateColor, style.plateOpacity ?? 0.9);
-        ctx.beginPath();
-        ctx.roundRect(
-          left - fontSize * 0.28,
-          y - lineHeight * 0.6,
-          m.total + fontSize * 0.56,
-          lineHeight * 1.2,
-          fontSize * (style.plateRadius ?? 0.22),
-        );
-        ctx.fill();
-      }
+      lines.forEach((line, i) => {
+        const m = metrics[i]!;
+        if (i) top += baseGap + m.gap;
+        const y = top + (lineHeight * m.scale) / 2;
 
-      // ไฮไลต์: แถบสีม่วงธีมเลื่อนขึ้นมาจากด้านล่างของบรรทัด
-      if (anim === "highlight" && ease > 0) {
-        const bh = lineHeight * 1.12 * ease;
-        const bottom = y + lineHeight * 0.56;
-        ctx.fillStyle = ACCENT_PRIMARY_HEX;
-        ctx.globalAlpha = 0.85 * alpha;
-        ctx.beginPath();
-        ctx.roundRect(left - fontSize * 0.24, bottom - bh, m.total + fontSize * 0.48, bh, fontSize * 0.18);
-        ctx.fill();
-        ctx.globalAlpha = alpha;
-      }
-
-      let x = left;
-      ctx.font = m.font;
-      line.words.forEach((word, wi) => {
-        const w = m.widths[wi]!;
-        // Layout holds copies of the words, so match the said word by its timing.
-        const active = !!shownWord && word.start === shownWord.start && word.end === shownWord.end;
-        const spoken = time >= word.start;
-        const wordProgress = clamp01((time - word.start) / (0.14 / speed));
-        // Typewriter: words not reached yet keep their place but stay hidden.
-        if (anim === "typewriter" && !spoken) {
-          x += w + (m.gaps[wi + 1] ?? 0);
-          return;
+        // Scaled lines grow from their alignment edge (or center).
+        const anchorX =
+          style.textAlign === "left"
+            ? centerX - maxTextWidth / 2
+            : style.textAlign === "right"
+              ? centerX + maxTextWidth / 2
+              : centerX;
+        ctx.save();
+        if (m.scale !== 1) {
+          ctx.translate(anchorX, y);
+          ctx.scale(m.scale, m.scale);
+          ctx.translate(-anchorX, -y);
         }
-        const karaokeLike = anim === "karaoke" || anim === "karaokePlus" || anim === "karaoke2";
-        const emphasize = karaokeLike
-          ? spoken && style.highlight !== "none"
-          : active && style.highlight !== "none";
-        const boxed = emphasize && style.highlight === "box";
-        if (boxed) {
-          ctx.fillStyle = style.highlightColor;
-          ctx.globalAlpha = alpha;
-          const r = fontSize * 0.16;
-          const bx = x - fontSize * 0.12;
-          const by = y - lineHeight * 0.56;
-          const bw = w + fontSize * 0.24;
-          const bh = lineHeight * 1.12;
+        const left =
+          style.textAlign === "left"
+            ? anchorX
+            : style.textAlign === "right"
+              ? anchorX - m.total
+              : anchorX - m.total / 2;
+
+        if (style.plate) {
+          ctx.fillStyle = withAlpha(style.plateColor, style.plateOpacity ?? 0.9);
           ctx.beginPath();
-          ctx.roundRect(bx, by, bw, bh, r);
+          ctx.roundRect(
+            left - fontSize * 0.28,
+            y - lineHeight * 0.6,
+            m.total + fontSize * 0.56,
+            lineHeight * 1.2,
+            fontSize * (style.plateRadius ?? 0.22),
+          );
           ctx.fill();
         }
 
-        // Per-word motion of the word being said, as in the preview.
-        let wordScaleX = 1;
-        let wordScaleY = 1;
-        let wordShiftY = 0;
-        if (active && anim === "flip") {
-          wordScaleY = Math.max(0.02, Math.cos(((1 - wordProgress) * 80 * Math.PI) / 180));
-        } else if (active && anim === "karaoke") {
-          wordScaleX = wordScaleY = 1 + wordProgress * 0.08;
-        } else if (active && anim === "karaokePlus") {
-          wordScaleX = wordScaleY = 1 + wordProgress * 0.22;
-          wordShiftY = -wordProgress * 0.04 * lineHeight;
-        } else if (active && (anim === "pop" || anim === "bounce")) {
-          wordShiftY = -0.03 * lineHeight;
-        }
-        const moved = wordScaleX !== 1 || wordScaleY !== 1 || wordShiftY !== 0;
-        if (moved) {
-          ctx.save();
-          ctx.translate(x + w / 2, y + wordShiftY);
-          ctx.scale(wordScaleX, wordScaleY);
-          ctx.translate(-(x + w / 2), -y);
+        // ไฮไลต์: แถบสีม่วงธีมเลื่อนขึ้นมาจากด้านล่างของบรรทัด
+        if (anim === "highlight" && ease > 0) {
+          const bh = lineHeight * 1.12 * ease;
+          const bottom = y + lineHeight * 0.56;
+          ctx.fillStyle = ACCENT_PRIMARY_HEX;
+          ctx.globalAlpha = 0.85 * alpha;
+          ctx.beginPath();
+          ctx.roundRect(left - fontSize * 0.24, bottom - bh, m.total + fontSize * 0.48, bh, fontSize * 0.18);
+          ctx.fill();
+          ctx.globalAlpha = alpha;
         }
 
-        const strokePx = strokeWidth[m.ls.stroke ?? style.stroke] * (fontSize / 64);
-        if (strokePx > 0) {
-          ctx.lineJoin = "round";
-          ctx.miterLimit = 2;
-          ctx.lineWidth = strokePx * 2 + (m.em.bold ? fontSize * 0.02 : 0);
-          ctx.strokeStyle = m.ls.strokeColor ?? style.strokeColor;
-          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "stroke");
-        }
+        let x = left;
+        ctx.font = m.font;
+        line.words.forEach((word, wi) => {
+          const w = m.widths[wi]!;
+          // Layout holds copies of the words, so match the said word by its timing.
+          const active = !!shownWord && word.start === shownWord.start && word.end === shownWord.end;
+          const spoken = time >= word.start;
+          const wordProgress = clamp01((time - word.start) / (0.14 / speed));
+          // Typewriter: words not reached yet keep their place but stay hidden.
+          if (anim === "typewriter" && !spoken) {
+            x += w + (m.gaps[wi + 1] ?? 0);
+            return;
+          }
+          const karaokeLike = anim === "karaoke" || anim === "karaokePlus" || anim === "karaoke2";
+          const emphasize = karaokeLike
+            ? spoken && style.highlight !== "none"
+            : active && style.highlight !== "none";
+          const boxed = emphasize && style.highlight === "box";
+          if (boxed) {
+            ctx.fillStyle = style.highlightColor;
+            ctx.globalAlpha = alpha;
+            const r = fontSize * 0.16;
+            const bx = x - fontSize * 0.12;
+            const by = y - lineHeight * 0.56;
+            const bw = w + fontSize * 0.24;
+            const bh = lineHeight * 1.12;
+            ctx.beginPath();
+            ctx.roundRect(bx, by, bw, bh, r);
+            ctx.fill();
+          }
 
-        const blur = shadowBlur[style.shadow] * (fontSize / 64);
-        if (anim === "glow") {
-          // เรืองแสง: ใช้สี accent ของธีมกระพริบเบา ๆ
-          ctx.shadowBlur = fontSize * (0.26 + 0.2 * glowPulse);
-          ctx.shadowColor = ACCENT_SECONDARY_HEX;
+          // Per-word motion of the word being said, as in the preview.
+          let wordScaleX = 1;
+          let wordScaleY = 1;
+          let wordShiftY = 0;
+          if (active && anim === "flip") {
+            wordScaleY = Math.max(0.02, Math.cos(((1 - wordProgress) * 80 * Math.PI) / 180));
+          } else if (active && anim === "karaoke") {
+            wordScaleX = wordScaleY = 1 + wordProgress * 0.08;
+          } else if (active && anim === "karaokePlus") {
+            wordScaleX = wordScaleY = 1 + wordProgress * 0.22;
+            wordShiftY = -wordProgress * 0.04 * lineHeight;
+          } else if (active && (anim === "pop" || anim === "bounce")) {
+            wordShiftY = -0.03 * lineHeight;
+          }
+          const moved = wordScaleX !== 1 || wordScaleY !== 1 || wordShiftY !== 0;
+          if (moved) {
+            ctx.save();
+            ctx.translate(x + w / 2, y + wordShiftY);
+            ctx.scale(wordScaleX, wordScaleY);
+            ctx.translate(-(x + w / 2), -y);
+          }
+
+          const strokePx = strokeWidth[m.ls.stroke ?? style.stroke] * (fontSize / 64);
+          if (strokePx > 0) {
+            ctx.lineJoin = "round";
+            ctx.miterLimit = 2;
+            ctx.lineWidth = strokePx * 2 + (m.em.bold ? fontSize * 0.02 : 0);
+            ctx.strokeStyle = m.ls.strokeColor ?? style.strokeColor;
+            paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "stroke");
+          }
+
+          const blur = shadowBlur[style.shadow] * (fontSize / 64);
+          if (anim === "glow") {
+            // เรืองแสง: ใช้สี accent ของธีมกระพริบเบา ๆ
+            ctx.shadowBlur = fontSize * (0.26 + 0.2 * glowPulse);
+            ctx.shadowColor = ACCENT_SECONDARY_HEX;
+            ctx.shadowOffsetY = 0;
+          } else if (style.glowColor) {
+            ctx.shadowBlur = fontSize * 0.45;
+            ctx.shadowColor = style.glowColor;
+            ctx.shadowOffsetY = 0;
+          } else {
+            ctx.shadowBlur = blur;
+            ctx.shadowColor = blur ? style.shadowColor : "transparent";
+            ctx.shadowOffsetY = blur ? blur * 0.25 : 0;
+          }
+
+          const baseColor = word.color ?? m.ls.color ?? style.color;
+          const karaokeColor = style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor;
+          ctx.fillStyle = boxed
+            ? style.highlightTextColor
+            : emphasize && (anim === "karaoke2" || style.highlight === "color")
+              ? style.highlightColor
+              : baseColor;
+
+          if (anim === "karaoke2" && active) {
+            // คาราโอเกะ2: สีไล่จากบนลงล่างภายในคำที่กำลังถูกพูด
+            const top = y - lineHeight * 0.6;
+            const fillH = lineHeight * 1.2 * wordProgress;
+            ctx.fillStyle = baseColor;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x - fontSize * 0.3, top + fillH, w + fontSize * 0.6, lineHeight * 1.2 - fillH);
+            ctx.clip();
+            paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
+            ctx.restore();
+            ctx.fillStyle = karaokeColor;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x - fontSize * 0.3, top, w + fontSize * 0.6, fillH);
+            ctx.clip();
+            paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
+            ctx.restore();
+          } else {
+            paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
+          }
+          ctx.shadowBlur = 0;
           ctx.shadowOffsetY = 0;
-        } else {
-          ctx.shadowBlur = blur;
-          ctx.shadowColor = blur ? style.shadowColor : "transparent";
-          ctx.shadowOffsetY = blur ? blur * 0.25 : 0;
-        }
+          ctx.shadowColor = "transparent";
+          if (moved) ctx.restore();
+          x += w + (m.gaps[wi + 1] ?? 0);
+        });
 
-        const baseColor = word.color ?? m.ls.color ?? style.color;
-        const karaokeColor = style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor;
-        ctx.fillStyle = boxed
-          ? style.highlightTextColor
-          : emphasize && (anim === "karaoke2" || style.highlight === "color")
-            ? style.highlightColor
-            : baseColor;
 
-        if (anim === "karaoke2" && active) {
-          // คาราโอเกะ2: สีไล่จากบนลงล่างภายในคำที่กำลังถูกพูด
-          const top = y - lineHeight * 0.6;
-          const fillH = lineHeight * 1.2 * wordProgress;
-          ctx.fillStyle = baseColor;
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(x - fontSize * 0.3, top + fillH, w + fontSize * 0.6, lineHeight * 1.2 - fillH);
-          ctx.clip();
-          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
-          ctx.restore();
-          ctx.fillStyle = karaokeColor;
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(x - fontSize * 0.3, top, w + fontSize * 0.6, fillH);
-          ctx.clip();
-          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
-          ctx.restore();
-        } else {
-          paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "fill");
-        }
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.shadowColor = "transparent";
-        if (moved) ctx.restore();
-        x += w + (m.gaps[wi + 1] ?? 0);
+        ctx.restore();
+        top += lineHeight * m.scale;
       });
 
-
       ctx.restore();
-      top += lineHeight * m.scale;
-    });
-
-    ctx.restore();
+    };
+    return drawGroup;
   };
-
+  const painters = new WeakMap<object, (group: CaptionGroup, time: number) => void>();
+  const basePainter = makePainter(style);
+  const painterFor = (group: CaptionGroup) => {
+    if (!group.style) return basePainter;
+    let painter = painters.get(group.style);
+    if (!painter) {
+      painter = makePainter({ ...style, ...group.style });
+      painters.set(group.style, painter);
+    }
+    return painter;
+  };
+  // Clips may overlap in time (free texts over captions): draw each visible one.
+  const drawCaption = (time: number) => {
+    if (options.captions === false || !sortedGroups.length) return;
+    // Caption lines never overlap: show the latest one that has started, as
+    // the preview does. Free text clips may overlap anything: show them all.
+    let line: CaptionGroup | null = null;
+    const free: CaptionGroup[] = [];
+    for (const group of sortedGroups) {
+      if (group.start - 0.02 > time) break;
+      if (time > group.end + 0.02) continue;
+      if (group.free) free.push(group);
+      else line = group;
+    }
+    if (line) painterFor(line)(line, time);
+    for (const group of free) painterFor(group)(group, time);
+  };
 
   // ตารางค้นหาที่คำนวณล่วงหน้า: ไม่ต้องวน scenes/elements ทุกเฟรมอีก
   const motionWindows = (options.scenes ?? [])

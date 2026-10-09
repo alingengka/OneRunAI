@@ -1,5 +1,5 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { RotateCw } from "lucide-react";
+import { Pencil, RotateCw, X } from "lucide-react";
 import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth, withAlpha, needsSpace, balancedSplitIndex } from "@/lib/captions";
 
 
@@ -17,6 +17,14 @@ type Props = {
   onTransform?: (patch: { size?: number; rotation?: number }) => void;
   /** show the resize and rotate handles (hidden while playing) */
   showHandles?: boolean;
+  /** pressed: this clip becomes the selected one */
+  onSelect?: () => void;
+  /** ✕ on the selected clip */
+  onDelete?: () => void;
+  /** ✏️ on the selected clip: open its editor */
+  onEdit?: () => void;
+  /** stacking order among overlapping clips */
+  zIndex?: number;
 };
 
 type Gesture =
@@ -36,7 +44,7 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const boldStroke = (fontSize: number) => `${Math.max(1, Math.round(fontSize * 0.035))}px currentColor`;
 
-export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText, onTransform, showHandles }: Props) {
+export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText, onTransform, showHandles, onSelect, onDelete, onEdit, zIndex }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -64,14 +72,15 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
   const glowShadow =
     style.animation === "glow"
       ? `0 0 ${fontSize * (0.1 + 0.1 * glowPulse)}px ${ACCENT_SECONDARY_HEX}, 0 0 ${fontSize * (0.26 + 0.2 * glowPulse)}px ${ACCENT_PRIMARY_HEX}`
-      : "";
+      : style.glowColor
+        ? `0 0 ${fontSize * 0.2}px ${style.glowColor}, 0 0 ${fontSize * 0.45}px ${style.glowColor}`
+        : "";
 
   const textShadow = [
     stroke > 0
       ? `${-stroke}px ${-stroke}px 0 ${style.strokeColor}, ${stroke}px ${-stroke}px 0 ${style.strokeColor}, ${-stroke}px ${stroke}px 0 ${style.strokeColor}, ${stroke}px ${stroke}px 0 ${style.strokeColor}`
       : "",
-    blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : "",
-    glowShadow,
+    glowShadow || (blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : ""),
   ]
     .filter(Boolean)
     .join(", ");
@@ -225,6 +234,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
       onPointerDown={onPositionChange ? (event) => {
         event.preventDefault();
         event.stopPropagation();
+        onSelect?.();
         event.currentTarget.setPointerCapture(event.pointerId);
       } : undefined}
       onPointerMove={onPositionChange ? (event) => {
@@ -239,6 +249,7 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
       style={{
         left: `${posX}%`,
         top: `${posY}%`,
+        zIndex,
         transform: containerTransform,
         // centered text hugs its lines so the handles frame the words, not the whole row
         ...((style.textAlign ?? "center") === "center" ? { width: "max-content", maxWidth: width } : { width }),
@@ -265,7 +276,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
           lineStroke > 0
             ? `${-lineStroke}px ${-lineStroke}px 0 ${lineStrokeColor}, ${lineStroke}px ${-lineStroke}px 0 ${lineStrokeColor}, ${-lineStroke}px ${lineStroke}px 0 ${lineStrokeColor}, ${lineStroke}px ${lineStroke}px 0 ${lineStrokeColor}`
             : "",
-          blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : "",
+          // the export draws the glow in place of the drop shadow
+          glowShadow || (blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : ""),
         ]
           .filter(Boolean)
           .join(", ");
@@ -387,6 +399,36 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
             aria-hidden="true"
             className="pointer-events-none absolute -inset-1.5 rounded-md border border-dashed border-white/80 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
           />
+          {onDelete && (
+            <button
+              type="button"
+              aria-label="ลบข้อความนี้"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete();
+              }}
+              className="absolute -right-3.5 -top-3.5 grid h-7 w-7 place-items-center rounded-full bg-white text-black shadow-md before:absolute before:-inset-3 before:content-['']"
+              style={{ textShadow: "none" }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              aria-label="แก้ข้อความนี้"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit();
+              }}
+              className="absolute -left-3.5 -top-3.5 grid h-7 w-7 place-items-center rounded-full bg-white text-black shadow-md before:absolute before:-inset-3 before:content-['']"
+              style={{ textShadow: "none" }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
           <span
             role="button"
             aria-label="ลากเพื่อหมุนข้อความ"

@@ -17,7 +17,21 @@ import type { Sticker } from "@/lib/media/stickers";
 import { editWordAt, lineBreakAfter, newWordAfter, removeWordAt } from "@/lib/word-actions";
 import { ColorSwatches } from "./ColorSwatches";
 import { CaptionColorControls, CaptionLayoutControls } from "./CaptionLayoutControls";
-import { TextLayerControls } from "./TextLayerControls";
+import { TextClipEditor } from "./TextClipEditor";
+
+export type ClipEditing = {
+  key: string;
+  title: string;
+  text: string;
+  look: CaptionStyle;
+  live: boolean;
+  onText: (text: string) => void;
+  onStyle: (patch: Partial<CaptionStyle>) => void;
+  onSplit: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  onDone: () => void;
+};
 
 type Props = {
   words: Word[];
@@ -37,55 +51,12 @@ type Props = {
   onStickerRemove: (id: string) => void;
   onStickerDuplicate: (id: string) => void;
   onStickerSplit: (id: string) => void;
-  /** Turn the caption line around a word into a free text layer. */
-  onDetachLine: (wordIndex: number) => void;
   onOpenStickers: () => void;
   onStyleChange: (patch: Partial<CaptionStyle>) => void;
+  /** the selected text clip (caption line or free text), edited CapCut-style */
+  clip?: ClipEditing | null | undefined;
   className?: string;
 };
-
-function TimeFields({
-  start,
-  end,
-  onStart,
-  onEnd,
-  id,
-}: {
-  start: number;
-  end: number;
-  onStart: (v: number) => void;
-  onEnd: (v: number) => void;
-  id: string;
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      <div className="space-y-1.5">
-        <Label htmlFor={`${id}-start`} className="text-xs text-muted-foreground">
-          เริ่ม (วินาที)
-        </Label>
-        <Input
-          id={`${id}-start`}
-          type="number"
-          step="0.01"
-          value={start.toFixed(2)}
-          onChange={(event) => onStart(Number(event.target.value))}
-        />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor={`${id}-end`} className="text-xs text-muted-foreground">
-          จบ (วินาที)
-        </Label>
-        <Input
-          id={`${id}-end`}
-          type="number"
-          step="0.01"
-          value={end.toFixed(2)}
-          onChange={(event) => onEnd(Number(event.target.value))}
-        />
-      </div>
-    </div>
-  );
-}
 
 /**
  * Desktop right panel (CapCut-style): settings for whatever is selected on the
@@ -108,9 +79,9 @@ export function Inspector({
   onStickerRemove,
   onStickerDuplicate,
   onStickerSplit,
-  onDetachLine,
   onOpenStickers,
   onStyleChange,
+  clip,
   className,
 }: Props) {
   const word = selectedWord != null ? words[selectedWord] : undefined;
@@ -127,7 +98,26 @@ export function Inspector({
         className,
       )}
     >
-      {word && selectedWord != null ? (
+      {clip ? (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary">{clip.title}</p>
+          <TextClipEditor
+            key={clip.key}
+            text={clip.text}
+            look={clip.look}
+            live={clip.live}
+            onText={clip.onText}
+            onStyle={clip.onStyle}
+            onSplit={clip.onSplit}
+            onDuplicate={clip.onDuplicate}
+            onDelete={clip.onDelete}
+            onDone={clip.onDone}
+          />
+          <p className="text-xs text-muted-foreground">
+            ลากบนพรีวิวเพื่อย้าย ใช้มุมเพื่อหมุนหรือย่อขยาย ลากแถบม่วงบนไทม์ไลน์เพื่อเปลี่ยนเวลา
+          </p>
+        </div>
+      ) : word && selectedWord != null ? (
         <div className="space-y-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-primary">คำที่เลือก</p>
@@ -143,13 +133,6 @@ export function Inspector({
               onChange={(event) => edit({ text: event.target.value })}
             />
           </div>
-          <TimeFields
-            id="inspector-word"
-            start={word.start}
-            end={word.end}
-            onStart={(start) => edit({ start })}
-            onEnd={(end) => edit({ end })}
-          />
           <div className="space-y-1.5">
             <span className="text-xs text-muted-foreground">สีของคำนี้</span>
             <ColorSwatches
@@ -187,14 +170,6 @@ export function Inspector({
             <Button
               variant="ghost"
               className="justify-start"
-              onClick={() => onDetachLine(selectedWord)}
-              title="ย้าย ซ้อน ยืดหด ตัด หรือลบบรรทัดนี้ได้อิสระ แบบข้อความใน CapCut"
-            >
-              <Type className="mr-2 h-4 w-4" /> แยกบรรทัดนี้เป็นข้อความอิสระ
-            </Button>
-            <Button
-              variant="ghost"
-              className="justify-start"
               disabled={busy}
               onClick={() => onRetranscribe(lineRange.start, lineRange.end)}
             >
@@ -213,37 +188,6 @@ export function Inspector({
             </Button>
           </div>
         </div>
-      ) : sticker?.kind === "text" ? (
-        <div className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-            ข้อความที่เลือก
-          </p>
-          <TextLayerControls
-            sticker={sticker}
-            onChange={(patch) => onStickerChange(sticker.id, patch)}
-            onDuplicate={() => onStickerDuplicate(sticker.id)}
-            onRemove={() => onStickerRemove(sticker.id)}
-            onSplit={() => onStickerSplit(sticker.id)}
-          />
-          <TimeFields
-            id="inspector-text"
-            start={sticker.start}
-            end={sticker.end}
-            onStart={(start) =>
-              onStickerChange(sticker.id, {
-                start: Math.max(0, Math.min(start, sticker.end - 0.1)),
-              })
-            }
-            onEnd={(end) =>
-              onStickerChange(sticker.id, {
-                end: Math.min(duration, Math.max(end, sticker.start + 0.1)),
-              })
-            }
-          />
-          <p className="text-xs text-muted-foreground">
-            ลากข้อความบนพรีวิวเพื่อย้าย ใช้มุมเพื่อหมุนหรือย่อขยาย ลากแถบบนไทม์ไลน์เพื่อเปลี่ยนเวลา
-          </p>
-        </div>
       ) : sticker ? (
         <div className="space-y-4">
           <div>
@@ -252,21 +196,6 @@ export function Inspector({
             </p>
             <p className="mt-1 text-2xl">{stickerLabel}</p>
           </div>
-          <TimeFields
-            id="inspector-sticker"
-            start={sticker.start}
-            end={sticker.end}
-            onStart={(start) =>
-              onStickerChange(sticker.id, {
-                start: Math.max(0, Math.min(start, sticker.end - 0.1)),
-              })
-            }
-            onEnd={(end) =>
-              onStickerChange(sticker.id, {
-                end: Math.min(duration, Math.max(end, sticker.start + 0.1)),
-              })
-            }
-          />
           <p className="text-xs text-muted-foreground">
             ลากสติกเกอร์บนพรีวิวเพื่อย้าย ใช้มุมเพื่อหมุนหรือย่อขยาย
           </p>

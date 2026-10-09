@@ -13,8 +13,10 @@ export function editWordAt(words: Word[], index: number, patch: Partial<Word>, d
 }
 
 export function insertWordAfter(words: Word[], index: number, word: Word, duration: number) {
+  // a new word joins the caption line of the word it follows
+  const placed = word.clip ? word : { ...word, clip: words[index]?.clip };
   return normalizeWordTimes(
-    [...words.slice(0, index + 1), word, ...words.slice(index + 1)],
+    [...words.slice(0, index + 1), placed, ...words.slice(index + 1)],
     duration,
   );
 }

@@ -1,4 +1,5 @@
 import {
+  assignClipIds,
   balancedSplitIndex,
   captionModeOf,
   groupCaptions,
@@ -60,5 +61,26 @@ assert(!needsSpace("ກິນ", "ກາເຟ") && needsSpace("ກິນ", "coff
 assert(balancedSplitIndex(["ขอ", "แค่", "ทำ", "เงิน"]) === 2, "even split");
 assert(balancedSplitIndex(["Microsoft", "Success"]) === 1, "two words");
 assert(balancedSplitIndex(["a", "bb", "ccccccccc"]) === 2, "lead-in before a long key word");
+
+// Caption clips: assigned once, then grouping follows the clips.
+{
+  const ws: Word[] = [
+    { text: "a", start: 0, end: 0.3 },
+    { text: "b", start: 0.35, end: 0.6 },
+    { text: "c", start: 0.65, end: 0.9 },
+    { text: "d", start: 0.95, end: 1.2 },
+  ];
+  const clipped = assignClipIds(ws, { captionMode: "fixed", wordsPerGroup: 2 });
+  assert(clipped.every((w) => w.clip), "every word gets a clip");
+  assert(clipped[0]!.clip === clipped[1]!.clip && clipped[1]!.clip !== clipped[2]!.clip, "two per clip");
+  // changing the mode later does not regroup clipped words
+  const groups = groupCaptions(clipped, { captionMode: "word", wordsPerGroup: 1 });
+  assert(groups.length === 2 && groups[0]!.id === clipped[0]!.clip, "grouped by clip");
+  // a new word without a clip joins the line before it
+  const withNew = [...clipped.slice(0, 2), { text: "x", start: 0.62, end: 0.64 }, ...clipped.slice(2)];
+  const g2 = groupCaptions(withNew, { captionMode: "word", wordsPerGroup: 1 });
+  assert(g2.length === 2 && g2[0]!.words.length === 3, "unclipped word joins previous line");
+  assert(assignClipIds(clipped, { captionMode: "word", wordsPerGroup: 1 }) === clipped, "no-op when all clipped");
+}
 
 console.log("caption grouping tests passed");

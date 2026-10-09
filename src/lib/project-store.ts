@@ -27,6 +27,8 @@ export type SavedProject = {
   splitPoints?: number[];
   projectName?: string;
   sfx?: { enabled: boolean; volume: number; pack: SoundPack };
+  /** caption lines' own looks, by clip id */
+  clipStyles?: Record<string, Partial<CaptionStyle>>;
 };
 
 export function saveProject(p: Omit<SavedProject, "savedAt">): void {
