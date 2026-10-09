@@ -1,4 +1,4 @@
-import { Copy, Trash2 } from "lucide-react";
+import { Copy, Scissors, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +12,8 @@ type Props = {
   onChange: (patch: Partial<Sticker>) => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  /** Cut in two at the playhead. */
+  onSplit?: () => void;
   autoFocus?: boolean;
   className?: string;
 };
@@ -32,6 +34,7 @@ export function TextLayerControls({
   onChange,
   onDuplicate,
   onRemove,
+  onSplit,
   autoFocus,
   className,
 }: Props) {
@@ -143,6 +146,11 @@ export function TextLayerControls({
       </div>
 
       <div className="flex gap-2 border-t border-border pt-3">
+        {onSplit && (
+          <Button variant="secondary" size="sm" className="flex-1" onClick={onSplit}>
+            <Scissors className="mr-1.5 h-4 w-4" /> ตัด
+          </Button>
+        )}
         <Button variant="secondary" size="sm" className="flex-1" onClick={onDuplicate}>
           <Copy className="mr-1.5 h-4 w-4" /> ทำซ้ำ
         </Button>
