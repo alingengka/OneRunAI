@@ -7,6 +7,7 @@ import {
   Scissors,
   Trash2,
   Type,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,8 @@ type Props = {
   onStickerSplit: (id: string) => void;
   onOpenStickers: () => void;
   onStyleChange: (patch: Partial<CaptionStyle>) => void;
+  /** closes the panel (clears the selection) */
+  onClose?: (() => void) | undefined;
   /** the selected text clip (caption line or free text), edited CapCut-style */
   clip?: ClipEditing | null | undefined;
   className?: string;
@@ -81,6 +84,7 @@ export function Inspector({
   onStickerSplit,
   onOpenStickers,
   onStyleChange,
+  onClose,
   clip,
   className,
 }: Props) {
@@ -94,10 +98,21 @@ export function Inspector({
     <aside
       aria-label="ตั้งค่าสิ่งที่เลือก"
       className={cn(
-        "studio-panel min-h-0 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-4",
+        "studio-panel relative min-h-0 overflow-y-auto overscroll-contain rounded-xl border border-border bg-card p-4",
         className,
       )}
     >
+      {onClose && (clip || word || sticker) && (
+        <button
+          type="button"
+          aria-label="ปิดหน้าต่าง"
+          title="ปิด (Esc)"
+          onClick={onClose}
+          className="absolute right-2 top-2 z-10 grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
       {clip ? (
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">{clip.title}</p>

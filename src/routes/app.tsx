@@ -2195,12 +2195,20 @@ function Studio() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      const escape = event.key === "Escape";
+      if (!escape && event.key !== "Delete" && event.key !== "Backspace") return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (
         target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")
       ) {
+        return;
+      }
+      if (escape) {
+        // Esc closes the selection panel, like its X
+        setSelectedWord(null);
+        setSelectedCaption(null);
+        setSelectedSticker(null);
         return;
       }
       if (deleteSelectionRef.current()) event.preventDefault();
@@ -3651,6 +3659,7 @@ function Studio() {
             onStickerSplit={(id) => splitClip({ kind: "text", id })}
             onOpenStickers={() => setTab("stickers")}
             onStyleChange={changeGlobalStyle}
+            onClose={() => selectClip(null)}
             clip={selectedClip ? clipEditing(selectedClip) : null}
           />
         )}
