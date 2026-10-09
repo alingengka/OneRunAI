@@ -31,6 +31,11 @@ import {
   SlidersHorizontal,
   Palette,
   Music2,
+  Pencil,
+  Scissors,
+  Copy,
+  Trash2,
+  ChevronDown,
   type LucideIcon,
 } from "lucide-react";
 
@@ -52,7 +57,7 @@ import { WordTimelineEditor } from "@/components/editor/WordTimelineEditor";
 import { WordTrack, type TimelineLanes } from "@/components/editor/WordTrack";
 import { MobileWordBar } from "@/components/editor/MobileWordBar";
 import { moveWordTo } from "@/lib/word-actions";
-import { Inspector } from "@/components/editor/Inspector";
+import { Inspector, type ClipEditing } from "@/components/editor/Inspector";
 import { computePeaks, makeThumbnails } from "@/lib/media/timeline-assets";
 import { CaptionList } from "@/components/editor/CaptionList";
 import { StyleControls } from "@/components/editor/StyleControls";
@@ -60,8 +65,11 @@ import { StylePicker } from "@/components/editor/StylePicker";
 import {
   alignWordsToSegments,
   baseStyle,
+  assignClipIds,
   groupCaptions,
   joinCaptionWords,
+  newClipId,
+  type CaptionGroup,
   captionModeOf,
   LINE_BREAK,
   type CaptionStyle,
@@ -165,6 +173,7 @@ import {
   type Sticker,
 } from "@/lib/media/stickers";
 import { MobileTextSheet } from "@/components/editor/MobileTextSheet";
+import { mergedStyle, retimeWords, textClipGroup, textClipStyle } from "@/lib/text-clips";
 import { AccountMenu } from "@/components/account/AccountMenu";
 
 export const Route = createFileRoute("/app")({
@@ -342,8 +351,12 @@ function Studio() {
   }, [expanded]);
   const [stickers, setStickers] = useState<Sticker[]>([]);
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
-  /** Phone: the text layer open in the bottom edit sheet. */
+  /** Phone: the text clip (free text or caption line) open in the bottom edit sheet. */
   const [textSheet, setTextSheet] = useState<string | null>(null);
+  /** Caption lines' own looks, by clip id, on top of the shared caption style. */
+  const [clipStyles, setClipStyles] = useState<Record<string, Partial<CaptionStyle>>>({});
+  /** The selected caption line (clip id). */
+  const [selectedCaption, setSelectedCaption] = useState<string | null>(null);
 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [transcript, setTranscript] = useState("");
@@ -466,8 +479,13 @@ function Studio() {
       groupCaptions(visibleWords, {
         captionMode: style.captionMode,
         wordsPerGroup: style.wordsPerGroup,
-      }),
-    [visibleWords, style.captionMode, style.wordsPerGroup],
+      }).map((g) => (g.id && clipStyles[g.id] ? { ...g, style: clipStyles[g.id] } : g)),
+    [visibleWords, style.captionMode, style.wordsPerGroup, clipStyles],
+  );
+  /** Free text clips, drawn by the caption engine like captions. */
+  const textGroups = useMemo(
+    () => stickers.filter((s) => s.kind === "text").map(textClipGroup),
+    [stickers],
   );
   const activeGroup = useMemo(
     () => groups.find((g) => time >= g.start && time <= g.end) ?? null,
@@ -478,7 +496,9 @@ function Studio() {
   /** Desktop: a word, text or sticker is selected, so its settings column shows. */
   const desktopInspector =
     isDesktop &&
-    (selectedWordValid != null || stickers.some((sticker) => sticker.id === selectedSticker));
+    (selectedWordValid != null ||
+      selectedCaption != null ||
+      stickers.some((sticker) => sticker.id === selectedSticker));
   /** The caption line around the selected word (for "re-transcribe this line"). */
   const selectedLineRange = useMemo(() => {
     const word = selectedWordValid != null ? words[selectedWordValid] : undefined;
@@ -491,19 +511,39 @@ function Studio() {
     () => ({
       ...(timelineThumbs ? { thumbs: timelineThumbs.thumbs, thumbStep: timelineThumbs.step } : {}),
       ...(peaks.length ? { peaks, peakStep: 0.05 } : {}),
-      stickers: stickers.map((sticker) => ({
-        id: sticker.id,
-        start: sticker.start,
-        end: sticker.end,
-        label:
-          sticker.kind === "emoji"
-            ? (EMOJIS.find((emoji) => emoji.code === sticker.asset)?.char ?? "😀")
-            : sticker.kind === "text"
-              ? `T ${sticker.asset.replace(/\s+/g, " ").slice(0, 24)}`
-              : "สติกเกอร์",
-      })),
+      // text clips: caption lines and free texts (purple track)
+      texts: [
+        // (lines get their clip ids right after loading; until then keep keys unique)
+        ...groups.map((g, i) => ({
+          id: g.id ?? `line-${i}`,
+          kind: "caption" as const,
+          label: joinCaptionWords(g.words, style.joinWords),
+          start: g.start,
+          end: g.end,
+        })),
+        ...textGroups.map((g, i) => ({
+          id: g.id ?? `text-${i}`,
+          kind: "text" as const,
+          label: joinCaptionWords(g.words, true).replace(/\s+/g, " "),
+          start: g.start,
+          end: g.end,
+        })),
+      ],
+      stickers: stickers
+        .filter((sticker) => sticker.kind !== "text")
+        .map((sticker) => ({
+          id: sticker.id,
+          start: sticker.start,
+          end: sticker.end,
+          label:
+            sticker.kind === "emoji"
+              ? (EMOJIS.find((emoji) => emoji.code === sticker.asset)?.char ?? "😀")
+              : sticker.kind === "text"
+                ? `T ${sticker.asset.replace(/\s+/g, " ").slice(0, 24)}`
+                : "สติกเกอร์",
+        })),
     }),
-    [timelineThumbs, peaks, stickers],
+    [timelineThumbs, peaks, stickers, groups, textGroups, style.joinWords],
   );
 
   // Video thumbnails for the timeline, made in the background after a clip loads.
@@ -546,6 +586,7 @@ function Studio() {
     (window as unknown as { __shortcutState?: unknown }).__shortcutState = {
       words: visibleWords,
       groups,
+      textGroups,
       style,
       duration,
       transcribing,
@@ -554,7 +595,7 @@ function Studio() {
       segments,
       speechSegments: analysisSegmentsRef.current,
     };
-  }, [visibleWords, groups, style, duration, transcribing, analyzing, segments]);
+  }, [visibleWords, groups, textGroups, style, duration, transcribing, analyzing, segments]);
 
   // measure preview frame for font scaling
   useEffect(() => {
@@ -839,6 +880,7 @@ function Studio() {
       splitPoints,
       projectName,
       sfx,
+      clipStyles,
     }),
     [
       file,
@@ -859,6 +901,7 @@ function Studio() {
       splitPoints,
       projectName,
       sfx,
+      clipStyles,
     ],
   );
 
@@ -899,6 +942,7 @@ function Studio() {
     setProjectName(p.projectName ?? p.fileName.replace(/\.[^.]+$/, ""));
     restoredProjectRef.current = true;
     if (p.sfx) setSfx(p.sfx);
+    setClipStyles(p.clipStyles ?? {});
     setDuration((d) => d || p.duration);
     setCaptionsOn(true);
     toast.success(`โหลดงานที่บันทึกไว้ (${p.fileName}) แล้ว — อัปโหลดคลิปเดิมเพื่อดูพรีวิว`);
@@ -1438,7 +1482,38 @@ function Studio() {
     setSelectedSticker((current) => (current === id ? null : current));
     setTextSheet((current) => (current === id ? null : current));
   };
-  /** Free text layer at the playhead (CapCut "Add text"), selected and ready to type. */
+  // ── Text clips (CapCut-style). Two kinds share one editor and one track:
+  // caption lines from the AI (their words keep real timings) and free texts
+  // the user adds or pastes (they may overlap anything).
+  type ClipRef = { kind: "caption" | "text"; id: string };
+  const selectedClip: ClipRef | null = selectedCaption
+    ? { kind: "caption", id: selectedCaption }
+    : selectedSticker && stickers.some((s) => s.id === selectedSticker && s.kind === "text")
+      ? { kind: "text", id: selectedSticker }
+      : null;
+  const selectClip = (ref: ClipRef | null) => {
+    setSelectedWord(null);
+    setSelectedCaption(ref?.kind === "caption" ? ref.id : null);
+    setSelectedSticker(ref?.kind === "text" ? ref.id : null);
+  };
+  const clipGroup = (ref: ClipRef): CaptionGroup | undefined =>
+    ref.kind === "caption"
+      ? groups.find((g) => g.id === ref.id)
+      : textGroups.find((g) => g.id === ref.id);
+  /** The look a clip is drawn with (shared style + its own settings). */
+  const clipLook = (ref: ClipRef): CaptionStyle => mergedStyle(style, clipGroup(ref));
+  const styleClip = (ref: ClipRef, patch: Partial<CaptionStyle>) => {
+    if (ref.kind === "caption") {
+      setClipStyles((current) => ({ ...current, [ref.id]: { ...current[ref.id], ...patch } }));
+      return;
+    }
+    setStickers((current) =>
+      current.map((s) =>
+        s.id === ref.id ? { ...s, style: { ...textClipStyle(s), ...patch } } : s,
+      ),
+    );
+  };
+  /** Free text clip at the playhead (CapCut "Add text"), selected and ready to type. */
   const addTextLayer = () => {
     const start = Math.max(0, Math.min(time, Math.max(0, duration - 0.5)));
     const layer: Sticker = {
@@ -1449,97 +1524,209 @@ function Studio() {
       end: Math.min(duration || start + 3, start + 3),
       x: 50,
       y: 35,
-      size: 6,
+      size: style.size,
       rotation: 0,
-      color: "#ffffff",
-      stroke: "#111111",
-      font: DEFAULT_TEXT_FONT,
+      // a title-like text: no per-word effects unless chosen in its Animation tab
+      style: { posX: 50, posY: 35, highlight: "none", animation: "none" },
     };
     videoRef.current?.pause();
     setStickers((current) => [...current, layer]);
-    setSelectedWord(null);
-    setSelectedSticker(layer.id);
+    selectClip({ kind: "text", id: layer.id });
     if (!isDesktop) setTextSheet(layer.id);
+  };
+  /** A caption line as a free text clip with the same words, timing and look. */
+  const captionToText = (group: CaptionGroup, at = group.start): Sticker => {
+    const look = mergedStyle(style, group);
+    const length = Math.max(0.2, group.end - group.start);
+    return {
+      id: newStickerId(),
+      kind: "text",
+      asset: joinCaptionWords(group.words, look.joinWords) || " ",
+      start: at,
+      end: at + length,
+      x: look.posX,
+      y: look.posY,
+      size: look.size,
+      rotation: look.rotation ?? 0,
+      words: retimeWords(
+        group.words.map(({ clip: _clip, ...w }) => w),
+        group,
+        { start: at, end: at + length },
+      ),
+      style: { ...group.style, posX: look.posX, posY: look.posY },
+    };
   };
   const duplicateSticker = (id: string) => {
     const source = stickers.find((s) => s.id === id);
     if (!source) return;
-    const copy = { ...source, id: newStickerId(), y: Math.min(95, source.y + 8) };
+    const copy: Sticker =
+      source.kind === "text"
+        ? (() => {
+            const look = textClipStyle(source);
+            const y = Math.min(95, (look.posY ?? source.y) + 8);
+            return { ...source, id: newStickerId(), y, style: { ...look, posY: y } };
+          })()
+        : { ...source, id: newStickerId(), y: Math.min(95, source.y + 8) };
     setStickers((current) => [...current, copy]);
-    setSelectedSticker(copy.id);
+    selectClip(source.kind === "text" ? { kind: "text", id: copy.id } : null);
+    if (source.kind !== "text") setSelectedSticker(copy.id);
     if (textSheet) setTextSheet(copy.id);
   };
-  /**
-   * Turns the caption line around a word into a free text layer (same words,
-   * timing, place and look), so it can be moved, overlapped, trimmed, cut or
-   * deleted on its own like a CapCut text clip.
-   */
-  const textLayerFromGroup = (group: (typeof groups)[number]): Sticker => ({
-    id: newStickerId(),
-    kind: "text",
-    asset: joinCaptionWords(group.words, style.joinWords) || " ",
-    start: group.start,
-    end: Math.max(group.end, group.start + 0.2),
-    x: style.posX,
-    y: style.posY,
-    size: style.size,
-    rotation: 0,
-    color: style.color,
-    stroke: style.stroke === "none" ? undefined : style.strokeColor,
-    font: style.fontFamily,
-  });
-  /**
-   * Every caption line becomes its own free text clip at the time it is
-   * spoken (CapCut's auto captions): each can then be edited, split, resized,
-   * overlapped or moved without touching the others. Ctrl+Z brings the
-   * captions back.
-   */
-  const convertAllCaptions = () => {
-    if (!groups.length) {
-      toast.error("ยังไม่มีซับให้แปลง");
+  const duplicateClip = (ref: ClipRef) => {
+    if (ref.kind === "text") {
+      duplicateSticker(ref.id);
       return;
     }
-    const layers = groups.map(textLayerFromGroup);
-    const taken = new Set(groups.flatMap((g) => g.words));
-    updateWords(words.filter((w) => !taken.has(w)));
-    setStickers((current) => [...current, ...layers]);
-    setSelectedWord(null);
-    setSelectedSticker(layers[0]?.id ?? null);
-    toast.success(
-      `แปลงเป็นข้อความอิสระ ${layers.length} ชิ้นแล้ว — แก้ ย่อขยาย ซ้อน ตัด ได้ทีละชิ้น (Ctrl+Z เพื่อย้อน)`,
-    );
-  };
-  const detachCaptionLine = (wordIndex: number) => {
-    const word = words[wordIndex];
-    const group = word ? groups.find((g) => g.words.includes(word)) : undefined;
+    const group = clipGroup(ref);
     if (!group) return;
-    const layer = textLayerFromGroup(group);
-    const taken = new Set(group.words);
-    updateWords(words.filter((w) => !taken.has(w)));
-    setStickers((current) => [...current, layer]);
-    setSelectedWord(null);
-    setSelectedSticker(layer.id);
-    if (!isDesktop) setTextSheet(layer.id);
-    toast.success("แยกเป็นข้อความอิสระแล้ว — ลากย้าย ยืดหด ตัด หรือลบได้");
+    const copy = captionToText(group);
+    const y = Math.min(95, (copy.style?.posY ?? copy.y) + 8);
+    copy.y = y;
+    copy.style = { ...copy.style, posY: y };
+    setStickers((current) => [...current, copy]);
+    selectClip({ kind: "text", id: copy.id });
   };
-  /** Cuts a text or sticker in two at the playhead (CapCut "Split"). */
-  const splitStickerAtPlayhead = (id: string) => {
-    const source = stickers.find((s) => s.id === id);
-    const at = videoRef.current?.currentTime ?? time;
-    if (!source || at <= source.start + 0.1 || at >= source.end - 0.1) {
-      toast.error("เลื่อนเส้นเวลาไปไว้กลางข้อความก่อน แล้วค่อยกดตัด");
+  const deleteClip = (ref: ClipRef) => {
+    if (ref.kind === "text") {
+      removeSticker(ref.id);
       return;
     }
-    const second = { ...source, id: newStickerId(), start: at };
+    updateWords(words.filter((w) => w.clip !== ref.id));
+    setClipStyles(({ [ref.id]: _gone, ...rest }) => rest);
+    setSelectedCaption(null);
+  };
+  /** Cuts a clip in two at the playhead (CapCut "Split"). */
+  const splitClip = (ref: ClipRef) => {
+    const at = videoRef.current?.currentTime ?? time;
+    const fail = () => toast.error("เลื่อนเส้นเวลาไปไว้กลางข้อความก่อน แล้วค่อยกดตัด");
+    if (ref.kind === "caption") {
+      const clipWords = words.filter((w) => w.clip === ref.id && w.text !== LINE_BREAK);
+      const firstAfter = words.findIndex(
+        (w) => w.clip === ref.id && w.text !== LINE_BREAK && w.start >= at - 0.01,
+      );
+      const index = firstAfter < 0 ? -1 : clipWords.indexOf(words[firstAfter]!);
+      if (index <= 0) {
+        fail();
+        return;
+      }
+      const id = newClipId();
+      let after = false;
+      updateWords(
+        words.map((w) => {
+          if (w === words[firstAfter]) after = true;
+          return after && w.clip === ref.id ? { ...w, clip: id } : w;
+        }),
+      );
+      setClipStyles((current) =>
+        current[ref.id] ? { ...current, [id]: { ...current[ref.id] } } : current,
+      );
+      setSelectedCaption(id);
+      return;
+    }
+    const source = stickers.find((s) => s.id === ref.id);
+    if (!source || at <= source.start + 0.1 || at >= source.end - 0.1) {
+      fail();
+      return;
+    }
+    if (source.kind !== "text") {
+      const second = { ...source, id: newStickerId(), start: at };
+      setStickers((current) =>
+        current.flatMap((s) => (s.id === ref.id ? [{ ...s, end: at }, second] : [s])),
+      );
+      setSelectedSticker(second.id);
+      return;
+    }
+    const group = textClipGroup(source);
+    const before = group.words.filter((w) => w.start < at);
+    const rest = group.words.filter((w) => w.start >= at);
+    const look = textClipStyle(source);
+    const part = (ws: Word[], start: number, end: number, id: string): Sticker => ({
+      ...source,
+      id,
+      start,
+      end,
+      asset: ws.length ? joinCaptionWords(ws, look.joinWords ?? style.joinWords) : source.asset,
+      words: ws.length ? ws : undefined,
+    });
+    const second = part(rest, at, source.end, newStickerId());
     setStickers((current) =>
-      current.flatMap((s) => (s.id === id ? [{ ...s, end: at }, second] : [s])),
+      current.flatMap((s) =>
+        s.id === ref.id ? [part(before, source.start, at, source.id), second] : [s],
+      ),
     );
     setSelectedSticker(second.id);
     if (textSheet) setTextSheet(second.id);
   };
+  /** A clip dragged or trimmed on the timeline; its words keep their place in it. */
+  const retimeClip = (ref: ClipRef, start: number, end: number) => {
+    if (ref.kind === "text") {
+      const source = stickers.find((s) => s.id === ref.id);
+      if (!source) return;
+      updateSticker(ref.id, {
+        start,
+        end,
+        words: source.words?.length ? retimeWords(source.words, source, { start, end }) : undefined,
+      });
+      return;
+    }
+    const index = groups.findIndex((g) => g.id === ref.id);
+    const group = groups[index];
+    if (!group) return;
+    // caption lines stay in order: keep clear of the lines before and after
+    const lo = groups[index - 1]?.end ?? 0;
+    const hi = groups[index + 1]?.start ?? duration;
+    const length = end - start;
+    let s0 = Math.max(lo, start);
+    let e0 = Math.min(hi, end);
+    if (Math.abs(length - (group.end - group.start)) < 0.001) {
+      // a move keeps its length
+      s0 = Math.min(Math.max(lo, start), hi - length);
+      e0 = s0 + length;
+    }
+    if (e0 - s0 < 0.1) return;
+    const retimed = new Map(
+      retimeWords(group.words, group, { start: s0, end: e0 }).map((w, i) => [group.words[i]!, w]),
+    );
+    setWords((current) => current.map((w) => retimed.get(w) ?? w));
+  };
+  const editClipText = (ref: ClipRef, text: string) => {
+    if (ref.kind === "text") {
+      updateSticker(ref.id, { asset: text, words: undefined });
+      return;
+    }
+    const group = clipGroup(ref);
+    if (group) editActiveGroupText(text, group);
+  };
   const editTextLayer = (id: string) => {
-    setSelectedSticker(id);
+    selectClip({ kind: "text", id });
     if (!isDesktop) setTextSheet(id);
+  };
+  const editCaptionClip = (id: string) => {
+    selectClip({ kind: "caption", id });
+    if (!isDesktop) setTextSheet(id);
+  };
+  /** What the CapCut-style editor needs for one clip (desktop panel and phone sheet). */
+  const clipEditing = (ref: ClipRef): ClipEditing | null => {
+    const group = clipGroup(ref);
+    if (!group) return null;
+    const look = clipLook(ref);
+    const layer = ref.kind === "text" ? stickers.find((s) => s.id === ref.id) : undefined;
+    return {
+      key: `${ref.kind}:${ref.id}`,
+      title: ref.kind === "caption" ? "ซับที่เลือก" : "ข้อความที่เลือก",
+      text: layer ? layer.asset : joinCaptionWords(group.words, look.joinWords),
+      look,
+      live: ref.kind === "text",
+      onText: (text) => editClipText(ref, text),
+      onStyle: (patch) => styleClip(ref, patch),
+      onSplit: () => splitClip(ref),
+      onDuplicate: () => duplicateClip(ref),
+      onDelete: () => deleteClip(ref),
+      onDone: () => {
+        if (isDesktop) selectClip(null);
+        else setTextSheet(null);
+      },
+    };
   };
 
   const exportFinalVideo = (type: ExportType = exportType) => {
@@ -1582,7 +1769,7 @@ function Studio() {
           exportWebCodecsVideo(
             videoUrl,
             [...outputSegments],
-            [...groups],
+            [...groups, ...textGroups],
             style,
             onProgress,
             options,
@@ -1625,7 +1812,7 @@ function Studio() {
       } = await exportBurnedVideo(
         videoUrl,
         [...outputSegments],
-        [...groups],
+        [...groups, ...textGroups],
         style,
         onProgress,
         shared,
@@ -1731,7 +1918,8 @@ function Studio() {
   };
 
   /** แก้ข้อความของบล็อกซับที่กำลังแสดงบนพรีวิว ("\n" = แยกแถว) */
-  const editActiveGroupText = (text: string) => {
+  const editActiveGroupText = (text: string, target = activeGroup) => {
+    const activeGroup = target;
     if (!activeGroup) return;
     const first = words.findIndex((w) => w === activeGroup.words[0]);
     if (first < 0) return;
@@ -1761,6 +1949,8 @@ function Studio() {
       });
     }
     if (!replacement.length) return;
+    // the new words stay in the same caption clip
+    replacement = replacement.map((w) => ({ ...w, clip: activeGroup.id }));
     updateWords([...words.slice(0, first), ...replacement, ...words.slice(last)]);
     toast.success(
       autoResync && segments.length
@@ -1805,12 +1995,21 @@ function Studio() {
       removeSticker(selectedSticker);
       return true;
     }
+    if (selectedCaption) {
+      deleteClip({ kind: "caption", id: selectedCaption });
+      return true;
+    }
     return false;
   };
   // ── Undo / redo (Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y) over words, texts, stickers
   // and the caption style. Rapid changes (a drag, typing) are grouped into one
   // step: a step is saved once things have been still for 400 ms.
-  type EditSnapshot = { words: Word[]; stickers: Sticker[]; style: CaptionStyle };
+  type EditSnapshot = {
+    words: Word[];
+    stickers: Sticker[];
+    style: CaptionStyle;
+    clipStyles: Record<string, Partial<CaptionStyle>>;
+  };
   const historyRef = useRef<{
     past: EditSnapshot[];
     future: EditSnapshot[];
@@ -1821,7 +2020,7 @@ function Studio() {
   }>({ past: [], future: [], committed: null, pendingBase: null, restoring: false, timer: 0 });
   useEffect(() => {
     const h = historyRef.current;
-    const now = { words, stickers, style };
+    const now = { words, stickers, style, clipStyles };
     if (h.restoring || !h.committed) {
       h.restoring = false;
       h.committed = now;
@@ -1836,13 +2035,64 @@ function Studio() {
         h.future = [];
       }
       h.pendingBase = null;
-      h.committed = { words, stickers, style };
+      h.committed = { words, stickers, style, clipStyles };
     }, 400);
-  }, [words, stickers, style]);
+  }, [words, stickers, style, clipStyles]);
+  // AI captions (and words added later) become caption clips right away, like
+  // CapCut's auto captions. Not an edit of its own, so it is not an undo step.
+  useEffect(() => {
+    if (transcribing || !words.some((w) => !w.clip)) return;
+    historyRef.current.restoring = true;
+    setWords((current) => assignClipIds(current, style));
+  }, [words, transcribing, style]);
+
+  /**
+   * The Style Sub tab: changes every caption and text clip at once (a clip's
+   * own setting for the same thing is dropped). A new "words at a time"
+   * choice splits the captions into new clips.
+   */
+  const changeGlobalStyle = (
+    patch: Partial<CaptionStyle> | ((s: CaptionStyle) => CaptionStyle),
+  ) => {
+    const next = typeof patch === "function" ? patch(style) : { ...style, ...patch };
+    const keys = (Object.keys(next) as (keyof CaptionStyle)[]).filter(
+      (key) => next[key] !== style[key],
+    );
+    // where a clip sits on the video stays its own
+    const keep = new Set<keyof CaptionStyle>(["posX", "posY", "rotation"]);
+    const drop = keys.filter((key) => !keep.has(key) || typeof patch !== "function");
+    setStyle(next);
+    if (drop.length) {
+      const strip = (look: Partial<CaptionStyle> | undefined) => {
+        if (!look) return look;
+        const out = { ...look };
+        for (const key of drop) delete out[key];
+        return out;
+      };
+      setClipStyles((current) =>
+        Object.fromEntries(Object.entries(current).map(([id, look]) => [id, strip(look) ?? {}])),
+      );
+      setStickers((current) =>
+        current.map((sticker) =>
+          sticker.kind === "text" ? { ...sticker, style: strip(textClipStyle(sticker)) } : sticker,
+        ),
+      );
+    }
+    if (keys.includes("captionMode") || keys.includes("wordsPerGroup")) {
+      setClipStyles({});
+      setWords((current) =>
+        assignClipIds(
+          current.map(({ clip: _clip, ...w }) => w),
+          next,
+        ),
+      );
+    }
+  };
+
   const historyStepRef = useRef<(direction: "undo" | "redo") => boolean>(() => false);
   historyStepRef.current = (direction) => {
     const h = historyRef.current;
-    const current = { words, stickers, style };
+    const current = { words, stickers, style, clipStyles };
     // A change still settling counts as its own step first.
     if (h.pendingBase) {
       window.clearTimeout(h.timer);
@@ -1861,7 +2111,9 @@ function Studio() {
     setTranscript(wordsToTranscript(snap.words));
     setStickers(snap.stickers);
     setStyle(snap.style);
+    setClipStyles(snap.clipStyles);
     setSelectedWord(null);
+    setSelectedCaption(null);
     setSelectedSticker((id) => (id && snap.stickers.some((s) => s.id === id) ? id : null));
     return true;
   };
@@ -1871,6 +2123,21 @@ function Studio() {
   const clipboardRef = useRef<Sticker | null>(null);
   const clipboardKeyRef = useRef<(key: "c" | "v" | "x" | "d") => boolean>(() => false);
   clipboardKeyRef.current = (key) => {
+    // A copied caption line pastes as a free text clip (same words, timing
+    // inside it, and look), so the copy can overlap the original like CapCut.
+    const captionGroup = selectedCaption ? groups.find((g) => g.id === selectedCaption) : undefined;
+    if (captionGroup) {
+      if (key === "c" || key === "x") {
+        clipboardRef.current = captionToText(captionGroup);
+        if (key === "x") deleteClip({ kind: "caption", id: captionGroup.id ?? "" });
+        else toast.message("คัดลอกแล้ว — กด Ctrl+V เพื่อวาง");
+        return true;
+      }
+      if (key === "d") {
+        duplicateClip({ kind: "caption", id: captionGroup.id ?? "" });
+        return true;
+      }
+    }
     const selected = stickers.find((s) => s.id === selectedSticker);
     if (key === "c" || key === "x") {
       if (!selected) return false;
@@ -1884,15 +2151,22 @@ function Studio() {
     const length = source.end - source.start;
     const at = key === "d" ? source.start : (videoRef.current?.currentTime ?? time);
     const start = Math.max(0, Math.min(at, Math.max(0, (duration || at + length) - length)));
+    if (key === "d") {
+      duplicateSticker(source.id);
+      return true;
+    }
     const copy: Sticker = {
       ...source,
       id: newStickerId(),
       start,
       end: start + length,
-      ...(key === "d" ? { y: Math.min(95, source.y + 8) } : {}),
+      words: source.words?.length
+        ? retimeWords(source.words, source, { start, end: start + length })
+        : undefined,
     };
     setStickers((current) => [...current, copy]);
     setSelectedWord(null);
+    setSelectedCaption(null);
     setSelectedSticker(copy.id);
     return true;
   };
@@ -2900,15 +3174,9 @@ function Studio() {
 
           {(tab === "styles" || tab === "customize") && (
             <div className="mb-5">
-              <CaptionLayoutControls
-                style={style}
-                onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-              />
+              <CaptionLayoutControls style={style} onChange={changeGlobalStyle} />
               <div className="mt-4">
-                <CaptionColorControls
-                  style={style}
-                  onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-                />
+                <CaptionColorControls style={style} onChange={changeGlobalStyle} />
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
                 อยากให้บางคำเป็นสีอื่น: ไปที่ ซับไตเติล → แตะคำ → เลือก “สีของคำนี้”
@@ -2921,9 +3189,9 @@ function Studio() {
               activeId={style.id}
               activeStyle={style}
               language={languages[0] ?? "th"}
-              onChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+              onChange={changeGlobalStyle}
               onSelect={(preset) => {
-                setStyle((current) => ({
+                changeGlobalStyle((current) => ({
                   ...preset,
                   captionMode: current.captionMode ?? preset.captionMode,
                   joinWords: current.joinWords ?? preset.joinWords,
@@ -2944,7 +3212,7 @@ function Studio() {
               <StyleControls
                 style={style}
                 onChange={(p) => {
-                  setStyle((s) => ({ ...s, ...p }));
+                  changeGlobalStyle(p);
                   if (p.animation) void play(p.animation);
                 }}
                 scripts={languages.map((c) => (c === "en" ? "latin" : c))}
@@ -2995,21 +3263,6 @@ function Studio() {
 
           {tab === "text" && (
             <div className="space-y-5">
-              {groups.length > 0 && (
-                <div className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
-                  <Type className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold">อยากจัดวางซับได้อิสระแบบ CapCut?</p>
-                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                      แปลงทุกบรรทัดเป็นข้อความแยกชิ้น ตรงเวลาที่พูดเหมือนเดิม แล้วแก้คำ ย่อขยาย
-                      ซ้อนกัน ตัด หรือลากเวลาได้ทีละชิ้น
-                    </p>
-                  </div>
-                  <Button size="sm" onClick={convertAllCaptions} className="shrink-0">
-                    แปลงทั้งหมด
-                  </Button>
-                </div>
-              )}
               <CaptionList
                 groups={groups}
                 words={words}
@@ -3227,30 +3480,63 @@ function Studio() {
                         time={t}
                         playing={playing}
                       />
-                      {captionsOn && (
-                        <CaptionOverlay
-                          group={groups.find((g) => t >= g.start && t <= g.end) ?? null}
-                          time={t}
-                          style={style}
-                          height={frameHeight}
-                          safeArea={false}
-                          onPositionChange={({ posX, posY }) =>
-                            setStyle((current) => ({ ...current, posX, posY }))
-                          }
-                          onEditText={(text) => editActiveGroupText(text)}
-                          onTransform={(patch) => setStyle((current) => ({ ...current, ...patch }))}
-                          showHandles={!playing && !(tab === "stickers" && selectedSticker)}
-                        />
-                      )}
+                      {(() => {
+                        // Every visible clip: the caption line, then free texts on top.
+                        const line = captionsOn
+                          ? groups.find((g) => t >= g.start && t <= g.end)
+                          : undefined;
+                        const visible = [
+                          ...(line
+                            ? [
+                                {
+                                  ref: { kind: "caption", id: line.id ?? "" } as ClipRef,
+                                  group: line,
+                                },
+                              ]
+                            : []),
+                          ...textGroups
+                            .filter((g) => t >= g.start && t <= g.end)
+                            .map((g) => ({
+                              ref: { kind: "text", id: g.id ?? "" } as ClipRef,
+                              group: g,
+                            })),
+                        ];
+                        return visible.map(({ ref, group }, i) => {
+                          const selected =
+                            selectedClip?.kind === ref.kind && selectedClip.id === ref.id;
+                          return (
+                            <CaptionOverlay
+                              key={`${ref.kind}-${ref.id}`}
+                              group={group}
+                              time={t}
+                              style={mergedStyle(style, group)}
+                              height={frameHeight}
+                              safeArea={false}
+                              zIndex={selected ? 40 : 30 + i}
+                              onSelect={() => selectClip(ref)}
+                              onPositionChange={({ posX, posY }) => styleClip(ref, { posX, posY })}
+                              onEditText={(text) => editClipText(ref, text)}
+                              onTransform={(patch) => styleClip(ref, patch)}
+                              onDelete={() => deleteClip(ref)}
+                              onEdit={() =>
+                                ref.kind === "text"
+                                  ? editTextLayer(ref.id)
+                                  : editCaptionClip(ref.id)
+                              }
+                              showHandles={!playing && selected}
+                            />
+                          );
+                        });
+                      })()}
                       <ViralTextOverlay
                         scenes={scenes}
                         sceneElements={sceneElements}
                         time={t}
                         height={frameHeight}
                       />
-                      {stickers.length > 0 && (
+                      {stickers.some((sticker) => sticker.kind !== "text") && (
                         <StickerOverlay
-                          stickers={stickers}
+                          stickers={stickers.filter((sticker) => sticker.kind !== "text")}
                           time={t}
                           width={frameWidth}
                           height={frameHeight}
@@ -3362,10 +3648,10 @@ function Studio() {
             onStickerChange={updateSticker}
             onStickerRemove={removeSticker}
             onStickerDuplicate={duplicateSticker}
-            onStickerSplit={splitStickerAtPlayhead}
-            onDetachLine={detachCaptionLine}
+            onStickerSplit={(id) => splitClip({ kind: "text", id })}
             onOpenStickers={() => setTab("stickers")}
-            onStyleChange={(patch) => setStyle((current) => ({ ...current, ...patch }))}
+            onStyleChange={changeGlobalStyle}
+            clip={selectedClip ? clipEditing(selectedClip) : null}
           />
         )}
 
@@ -3391,6 +3677,12 @@ function Studio() {
               lanes={timelineLanes}
               selectedSticker={selectedSticker}
               onStickerTime={(id, start, end) => updateSticker(id, { start, end })}
+              selectedText={selectedClip}
+              onSelectText={(ref) => {
+                selectClip(ref);
+                if (!isDesktop && textSheet) setTextSheet(ref.id);
+              }}
+              onTextTime={retimeClip}
               onSelectSticker={(id) => {
                 setSelectedWord(null);
                 setSelectedSticker(id);
@@ -3432,6 +3724,12 @@ function Studio() {
                 lanes={timelineLanes}
                 selectedSticker={selectedSticker}
                 onStickerTime={(id, start, end) => updateSticker(id, { start, end })}
+                selectedText={selectedClip}
+                onSelectText={(ref) => {
+                  selectClip(ref);
+                  if (!isDesktop && textSheet) setTextSheet(ref.id);
+                }}
+                onTextTime={retimeClip}
                 onSelectSticker={(id) => {
                   setSelectedWord(null);
                   setSelectedSticker(id);
@@ -3442,21 +3740,48 @@ function Studio() {
         )}
       </div>
 
-      {/* Phone: editing a text layer */}
+      {/* Phone: editing a text clip */}
       {!isDesktop &&
         (() => {
-          const layer = textSheet ? stickers.find((s) => s.id === textSheet) : undefined;
-          return layer ? (
-            <MobileTextSheet
-              sticker={layer}
-              onChange={(patch) => updateSticker(layer.id, patch)}
-              onDuplicate={() => duplicateSticker(layer.id)}
-              onRemove={() => removeSticker(layer.id)}
-              onSplit={() => splitStickerAtPlayhead(layer.id)}
-              onClose={() => setTextSheet(null)}
-            />
-          ) : null;
+          const ref: ClipRef | null =
+            textSheet && selectedClip?.id === textSheet ? selectedClip : null;
+          const clip = ref ? clipEditing(ref) : null;
+          if (!ref || !clip) return null;
+          const layer = ref.kind === "text" ? stickers.find((s) => s.id === ref.id) : undefined;
+          return <MobileTextSheet clip={clip} autoFocus={layer?.asset === "ข้อความ"} />;
         })()}
+
+      {/* Phone: tools for the selected text clip replace the bottom menu */}
+      {!isDesktop && selectedClip && !textSheet && selectedWordValid == null && (
+        <nav
+          aria-label="เครื่องมือข้อความ"
+          className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        >
+          {(
+            [
+              { label: "แก้ไข", icon: Pencil, run: () => setTextSheet(selectedClip.id) },
+              { label: "ตัด", icon: Scissors, run: () => splitClip(selectedClip) },
+              { label: "ทำซ้ำ", icon: Copy, run: () => duplicateClip(selectedClip) },
+              { label: "ลบ", icon: Trash2, run: () => deleteClip(selectedClip) },
+              { label: "เพิ่มข้อความ", icon: Type, run: addTextLayer },
+              { label: "กลับ", icon: ChevronDown, run: () => selectClip(null) },
+            ] satisfies { label: string; icon: LucideIcon; run: () => void }[]
+          ).map(({ label, icon: Icon, run }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={run}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 text-[11px] text-muted-foreground",
+                label === "ลบ" && "text-destructive",
+              )}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="truncate">{label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
 
       {/* Phone: tools for the selected word replace the bottom menu */}
       {!isDesktop && selectedWordValid != null && (
@@ -3470,13 +3795,12 @@ function Studio() {
           onSelect={setSelectedWord}
           onPreview={previewRange}
           onRetranscribe={(start, end) => void retranscribeRange(start, end)}
-          onDetach={() => detachCaptionLine(selectedWordValid)}
         />
       )}
 
       {/* Phone: bottom toolbar */}
       <nav
-        hidden={!isDesktop && selectedWordValid != null}
+        hidden={!isDesktop && (selectedWordValid != null || selectedClip != null)}
         aria-label="เมนูเครื่องมือ"
         className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >

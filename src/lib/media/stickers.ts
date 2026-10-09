@@ -1,3 +1,4 @@
+import type { CaptionStyle, Word } from "../captions";
 /**
  * Stickers drawn over the video: animated emoji (Google Noto Emoji Lottie
  * files bundled under /public/lottie/emoji, CC BY 4.0) and motion graphics
@@ -38,6 +39,14 @@ export type Sticker = {
   font?: string | undefined;
   /** text layers: 0–1 */
   opacity?: number | undefined;
+  /**
+   * Text clips: their own look on top of the caption style (same engine and
+   * settings as captions, so highlight, karaoke and animations work too).
+   * Wins over the older x/y/size/color/stroke/background/font fields.
+   */
+  style?: Partial<CaptionStyle> | undefined;
+  /** Text clips: word timings (for karaoke and highlight); spread evenly when absent. */
+  words?: Word[] | undefined;
 };
 
 export const DEFAULT_TEXT_FONT = "'Noto Sans Lao', 'Noto Sans Thai', 'Inter', sans-serif";
@@ -113,33 +122,6 @@ export function stickerBoxPx(sticker: Sticker, height: number): { w: number; h: 
   }
   const t = textLayout(sticker, height);
   return { w: t.width + t.pad * 2, h: t.height + t.pad * 2 };
-}
-
-function drawTextLayer(ctx: CanvasRenderingContext2D, sticker: Sticker, height: number) {
-  const t = textLayout(sticker, height, ctx);
-  ctx.globalAlpha *= sticker.opacity ?? 1;
-  if (sticker.background) {
-    const w = t.width + t.pad * 2;
-    const h = t.height + t.pad * 2;
-    ctx.fillStyle = sticker.background;
-    ctx.beginPath();
-    ctx.roundRect(-w / 2, -h / 2, w, h, t.px * 0.3);
-    ctx.fill();
-  }
-  ctx.font = textFont(sticker, t.px);
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.lineJoin = "round";
-  t.lines.forEach((line, i) => {
-    const y = (i - (t.lines.length - 1) / 2) * t.lineHeight;
-    if (sticker.stroke) {
-      ctx.strokeStyle = sticker.stroke;
-      ctx.lineWidth = t.px * 0.2;
-      ctx.strokeText(line, 0, y);
-    }
-    ctx.fillStyle = sticker.color ?? "#ffffff";
-    ctx.fillText(line, 0, y);
-  });
 }
 
 export type EmojiAsset = { code: string; char: string; keywords: string[] };
@@ -719,7 +701,7 @@ export function createStickerLayer(resolution = 512): StickerLayer {
         if (sticker.rotation) ctx.rotate((sticker.rotation * Math.PI) / 180);
         ctx.scale(scale, scale);
         if (sticker.kind === "text") {
-          drawTextLayer(ctx, sticker, height);
+          // Text clips are drawn by the caption engine (see text-clips.ts).
         } else if (sticker.kind === "animated") {
           const anim = readyAnimations.get(sticker.asset);
           if (!anim) void loadAnimated(sticker.asset);

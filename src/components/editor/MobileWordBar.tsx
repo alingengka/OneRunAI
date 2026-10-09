@@ -9,7 +9,6 @@ import {
   Plus,
   RefreshCw,
   Trash2,
-  Type,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,8 +27,6 @@ type Props = {
   onSelect: (index: number | null) => void;
   onPreview: (start: number, end: number) => void;
   onRetranscribe: (start: number, end: number) => void;
-  /** Turn this caption line into a free text layer. */
-  onDetach?: () => void;
 };
 
 /**
@@ -68,7 +65,6 @@ export function MobileWordBar({
   onSelect,
   onPreview,
   onRetranscribe,
-  onDetach,
 }: Props) {
   const word = words[index];
   const [sheet, setSheet] = useState<"text" | "color" | null>(null);
@@ -145,7 +141,6 @@ export function MobileWordBar({
         onSelect(index + 1);
       },
     },
-    ...(onDetach ? [{ id: "detach", label: "แยกข้อความ", icon: Type, run: onDetach }] : []),
     {
       id: "redo",
       label: "ถอดใหม่",

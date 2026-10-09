@@ -11,8 +11,66 @@ export type Word = {
   confidenceLabel?: WordConfidence;
   /** color picked for this word only (overrides the caption color) */
   color?: string | undefined;
+  /**
+   * The caption clip (on-screen line) this word belongs to. AI captions are
+   * split into clips once, like CapCut's auto captions, so each line can be
+   * moved, restyled, split or deleted on its own.
+   */
+  clip?: string | undefined;
 };
-export type CaptionGroup = { start: number; end: number; words: Word[] };
+export type CaptionGroup = {
+  start: number;
+  end: number;
+  words: Word[];
+  /** clip id (caption line or free text) */
+  id?: string;
+  /** this clip's own look on top of the shared caption style */
+  style?: Partial<CaptionStyle> | undefined;
+  /** a free text clip (may overlap other text in time), not a caption line */
+  free?: boolean | undefined;
+};
+
+let clipCounter = 0;
+export function newClipId(): string {
+  clipCounter += 1;
+  return `c${Date.now().toString(36)}${clipCounter.toString(36)}`;
+}
+
+/**
+ * Gives every run of words that has no clip yet its own clips, split the way
+ * the caption mode groups them. Words that already have a clip keep it.
+ */
+export function assignClipIds(
+  words: Word[],
+  style: Pick<CaptionStyle, "captionMode" | "wordsPerGroup">,
+): Word[] {
+  if (!words.some((w) => !w.clip)) return words;
+  const out = [...words];
+  let i = 0;
+  while (i < out.length) {
+    if (out[i]!.clip) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < out.length && !out[j]!.clip) j++;
+    const run = out.slice(i, j);
+    const ids = new Map<Word, string>();
+    for (const group of groupCaptionsByMode(run, style)) {
+      const id = newClipId();
+      for (const w of group.words) ids.set(w, id);
+    }
+    let last = "";
+    for (let k = i; k < j; k++) {
+      const w = out[k]!;
+      // a line break the grouping dropped stays with the line before it
+      last = ids.get(w) ?? (last || newClipId());
+      out[k] = { ...w, clip: last };
+    }
+    i = j;
+  }
+  return out;
+}
 
 export type StrokeSize = "none" | "small" | "medium" | "large";
 
@@ -199,6 +257,8 @@ export type CaptionStyle = {
   strokeColor: string;
   shadow: StrokeSize;
   shadowColor: string;
+  /** Soft glow around the letters (CapCut "glow"); none when unset. */
+  glowColor?: string | undefined;
   highlight: "none" | "color" | "box";
   highlightColor: string;
   highlightTextColor: string;
@@ -782,7 +842,32 @@ export function groupSentences(
   return groups;
 }
 
+/**
+ * On-screen caption lines. Words carrying clip ids are grouped by clip (each
+ * clip is one line, as split when the captions were made); otherwise the
+ * caption mode decides.
+ */
 export function groupCaptions(words: Word[], style: Pick<CaptionStyle, "captionMode" | "wordsPerGroup">): CaptionGroup[] {
+  if (!words.some((w) => w.clip)) return groupCaptionsByMode(words, style);
+  const groups: CaptionGroup[] = [];
+  let current: CaptionGroup | null = null;
+  for (const word of words) {
+    const id: string = word.clip ?? current?.id ?? "";
+    if (!current || current.id !== id) {
+      if (current) groups.push(current);
+      current = { id, start: word.start, end: word.end, words: [] };
+    }
+    current.words.push(word);
+    if (word.text !== LINE_BREAK) {
+      if (!current.words.some((w) => w.text !== LINE_BREAK && w !== word)) current.start = word.start;
+      current.end = Math.max(current.end, word.end);
+    }
+  }
+  if (current) groups.push(current);
+  return groups.filter((g) => g.words.some((w) => w.text !== LINE_BREAK));
+}
+
+function groupCaptionsByMode(words: Word[], style: Pick<CaptionStyle, "captionMode" | "wordsPerGroup">): CaptionGroup[] {
   const mode = captionModeOf(style);
   if (mode === "word") return groupWords(words, 1);
   if (mode === "fixed") return groupWords(words, style.wordsPerGroup);

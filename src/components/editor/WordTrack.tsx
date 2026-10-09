@@ -23,7 +23,14 @@ export type TimelineLanes = {
   peaks?: number[];
   peakStep?: number;
   stickers?: { id: string; label: string; start: number; end: number }[];
+  /**
+   * Text clips (CapCut-style purple track): caption lines on the first row,
+   * free texts on rows below. When given, it replaces the word-by-word row.
+   */
+  texts?: { id: string; kind: "caption" | "text"; label: string; start: number; end: number }[];
 };
+
+export type TextClipRef = { kind: "caption" | "text"; id: string };
 
 type Props = {
   words: Word[];
@@ -61,6 +68,10 @@ type Props = {
   onSelectSticker?: (id: string) => void;
   /** Drag a selected sticker/text block to move it, or its edges to trim it. */
   onStickerTime?: (id: string, start: number, end: number) => void;
+  selectedText?: TextClipRef | null;
+  onSelectText?: (ref: TextClipRef) => void;
+  /** A selected text clip dragged (move) or trimmed at an edge. */
+  onTextTime?: (ref: TextClipRef, start: number, end: number) => void;
   className?: string;
 };
 
@@ -103,6 +114,9 @@ export function WordTrack({
   selectedSticker = null,
   onSelectSticker,
   onStickerTime,
+  selectedText = null,
+  onSelectText,
+  onTextTime,
   className,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -268,7 +282,7 @@ export function WordTrack({
 
   const playheadRef = useRef<HTMLDivElement>(null);
   const laneDragRef = useRef<{
-    id: string;
+    key: string;
     mode: "move" | "start" | "end";
     x: number;
     start: number;
@@ -521,6 +535,27 @@ export function WordTrack({
   // Phones get slimmer lanes so the tool panel under the timeline has room.
   const GAP = centered ? 4 : 6;
   const videoH = thumbs.length ? (centered ? 30 : 40) : 0;
+  const textItems = lanes?.texts ?? [];
+  const textMode = lanes?.texts !== undefined;
+  // Caption lines share the first row (they never overlap); free texts stack below.
+  const textRows = useMemo(() => {
+    const hasCaptions = textItems.some((item) => item.kind === "caption");
+    const ends: number[] = [];
+    const rowOf = new Map<string, number>();
+    for (const item of textItems) if (item.kind === "caption") rowOf.set(`caption:${item.id}`, 0);
+    const first = hasCaptions ? 1 : 0;
+    for (const item of [...textItems]
+      .filter((i) => i.kind === "text")
+      .sort((a, b) => a.start - b.start)) {
+      let row = ends.findIndex((end) => end <= item.start + 0.001);
+      if (row < 0) row = ends.length;
+      ends[row] = item.end;
+      rowOf.set(`text:${item.id}`, first + row);
+    }
+    return { rowOf, count: Math.max(1, first + ends.length) };
+  }, [textItems]);
+  const textRowH = centered ? 30 : 34;
+  const textH = textMode ? textRows.count * (textRowH + 2) - 2 : 0;
   const stickerRowH = centered ? 22 : 26;
   const stickerH = stickerItems.length ? stickerRows.count * (stickerRowH + 2) - 2 : 0;
   const audioH = peaks.length ? (centered ? 16 : 24) : 0;
@@ -528,12 +563,127 @@ export function WordTrack({
   const videoTop = cursor;
   if (videoH) cursor += videoH + GAP;
   const captionTop = cursor;
-  cursor += blockHeight + GAP;
+  if (!textMode) cursor += blockHeight + GAP;
+  const textTop = cursor;
+  if (textH) cursor += textH + GAP;
   const stickerTop = cursor;
   if (stickerH) cursor += stickerH + GAP;
   const audioTop = cursor;
   if (audioH) cursor += audioH + GAP;
   const contentHeight = Math.max(compact && !centered ? 52 : 92, cursor + 2);
+
+  /** A clip on a lane: tap selects; once selected, drag moves it and the edges trim it. */
+  const laneBlock = (item: {
+    key: string;
+    label: string;
+    start: number;
+    end: number;
+    top: number;
+    height: number;
+    selected: boolean;
+    palette: "purple" | "amber";
+    onSelect: () => void;
+    onTime?: ((start: number, end: number) => void) | undefined;
+  }) => {
+    const begin = (event: ReactPointerEvent<HTMLElement>, mode: "move" | "start" | "end") => {
+      event.stopPropagation();
+      if (!item.selected || !item.onTime) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      laneDragRef.current = {
+        key: item.key,
+        mode,
+        x: event.clientX,
+        start: item.start,
+        end: item.end,
+        moved: false,
+      };
+    };
+    const move = (event: ReactPointerEvent<HTMLElement>) => {
+      const d = laneDragRef.current;
+      if (!d || d.key !== item.key || !item.onTime) return;
+      event.stopPropagation();
+      const dt = (event.clientX - d.x) / ppsRef.current;
+      if (Math.abs(event.clientX - d.x) > 3) d.moved = true;
+      const len = d.end - d.start;
+      if (d.mode === "move") {
+        const start = Math.max(0, Math.min(duration - len, d.start + dt));
+        item.onTime(start, start + len);
+      } else if (d.mode === "start") {
+        item.onTime(Math.max(0, Math.min(d.end - 0.2, d.start + dt)), d.end);
+      } else {
+        item.onTime(d.start, Math.min(duration, Math.max(d.start + 0.2, d.end + dt)));
+      }
+    };
+    const end = (event: ReactPointerEvent<HTMLElement>) => {
+      event.stopPropagation();
+      laneDragRef.current = null;
+    };
+    const purple = item.palette === "purple";
+    return (
+      <div
+        key={item.key}
+        role="button"
+        tabIndex={0}
+        aria-label={`${item.label}${item.selected ? " — ลากเพื่อเลื่อนเวลา" : ""}`}
+        aria-pressed={item.selected}
+        onPointerDown={(event) => begin(event, "move")}
+        onPointerMove={move}
+        onPointerUp={end}
+        onPointerCancel={end}
+        onClick={(event) => {
+          event.stopPropagation();
+          item.onSelect();
+        }}
+        className={cn(
+          "absolute overflow-hidden whitespace-nowrap rounded-md border px-2 text-left font-medium",
+          centered ? "text-[11px]" : "text-xs",
+          item.selected
+            ? purple
+              ? "cursor-grab touch-none border-2 border-white bg-violet-500 text-white shadow-[0_0_0_1px_rgba(0,0,0,0.4)]"
+              : "cursor-grab touch-none border-2 border-amber-400 bg-amber-500/25"
+            : purple
+              ? "border-violet-400/40 bg-violet-600/85 text-white"
+              : "border-amber-700/60 bg-amber-900/40 text-amber-100",
+        )}
+        style={{
+          left: item.start * pps,
+          width: Math.max(18, (item.end - item.start) * pps - 2),
+          top: item.top,
+          height: item.height,
+          lineHeight: `${item.height - 4}px`,
+        }}
+      >
+        {item.label}
+        {item.selected && item.onTime && (
+          <>
+            <span
+              aria-hidden="true"
+              onPointerDown={(event) => begin(event, "start")}
+              onPointerMove={move}
+              onPointerUp={end}
+              onPointerCancel={end}
+              className={cn(
+                "absolute inset-y-0 left-0 w-3 cursor-ew-resize touch-none",
+                purple ? "bg-white" : "bg-amber-400/80",
+              )}
+            />
+            <span
+              aria-hidden="true"
+              onPointerDown={(event) => begin(event, "end")}
+              onPointerMove={move}
+              onPointerUp={end}
+              onPointerCancel={end}
+              className={cn(
+                "absolute inset-y-0 right-0 w-3 cursor-ew-resize touch-none",
+                purple ? "bg-white" : "bg-amber-400/80",
+              )}
+            />
+          </>
+        )}
+      </div>
+    );
+  };
 
   const peakPath = useMemo(() => {
     if (!peaks.length) return "";
@@ -551,10 +701,13 @@ export function WordTrack({
     <div data-word-track="" className={cn("relative flex min-w-0 flex-col", className)}>
       {!compact && !centered && (
         <div className="flex h-10 shrink-0 items-center gap-3 border-b border-border px-3">
-          <span className="shrink-0 whitespace-nowrap text-sm font-semibold">ไทม์ไลน์คำ</span>
+          <span className="shrink-0 whitespace-nowrap text-sm font-semibold">
+            {textMode ? "ไทม์ไลน์" : "ไทม์ไลน์คำ"}
+          </span>
           <span className="hidden truncate text-xs text-muted-foreground md:inline">
-            ลากคำไปวางตรงไหนก็ได้ · ลากขอบคำเพื่อยืด/หด · เลื่อนลูกกลิ้ง/บีบนิ้วบนแทร็กแพดเพื่อซูม ·
-            ลายทาง = ซีนที่ปิดไว้
+            {textMode
+              ? "คลิกแถบม่วงเพื่อเลือกข้อความ · ลากเพื่อเลื่อนเวลา · ลากขอบเพื่อยืด/หด · บีบนิ้วหรือ Ctrl+ลูกกลิ้งเพื่อซูม"
+              : "ลากคำไปวางตรงไหนก็ได้ · ลากขอบคำเพื่อยืด/หด · เลื่อนลูกกลิ้ง/บีบนิ้วบนแทร็กแพดเพื่อซูม · ลายทาง = ซีนที่ปิดไว้"}
           </span>
           <div className="ml-auto flex items-center gap-1">
             <Button
@@ -648,130 +801,94 @@ export function WordTrack({
             </div>
           )}
 
-          <div
-            className="absolute"
-            style={{ left: origin, width, top: captionTop, height: blockHeight }}
-            onPointerDown={seekFromEvent}
-            onClick={(event) => {
-              if (centered && event.target === event.currentTarget) onDeselect?.();
-            }}
-          >
-            {cuts.map((cut, i) => (
-              <div
-                key={`cut-${i}`}
-                aria-hidden="true"
-                className="pointer-events-none absolute top-0 h-full rounded-md border border-dashed border-border"
-                style={{
-                  left: cut.start * pps,
-                  width: Math.max(2, (cut.end - cut.start) * pps),
-                  background:
-                    "repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in oklab, var(--muted-foreground) 18%, transparent) 6px 12px)",
-                }}
-              />
-            ))}
-            {wordBlocks}
-          </div>
+          {!textMode && (
+            <div
+              className="absolute"
+              style={{ left: origin, width, top: captionTop, height: blockHeight }}
+              onPointerDown={seekFromEvent}
+              onClick={(event) => {
+                if (centered && event.target === event.currentTarget) onDeselect?.();
+              }}
+            >
+              {cuts.map((cut, i) => (
+                <div
+                  key={`cut-${i}`}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-0 h-full rounded-md border border-dashed border-border"
+                  style={{
+                    left: cut.start * pps,
+                    width: Math.max(2, (cut.end - cut.start) * pps),
+                    background:
+                      "repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in oklab, var(--muted-foreground) 18%, transparent) 6px 12px)",
+                  }}
+                />
+              ))}
+              {wordBlocks}
+            </div>
+          )}
+
+          {textH > 0 && (
+            <div
+              className="absolute"
+              style={{ left: origin, width, top: textTop, height: textH }}
+              onPointerDown={seekFromEvent}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) onDeselect?.();
+              }}
+            >
+              {cuts.map((cut, i) => (
+                <div
+                  key={`tcut-${i}`}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-0 h-full rounded-md border border-dashed border-border"
+                  style={{
+                    left: cut.start * pps,
+                    width: Math.max(2, (cut.end - cut.start) * pps),
+                    background:
+                      "repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in oklab, var(--muted-foreground) 18%, transparent) 6px 12px)",
+                  }}
+                />
+              ))}
+              {textItems.map((item) =>
+                laneBlock({
+                  key: `${item.kind}:${item.id}`,
+                  label: item.label,
+                  start: item.start,
+                  end: item.end,
+                  top: (textRows.rowOf.get(`${item.kind}:${item.id}`) ?? 0) * (textRowH + 2),
+                  height: textRowH,
+                  selected: selectedText?.kind === item.kind && selectedText.id === item.id,
+                  palette: "purple",
+                  onSelect: () => onSelectText?.({ kind: item.kind, id: item.id }),
+                  onTime: onTextTime
+                    ? (start, end) => onTextTime({ kind: item.kind, id: item.id }, start, end)
+                    : undefined,
+                }),
+              )}
+            </div>
+          )}
 
           {stickerH > 0 && (
             <div
               className="absolute"
               style={{ left: origin, width, top: stickerTop, height: stickerH }}
             >
-              {stickerItems.map((item) => {
-                const selectedItem = selectedSticker === item.id;
-                const beginLaneDrag = (
-                  event: ReactPointerEvent<HTMLElement>,
-                  mode: "move" | "start" | "end",
-                ) => {
-                  event.stopPropagation();
-                  if (!selectedItem || !onStickerTime) return;
-                  event.preventDefault();
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  laneDragRef.current = {
-                    id: item.id,
-                    mode,
-                    x: event.clientX,
-                    start: item.start,
-                    end: item.end,
-                    moved: false,
-                  };
-                };
-                const moveLaneDrag = (event: ReactPointerEvent<HTMLElement>) => {
-                  const d = laneDragRef.current;
-                  if (!d || d.id !== item.id || !onStickerTime) return;
-                  event.stopPropagation();
-                  const dt = (event.clientX - d.x) / ppsRef.current;
-                  if (Math.abs(event.clientX - d.x) > 3) d.moved = true;
-                  const len = d.end - d.start;
-                  if (d.mode === "move") {
-                    const start = Math.max(0, Math.min(duration - len, d.start + dt));
-                    onStickerTime(item.id, start, start + len);
-                  } else if (d.mode === "start") {
-                    onStickerTime(item.id, Math.max(0, Math.min(d.end - 0.2, d.start + dt)), d.end);
-                  } else {
-                    onStickerTime(
-                      item.id,
-                      d.start,
-                      Math.min(duration, Math.max(d.start + 0.2, d.end + dt)),
-                    );
-                  }
-                };
-                const endLaneDrag = (event: ReactPointerEvent<HTMLElement>) => {
-                  event.stopPropagation();
-                  laneDragRef.current = null;
-                };
-                return (
-                  <div
-                    key={item.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${item.label}${selectedItem ? " — ลากเพื่อเลื่อนเวลา" : ""}`}
-                    onPointerDown={(event) => beginLaneDrag(event, "move")}
-                    onPointerMove={moveLaneDrag}
-                    onPointerUp={endLaneDrag}
-                    onPointerCancel={endLaneDrag}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelectSticker?.(item.id);
-                    }}
-                    className={cn(
-                      "absolute overflow-hidden whitespace-nowrap rounded-md border px-1.5 text-left text-[11px]",
-                      selectedItem
-                        ? "cursor-grab touch-none border-2 border-amber-400 bg-amber-500/25"
-                        : "border-amber-700/60 bg-amber-900/40 text-amber-100",
-                    )}
-                    style={{
-                      left: item.start * pps,
-                      width: Math.max(18, (item.end - item.start) * pps - 2),
-                      top: (stickerRows.rowOf.get(item.id) ?? 0) * (stickerRowH + 2),
-                      height: stickerRowH,
-                      lineHeight: `${stickerRowH - 4}px`,
-                    }}
-                  >
-                    {item.label}
-                    {selectedItem && onStickerTime && (
-                      <>
-                        <span
-                          aria-hidden="true"
-                          onPointerDown={(event) => beginLaneDrag(event, "start")}
-                          onPointerMove={moveLaneDrag}
-                          onPointerUp={endLaneDrag}
-                          onPointerCancel={endLaneDrag}
-                          className="absolute inset-y-0 left-0 w-2.5 cursor-ew-resize touch-none bg-amber-400/80"
-                        />
-                        <span
-                          aria-hidden="true"
-                          onPointerDown={(event) => beginLaneDrag(event, "end")}
-                          onPointerMove={moveLaneDrag}
-                          onPointerUp={endLaneDrag}
-                          onPointerCancel={endLaneDrag}
-                          className="absolute inset-y-0 right-0 w-2.5 cursor-ew-resize touch-none bg-amber-400/80"
-                        />
-                      </>
-                    )}
-                  </div>
-                );
-              })}
+              {stickerItems.map((item) =>
+                laneBlock({
+                  key: `sticker:${item.id}`,
+                  label: item.label,
+                  start: item.start,
+                  end: item.end,
+                  top: (stickerRows.rowOf.get(item.id) ?? 0) * (stickerRowH + 2),
+                  height: stickerRowH,
+                  selected: selectedSticker === item.id,
+                  palette: "amber",
+                  onSelect: () => onSelectSticker?.(item.id),
+                  onTime: onStickerTime
+                    ? (start, end) => onStickerTime(item.id, start, end)
+                    : undefined,
+                }),
+              )}
             </div>
           )}
 
