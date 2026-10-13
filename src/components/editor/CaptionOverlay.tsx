@@ -1,6 +1,6 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Pencil, RotateCw, X } from "lucide-react";
-import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokeWidth, withAlpha, needsSpace, balancedSplitIndex } from "@/lib/captions";
+import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokePxFor, withAlpha, needsSpace, balancedSplitIndex } from "@/lib/captions";
 
 
 type Props = {
@@ -56,7 +56,6 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
   if (!group || height === 0) return null;
 
   const fontSize = (style.size / 100) * height;
-  const stroke = strokeWidth[style.stroke] * (fontSize / 60);
   const blur = shadowBlur[style.shadow] * (fontSize / 60);
   const visibleWords = group.words.filter((w) => w.text !== LINE_BREAK);
   const activeIndex = group.words.findIndex((w) => w.text !== LINE_BREAK && time >= w.start && time < w.end);
@@ -76,14 +75,9 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         ? `0 0 ${fontSize * 0.2}px ${style.glowColor}, 0 0 ${fontSize * 0.45}px ${style.glowColor}`
         : "";
 
-  const textShadow = [
-    stroke > 0
-      ? `${-stroke}px ${-stroke}px 0 ${style.strokeColor}, ${stroke}px ${-stroke}px 0 ${style.strokeColor}, ${-stroke}px ${stroke}px 0 ${style.strokeColor}, ${stroke}px ${stroke}px 0 ${style.strokeColor}`
-      : "",
-    glowShadow || (blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : ""),
-  ]
-    .filter(Boolean)
-    .join(", ");
+  // the export draws the glow in place of the drop shadow
+  const textShadow =
+    glowShadow || (blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : "") || undefined;
 
 
   const anim = style.animation;
@@ -270,17 +264,11 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
     >
       {renderLines.map((line, li) => {
         const ls = style.lineStyles?.[li] ?? {};
-        const lineStroke = strokeWidth[ls.stroke ?? style.stroke] * (fontSize / 60);
+        // Outline: a stroked copy of each word sits behind it (round, smooth
+        // edges like the export's canvas stroke) and casts the shadow.
+        const lineStroke = strokePxFor(style, fontSize, ls.stroke);
         const lineStrokeColor = ls.strokeColor ?? style.strokeColor;
-        const lineTextShadow = [
-          lineStroke > 0
-            ? `${-lineStroke}px ${-lineStroke}px 0 ${lineStrokeColor}, ${lineStroke}px ${-lineStroke}px 0 ${lineStrokeColor}, ${-lineStroke}px ${lineStroke}px 0 ${lineStrokeColor}, ${lineStroke}px ${lineStroke}px 0 ${lineStrokeColor}`
-            : "",
-          // the export draws the glow in place of the drop shadow
-          glowShadow || (blur > 0 ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}` : ""),
-        ]
-          .filter(Boolean)
-          .join(", ");
+        const lineTextShadow = textShadow;
         const gap = ls.gap ?? style.lineGap ?? 0.08;
         return (
         <div
@@ -359,31 +347,56 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                   key={`${word.start}-${i}`}
                   style={{
                     display: "inline-block",
+                    position: lineStroke > 0 ? "relative" : undefined,
+                    isolation: lineStroke > 0 ? "isolate" : undefined,
                     visibility: hidden ? "hidden" : undefined,
                     marginLeft: gapBefore,
                     padding: boxed ? `0 ${fontSize * 0.1}px` : undefined,
                     borderRadius: boxed ? fontSize * 0.12 : undefined,
-                    background: k2Fill
-                      ? `linear-gradient(to bottom, ${k2Color} ${wordProgress * 100}%, ${word.color ?? ls.color ?? style.color} ${wordProgress * 100}%)`
-                      : boxed
-                        ? style.highlightColor
-                        : undefined,
-                    WebkitBackgroundClip: k2Fill ? "text" : undefined,
-                    backgroundClip: k2Fill ? "text" : undefined,
-                    color: k2Fill
-                      ? "transparent"
-                      : boxed
-                        ? style.highlightTextColor
-                        : emphasize && (anim === "karaoke2" || style.highlight === "color")
-                          ? (style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor)
-                          : word.color,
+                    background: boxed ? style.highlightColor : undefined,
                     transform: wordTransform,
-                    transition:
-                      anim === "none" ? undefined : `color ${Math.round(80 / speed)}ms linear`,
-                    WebkitTextStroke: syntheticBold ? boldStroke(fontSize) : undefined,
                   }}
                 >
-                  {word.text}
+                  {lineStroke > 0 && (
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        padding: "inherit",
+                        zIndex: -1,
+                        pointerEvents: "none",
+                        color: lineStrokeColor,
+                        WebkitTextFillColor: lineStrokeColor,
+                        WebkitTextStroke: `${lineStroke * 2 + (syntheticBold ? fontSize * 0.02 : 0)}px ${lineStrokeColor}`,
+                        textShadow: lineTextShadow,
+                      }}
+                    >
+                      {word.text}
+                    </span>
+                  )}
+                  <span
+                    style={{
+                      background: k2Fill
+                        ? `linear-gradient(to bottom, ${k2Color} ${wordProgress * 100}%, ${word.color ?? ls.color ?? style.color} ${wordProgress * 100}%)`
+                        : undefined,
+                      WebkitBackgroundClip: k2Fill ? "text" : undefined,
+                      backgroundClip: k2Fill ? "text" : undefined,
+                      color: k2Fill
+                        ? "transparent"
+                        : boxed
+                          ? style.highlightTextColor
+                          : emphasize && (anim === "karaoke2" || style.highlight === "color")
+                            ? (style.highlight === "none" ? ACCENT_SECONDARY_HEX : style.highlightColor)
+                            : word.color,
+                      transition:
+                        anim === "none" ? undefined : `color ${Math.round(80 / speed)}ms linear`,
+                      WebkitTextStroke: syntheticBold ? boldStroke(fontSize) : undefined,
+                      textShadow: lineStroke > 0 ? "none" : undefined,
+                    }}
+                  >
+                    {word.text}
+                  </span>
                 </span>
 
               );

@@ -26,7 +26,7 @@ import {
   isKeyword,
   splitEmphasis,
   shadowBlur,
-  strokeWidth,
+  strokePxFor,
   type CaptionGroup,
   type CaptionStyle,
   type LineStyle,
@@ -514,15 +514,6 @@ export function createBurnRenderer(
             ctx.translate(-(x + w / 2), -y);
           }
 
-          const strokePx = strokeWidth[m.ls.stroke ?? style.stroke] * (fontSize / 64);
-          if (strokePx > 0) {
-            ctx.lineJoin = "round";
-            ctx.miterLimit = 2;
-            ctx.lineWidth = strokePx * 2 + (m.em.bold ? fontSize * 0.02 : 0);
-            ctx.strokeStyle = m.ls.strokeColor ?? style.strokeColor;
-            paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "stroke");
-          }
-
           const blur = shadowBlur[style.shadow] * (fontSize / 64);
           if (anim === "glow") {
             // เรืองแสง: ใช้สี accent ของธีมกระพริบเบา ๆ
@@ -537,6 +528,20 @@ export function createBurnRenderer(
             ctx.shadowBlur = blur;
             ctx.shadowColor = blur ? style.shadowColor : "transparent";
             ctx.shadowOffsetY = blur ? blur * 0.25 : 0;
+          }
+
+          const strokePx = strokePxFor(style, fontSize, m.ls.stroke);
+          if (strokePx > 0) {
+            // round joins keep the outline smooth around the letters; the
+            // shadow is cast by the outline, so the fill goes on clean
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+            ctx.lineWidth = strokePx * 2 + (m.em.bold ? fontSize * 0.02 : 0);
+            ctx.strokeStyle = m.ls.strokeColor ?? style.strokeColor;
+            paintEmphasized(ctx, word.text, x, y, fontSize, m.em, "stroke");
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+            ctx.shadowColor = "transparent";
           }
 
           const baseColor = word.color ?? m.ls.color ?? style.color;

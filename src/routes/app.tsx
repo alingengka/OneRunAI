@@ -2427,7 +2427,7 @@ function Studio() {
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:inline-flex"
+            className="shrink-0"
             aria-label="ย้อนกลับ (Ctrl+Z)"
             title="ย้อนกลับ (Ctrl+Z)"
             onClick={() => {
@@ -2439,7 +2439,7 @@ function Studio() {
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:inline-flex"
+            className="shrink-0"
             aria-label="ทำซ้ำ (Ctrl+Shift+Z)"
             title="ทำซ้ำ (Ctrl+Shift+Z)"
             onClick={() => {
