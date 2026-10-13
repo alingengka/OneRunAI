@@ -15,6 +15,8 @@ import {
   captionModeOf,
   fontOptions,
   sampleTextForLanguage,
+  strokeThicknessOf,
+  strokeThicknessPatch,
   type CaptionStyle,
   type LineStyle,
   type StrokeSize,
@@ -233,7 +235,12 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
             type="button"
             variant={style.stroke !== "none" ? "secondary" : "outline"}
             aria-pressed={style.stroke !== "none"}
-            onClick={() => onChange({ stroke: style.stroke === "none" ? "small" : "none" })}
+            onClick={() =>
+              onChange({
+                stroke: style.stroke === "none" ? "small" : "none",
+                strokeThickness: undefined,
+              })
+            }
             className={cn(style.stroke !== "none" && "border-primary bg-primary/15 text-primary")}
           >
             ขอบ
@@ -267,11 +274,14 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Control label="ความหนาขอบ" value={sizeLabels[style.stroke]}>
-          <Segmented
-            value={style.stroke}
-            options={sizes.map((size) => ({ label: sizeLabels[size], value: size }))}
-            onSelect={(value) => onChange({ stroke: value })}
+        <Control label="ความหนาขอบ" value={`${strokeThicknessOf(style).toFixed(1)}%`}>
+          <Slider
+            value={[strokeThicknessOf(style)]}
+            min={0}
+            max={20}
+            step={0.5}
+            aria-label="ความหนาขอบ"
+            onValueChange={([value]) => onChange(strokeThicknessPatch(style, value ?? 0))}
           />
         </Control>
         <Control label="ความหนาเงา" value={sizeLabels[style.shadow]}>

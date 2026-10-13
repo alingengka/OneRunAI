@@ -255,6 +255,8 @@ export type CaptionStyle = {
   color: string;
   stroke: StrokeSize;
   strokeColor: string;
+  /** Outline width in % of the font size (the slider); unset = by `stroke` size. */
+  strokeThickness?: number | undefined;
   shadow: StrokeSize;
   shadowColor: string;
   /** Soft glow around the letters (CapCut "glow"); none when unset. */
@@ -393,6 +395,25 @@ export const stylePresets: CaptionStyle[] = [
     highlight: "color",
     highlightColor: "#ffd21f",
     animation: "pop",
+  },
+  {
+    // Viral look: heavier white letters, a thick smooth dark outline that
+    // casts a soft shadow, spoken words in yellow.
+    ...baseStyle,
+    id: "viral-yellow",
+    name: "ไวรัล เน้นเหลือง",
+    fontFamily: "'Kanit', 'Noto Sans Lao', 'Noto Sans Thai', sans-serif",
+    fontWeight: 700,
+    size: 7,
+    color: "#ffffff",
+    stroke: "large",
+    strokeThickness: 12,
+    strokeColor: "#1a1a1a",
+    shadow: "large",
+    shadowColor: "#000000",
+    highlight: "color",
+    highlightColor: "#ffd21f",
+    animation: "none",
   },
   {
     ...baseStyle,
@@ -658,6 +679,36 @@ export const strokeWidth: Record<StrokeSize, number> = {
   medium: 5,
   large: 9,
 };
+
+/** Outline width in % of the font size for a S/M/L size (what the slider shows). */
+export function strokeThicknessOf(
+  style: Pick<CaptionStyle, "stroke" | "strokeThickness">,
+): number {
+  if (style.stroke === "none") return 0;
+  return style.strokeThickness ?? Math.round((strokeWidth[style.stroke] / 62) * 1000) / 10;
+}
+
+/** Settings for an outline slider value (0 = no outline). */
+export function strokeThicknessPatch(
+  style: Pick<CaptionStyle, "stroke">,
+  value: number,
+): Partial<CaptionStyle> {
+  if (value <= 0) return { stroke: "none", strokeThickness: undefined };
+  return { stroke: style.stroke === "none" ? "medium" : style.stroke, strokeThickness: value };
+}
+
+/**
+ * Outline width in px drawn outside the letters. A line's own S/M/L size wins
+ * over the slider; preview and export both use this.
+ */
+export function strokePxFor(
+  style: Pick<CaptionStyle, "stroke" | "strokeThickness">,
+  fontSize: number,
+  lineStroke?: StrokeSize | undefined,
+): number {
+  if (lineStroke) return lineStroke === "none" ? 0 : (strokeWidth[lineStroke] / 62) * fontSize;
+  return (strokeThicknessOf(style) / 100) * fontSize;
+}
 
 export const shadowBlur: Record<StrokeSize, number> = {
   none: 0,

@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 import { Check, Copy, Scissors, Trash2 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
-import { animationOptions, fontOptions, type CaptionStyle, type StrokeSize } from "@/lib/captions";
+import {
+  animationOptions,
+  fontOptions,
+  strokeThicknessOf,
+  strokeThicknessPatch,
+  type CaptionStyle,
+  type StrokeSize,
+} from "@/lib/captions";
 import { ColorSwatches } from "./ColorSwatches";
 
 type Props = {
@@ -26,10 +33,25 @@ type Props = {
 type Tab = "font" | "style" | "animation";
 type StylePart = "text" | "stroke" | "glow" | "plate" | "shadow";
 
+const VIRAL_YELLOW: Partial<CaptionStyle> = {
+  fontFamily: "'Kanit', 'Noto Sans Lao', 'Noto Sans Thai', sans-serif",
+  fontWeight: 700,
+  color: "#ffffff",
+  stroke: "large",
+  strokeThickness: 12,
+  strokeColor: "#1a1a1a",
+  shadow: "large",
+  shadowColor: "#000000",
+  plate: false,
+  glowColor: undefined,
+  highlight: "color",
+  highlightColor: "#ffd21f",
+};
+
 /** Ready-made looks, like CapCut's row of "Aa" styles. */
 const LOOKS: {
   label: string;
-  preview: { color: string; bg?: string; stroke?: string };
+  preview: { color: string; bg?: string; stroke?: string; accent?: string };
   patch: Partial<CaptionStyle>;
 }[] = [
   {
@@ -38,6 +60,7 @@ const LOOKS: {
     patch: {
       color: "#ffffff",
       stroke: "none",
+      strokeThickness: undefined,
       plate: false,
       shadow: "small",
       glowColor: undefined,
@@ -49,6 +72,7 @@ const LOOKS: {
     patch: {
       color: "#ffffff",
       stroke: "medium",
+      strokeThickness: 8,
       strokeColor: "#111111",
       plate: false,
       glowColor: undefined,
@@ -60,6 +84,7 @@ const LOOKS: {
     patch: {
       color: "#ffd21f",
       stroke: "medium",
+      strokeThickness: 8,
       strokeColor: "#111111",
       plate: false,
       glowColor: undefined,
@@ -71,6 +96,7 @@ const LOOKS: {
     patch: {
       color: "#ffffff",
       stroke: "none",
+      strokeThickness: undefined,
       plate: true,
       plateColor: "#000000",
       plateOpacity: 0.85,
@@ -83,6 +109,7 @@ const LOOKS: {
     patch: {
       color: "#111111",
       stroke: "none",
+      strokeThickness: undefined,
       plate: true,
       plateColor: "#ffffff",
       plateOpacity: 1,
@@ -95,6 +122,7 @@ const LOOKS: {
     patch: {
       color: "#111111",
       stroke: "none",
+      strokeThickness: undefined,
       plate: true,
       plateColor: "#ffd21f",
       plateOpacity: 1,
@@ -105,6 +133,13 @@ const LOOKS: {
     label: "นีออน",
     preview: { color: "#ffffff" },
     patch: { color: "#ffffff", stroke: "none", plate: false, glowColor: "#a855f7" },
+  },
+  {
+    // white heavy letters, a thick smooth dark outline with a soft shadow,
+    // and the spoken words turn yellow (viral Thai/Lao caption look)
+    label: "ไวรัล เน้นเหลือง",
+    preview: { color: "#ffffff", stroke: "#1a1a1a", accent: "#ffd21f" },
+    patch: VIRAL_YELLOW,
   },
 ];
 
@@ -241,13 +276,21 @@ export function TextClipEditor({
                 style={{
                   color: preview.color,
                   background: preview.bg ?? "#2a2a2a",
-                  WebkitTextStroke: preview.stroke ? `1px ${preview.stroke}` : undefined,
+                  fontFamily: patch.fontFamily,
+                  WebkitTextStroke: preview.stroke ? `3px ${preview.stroke}` : undefined,
+                  paintOrder: "stroke fill",
                   textShadow: patch.glowColor
                     ? `0 0 4px ${patch.glowColor}, 0 0 9px ${patch.glowColor}`
                     : undefined,
                 }}
               >
-                Aa
+                {preview.accent ? (
+                  <span>
+                    A<span style={{ color: preview.accent }}>a</span>
+                  </span>
+                ) : (
+                  "Aa"
+                )}
               </button>
             ))}
           </div>
@@ -303,7 +346,15 @@ export function TextClipEditor({
                   )
                 }
               />
-              <Thickness value={look.stroke} onChange={(stroke) => onStyle({ stroke })} />
+              <SliderRow
+                label="ความหนาขอบ"
+                value={strokeThicknessOf(look)}
+                display={`${strokeThicknessOf(look).toFixed(1)}%`}
+                min={0}
+                max={20}
+                step={0.5}
+                onChange={(value) => onStyle(strokeThicknessPatch(look, value))}
+              />
             </div>
           )}
           {part === "glow" && (
