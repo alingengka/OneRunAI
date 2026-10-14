@@ -1,22 +1,2 @@
-<svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
-<defs>
-<linearGradient id="ringLight" x1="0%" y1="0%" x2="0%" y2="100%">
-<stop offset="0%" stop-color="#A78BFA"/>
-<stop offset="50%" stop-color="#8B5CF6"/>
-<stop offset="100%" stop-color="#6D28D9"/>
-</linearGradient>
-<radialGradient id="dotFillLavender" cx="32%" cy="28%" r="80%">
-<stop offset="0%" stop-color="#FBFAFF"/>
-<stop offset="45%" stop-color="#DDD6FE"/>
-<stop offset="100%" stop-color="#A78BFA"/>
-</radialGradient>
-<radialGradient id="softShadow" cx="50%" cy="50%" r="50%">
-<stop offset="0%" stop-color="#6D28D9" stop-opacity="0.10"/>
-<stop offset="100%" stop-color="#6D28D9" stop-opacity="0"/>
-</radialGradient>
-</defs>
-<rect x="0" y="0" width="360" height="360" rx="64" fill="#FAFAFA" stroke="#E4E4E7" stroke-width="1"/>
-<circle cx="230" cy="93" r="34" fill="url(#softShadow)"/>
-<path d="M256.6 115.7 A100 100 0 1 1 197.36 81.52" fill="none" stroke="url(#ringLight)" stroke-width="22" stroke-linecap="round"/>
-<circle cx="230" cy="93" r="22" fill="url(#dotFillLavender)"/>
-</svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200"><defs><linearGradient id="g" gradientUnits="userSpaceOnUse" x1="45" y1="45" x2="155" y2="160"><stop offset="0" stop-color="#9B6BFF"/><stop offset="0.5" stop-color="#6A3BEA"/><stop offset="1" stop-color="#3D1BA8"/></linearGradient></defs><g transform="translate(0 -8)"><path d="M50.8 63.2 L88.7 71.6 L62.3 129.9 Z" fill="url(#g)" stroke="url(#g)" stroke-width="12" stroke-linejoin="round"/><path d="M117.6 104.6 L149.6 121.2 L99.4 144.7 Z" fill="url(#g)" stroke="url(#g)" stroke-width="12" stroke-linejoin="round"/><path d="M104.7 55.9 L119.3 52.7 L68 165.5" fill="none" stroke="#15112A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
