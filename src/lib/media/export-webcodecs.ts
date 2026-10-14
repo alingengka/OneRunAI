@@ -377,16 +377,24 @@ export async function exportWebCodecsVideo(
       return { start, end };
     });
     const total = normalized.reduce((n, s) => n + (s.end - s.start), 0);
-    const plan: { time: number; seg: Segment }[] = [];
+    // `time` drives captions and effects; `sample` is where the video frame is
+    // read. Reading exactly on a frame boundary picks the previous frame
+    // whenever the clip's timestamps are rounded a little late (WebM keeps
+    // milliseconds, phones write slightly uneven times), so the output repeats
+    // a frame and then skips one: visible stutter. Half a frame later always
+    // lands inside the right frame.
+    const plan: { time: number; sample: number; seg: Segment }[] = [];
     for (const seg of normalized) {
       const count = Math.max(1, Math.round((seg.end - seg.start) * fps));
       for (let k = 0; k < count; k++) {
-        plan.push({ time: Math.min(seg.end - 0.001, seg.start + k / fps), seg });
+        const time = Math.min(seg.end - 0.001, seg.start + k / fps);
+        plan.push({ time, sample: Math.min(seg.end - 0.001, time + 0.5 / fps), seg });
       }
     }
     const planTimes = plan.map((frame) => frame.time);
+    const sampleTimes = plan.map((frame) => frame.sample);
 
-    frames = await openFrameReader(sourceBlob, planTimes, { width, height, fit: "fill" });
+    frames = await openFrameReader(sourceBlob, sampleTimes, { width, height, fit: "fill" });
     dbg(frames ? "decoding frames in order" : "falling back to seeking");
 
     brollTrack = await createBrollTrack(brollWindows(options.scenes, options.sceneElements), {
@@ -518,7 +526,7 @@ export async function exportWebCodecsVideo(
     let frameIndex = 0;
     const keyEvery = Math.round(fps * 2); // keyframe ทุก 2 วินาที เพื่อให้ seek ในไฟล์ผลลัพธ์ลื่น
     let lastYield = performance.now();
-    for (const { time, seg } of plan) {
+    for (const { time, sample, seg } of plan) {
       if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
       if (encoderError) await recover();
       let image: CanvasImageSource | null = null;
@@ -534,7 +542,7 @@ export async function exportWebCodecsVideo(
       }
       if (!image) {
         await ensureVideoReady();
-        await seekTo(video, time);
+        await seekTo(video, sample);
         image = video;
       }
       await brollTrack?.prepare(time);
