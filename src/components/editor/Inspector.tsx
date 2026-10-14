@@ -19,6 +19,7 @@ import { editWordAt, lineBreakAfter, newWordAfter, removeWordAt } from "@/lib/wo
 import { ColorSwatches } from "./ColorSwatches";
 import { CaptionColorControls, CaptionLayoutControls } from "./CaptionLayoutControls";
 import { TextClipEditor } from "./TextClipEditor";
+import { SoundClipControls, type SoundEditing } from "./SoundClipControls";
 
 export type ClipEditing = {
   key: string;
@@ -58,6 +59,8 @@ type Props = {
   onClose?: (() => void) | undefined;
   /** the selected text clip (caption line or free text), edited CapCut-style */
   clip?: ClipEditing | null | undefined;
+  /** the selected sound effect */
+  sound?: SoundEditing | null | undefined;
   className?: string;
 };
 
@@ -86,6 +89,7 @@ export function Inspector({
   onStyleChange,
   onClose,
   clip,
+  sound,
   className,
 }: Props) {
   const word = selectedWord != null ? words[selectedWord] : undefined;
@@ -102,7 +106,7 @@ export function Inspector({
         className,
       )}
     >
-      {onClose && (clip || word || sticker) && (
+      {onClose && (clip || sound || word || sticker) && (
         <button
           type="button"
           aria-label="ปิดหน้าต่าง"
@@ -113,7 +117,9 @@ export function Inspector({
           <X className="h-4 w-4" />
         </button>
       )}
-      {clip ? (
+      {sound ? (
+        <SoundClipControls key={sound.id} sound={sound} />
+      ) : clip ? (
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">{clip.title}</p>
           <TextClipEditor

@@ -22,7 +22,8 @@ import {
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
 import { openFrameReader, probeVideo, type FrameReader } from "./frame-reader";
-import { copyAudioPackets } from "./audio-passthrough";
+import { copyAudioPackets, type CopiedAudio } from "./audio-passthrough";
+import { loadSound, outputTimeOf, type SoundClip } from "../sounds";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 type Progress = (ratio: number) => void;
@@ -42,6 +43,8 @@ export type WebCodecsExportResult = {
   audioCodec: "aac" | "opus" | "none";
   /** The clip's audio was copied as is (no AudioEncoder): no noise reduction or fades. */
   audioCopied: boolean;
+  /** Sound effects were placed but this browser could not mix them into the file. */
+  soundsSkipped: boolean;
   videoCodec: string;
   renderMs: number;
 };
@@ -187,6 +190,129 @@ async function pickAudioCodec(sampleRate: number, channels: number) {
   return null;
 }
 
+/** First sample louder than a whisper, in seconds (null when silent throughout). */
+function onsetOf(buffer: AudioBuffer): number | null {
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) if (Math.abs(data[i]!) > 0.02) return i / buffer.sampleRate;
+  return null;
+}
+
+/**
+ * Encodes a finished mix without AudioEncoder (older iPhone Safari): plays it
+ * into a MediaRecorder in real time, then takes the recorded AAC/Opus packets.
+ * The recorder starts a little late, so the recording is lined up with the
+ * mix by where the sound first begins in each.
+ */
+async function recordMix(mix: AudioBuffer, total: number): Promise<CopiedAudio | null> {
+  if (typeof MediaRecorder === "undefined") return null;
+  const mime = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus"].find((type) =>
+    MediaRecorder.isTypeSupported(type),
+  );
+  if (!mime) return null;
+  const Ctx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return null;
+  const ctx = new Ctx({ sampleRate: mix.sampleRate });
+  try {
+    const destination = ctx.createMediaStreamDestination();
+    const recorder = new MediaRecorder(destination.stream, {
+      mimeType: mime,
+      audioBitsPerSecond: 160_000,
+    });
+    const chunks: Blob[] = [];
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    const stopped = new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+    });
+    // Half a second of silence first: recorders drop the first instant of
+    // what they hear, and this way that instant is the silence.
+    const pad = 0.5;
+    const padded = ctx.createBuffer(
+      mix.numberOfChannels,
+      mix.length + Math.round(pad * mix.sampleRate),
+      mix.sampleRate,
+    );
+    for (let c = 0; c < mix.numberOfChannels; c++) {
+      padded.getChannelData(c).set(mix.getChannelData(c), Math.round(pad * mix.sampleRate));
+    }
+    await ctx.resume();
+    recorder.start();
+    const source = ctx.createBufferSource();
+    source.buffer = padded;
+    source.connect(destination);
+    source.start();
+    await new Promise<void>((resolve) => {
+      source.onended = () => resolve();
+    });
+    await new Promise((r) => window.setTimeout(r, 150));
+    recorder.stop();
+    await stopped;
+    const recorded = new Blob(chunks, { type: mime.split(";")[0] ?? mime });
+    // Where the first sound is in the recording, read on the same packet
+    // timeline the copy below uses.
+    let lead = pad;
+    try {
+      const { ALL_FORMATS, AudioBufferSink, BlobSource, EncodedPacketSink, Input } =
+        await import("mediabunny");
+      const input = new Input({ source: new BlobSource(recorded), formats: ALL_FORMATS });
+      try {
+        const track = await input.getPrimaryAudioTrack();
+        let a: number | null = null;
+        if (track) {
+          // decoded buffers can start before the first packet (codec pre-roll)
+          let shift: number | null = null;
+          const firstPacket = await new EncodedPacketSink(track).getFirstPacket();
+          for await (const { buffer, timestamp } of new AudioBufferSink(track).buffers()) {
+            shift ??= (firstPacket?.timestamp ?? 0) - timestamp;
+            const at = onsetOf(buffer);
+            if (at != null) {
+              a = timestamp + at + shift;
+              break;
+            }
+          }
+        }
+        const b = onsetOf(mix);
+        if (a != null && b != null && a - b > 0) lead = a - b;
+        dbg(`recorded mix: onset ${a} vs ${b}`);
+        // An Opus stream plays its first "pre-skip" samples silently; the copy
+        // keeps that header, so start the copy that much later.
+        if (track?.codec === "opus") {
+          const head = (await track.getDecoderConfig())?.description;
+          if (head && head.byteLength >= 12) {
+            const bytes = ArrayBuffer.isView(head)
+              ? new Uint8Array(head.buffer, head.byteOffset, head.byteLength)
+              : new Uint8Array(head);
+            lead += (bytes[10]! | (bytes[11]! << 8)) / 48000;
+          }
+        }
+        // packets are copied whole: start on the packet edge nearest the lead
+        if (track) {
+          const sink = new EncodedPacketSink(track);
+          const at = await sink.getPacket(lead);
+          const next = at ? await sink.getNextPacket(at) : null;
+          if (at) {
+            lead =
+              next && next.timestamp - lead < lead - at.timestamp ? next.timestamp : at.timestamp;
+          }
+        }
+      } finally {
+        input.dispose();
+      }
+    } catch {
+      /* keep the planned lead-in */
+    }
+    dbg(`recorded mix: lead ${lead.toFixed(3)}s`);
+    return await copyAudioPackets(recorded, [{ start: lead, end: lead + total }]);
+  } catch {
+    return null;
+  } finally {
+    void ctx.close().catch(() => undefined);
+  }
+}
+
 /**
  * ประมวลผลเสียงล่วงหน้า: ตัดเฉพาะช่วงที่เก็บไว้มาต่อกัน + noise reduction เดิม
  * คืนค่าเป็น AudioBuffer ของ timeline ผลลัพธ์ (เวลาต่อเนื่องหลังตัดช่วงเงียบแล้ว)
@@ -196,17 +322,20 @@ async function renderAudio(
   segments: Segment[],
   total: number,
   options: { noiseReduction?: boolean; noiseFloor?: number; smoothCuts?: boolean },
+  sounds: SoundClip[] = [],
 ): Promise<AudioBuffer | null> {
-  let decoded: AudioBuffer;
+  let decoded: AudioBuffer | null = null;
   try {
     decoded = await decodeAudioFromFile(source);
   } catch {
-    return null; // คลิปไม่มีแทร็กเสียง หรืออ่านไม่ได้ → ส่งออกเฉพาะภาพ
+    decoded = null; // คลิปไม่มีแทร็กเสียง หรืออ่านไม่ได้
   }
-  if (!decoded.length) return null;
+  if (decoded && !decoded.length) decoded = null;
+  // no sound of its own and no effects: picture only
+  if (!decoded && !sounds.length) return null;
 
-  const sampleRate = decoded.sampleRate;
-  const channels = Math.min(2, Math.max(1, decoded.numberOfChannels));
+  const sampleRate = decoded?.sampleRate ?? 48000;
+  const channels = decoded ? Math.min(2, Math.max(1, decoded.numberOfChannels)) : 2;
   const offline = new OfflineAudioContext(
     channels,
     Math.max(1, Math.ceil(total * sampleRate)),
@@ -237,7 +366,7 @@ async function renderAudio(
   }
 
   let cursor = 0;
-  for (const segment of segments) {
+  for (const segment of decoded ? segments : []) {
     const length = Math.max(0, segment.end - segment.start);
     if (length <= 0) continue;
     const source = offline.createBufferSource();
@@ -255,6 +384,23 @@ async function renderAudio(
     source.start(cursor, segment.start, length);
     cursor += length;
   }
+
+  // Sound effects go straight to the output: the clip's noise filters and
+  // compressor are for speech and would dull them.
+  const buffers = await Promise.all(sounds.map((clip) => loadSound(clip.sound)));
+  sounds.forEach((clip, i) => {
+    const buffer = buffers[i];
+    const at = outputTimeOf(clip.start, segments);
+    if (!buffer || at == null || at >= total) return;
+    const length = Math.min(clip.duration, buffer.duration - clip.offset, total - at);
+    if (length <= 0.01) return;
+    const effect = offline.createBufferSource();
+    effect.buffer = buffer;
+    const gain = offline.createGain();
+    gain.gain.value = clip.volume;
+    effect.connect(gain).connect(offline.destination);
+    effect.start(at, clip.offset, length);
+  });
 
   const rendered = await offline.startRendering();
   gate?.dispose();
@@ -279,6 +425,8 @@ export async function exportWebCodecsVideo(
     stickers?: Sticker[];
     /** Output frame rate; defaults to 30. */
     fps?: number;
+    /** Sound effects from the sound library. */
+    sounds?: SoundClip[];
   } = {},
 ): Promise<WebCodecsExportResult> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
@@ -427,14 +575,28 @@ export async function exportWebCodecsVideo(
 
     // ---- เสียง (ทำล่วงหน้าแบบ offline) ----
     const canEncodeAudio = typeof AudioEncoder !== "undefined" && typeof AudioData !== "undefined";
-    const audioBuffer = canEncodeAudio
-      ? await renderAudio(sourceBlob, normalized, total, options)
-      : null;
-    const audioPick = audioBuffer
-      ? await pickAudioCodec(audioBuffer.sampleRate, Math.min(2, audioBuffer.numberOfChannels))
-      : null;
-    // No way to encode audio here (iPhone Safari): copy the clip's own audio instead.
-    const copied = audioPick ? null : await copyAudioPackets(sourceBlob, normalized);
+    const effects = options.sounds ?? [];
+    const audioBuffer =
+      canEncodeAudio || effects.length
+        ? await renderAudio(sourceBlob, normalized, total, options, effects)
+        : null;
+    const audioPick =
+      audioBuffer && canEncodeAudio
+        ? await pickAudioCodec(audioBuffer.sampleRate, Math.min(2, audioBuffer.numberOfChannels))
+        : null;
+    // No AudioEncoder (older iPhone Safari): record the mix when there are
+    // sound effects, else copy the clip's own audio.
+    let copied: CopiedAudio | null = null;
+    let soundsSkipped = false;
+    let recordedMix = false;
+    if (!audioPick) {
+      if (audioBuffer && effects.length) copied = await recordMix(audioBuffer, total);
+      recordedMix = !!copied;
+      if (!copied) {
+        soundsSkipped = effects.length > 0;
+        copied = await copyAudioPackets(sourceBlob, normalized);
+      }
+    }
 
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
@@ -649,7 +811,8 @@ export async function exportWebCodecsVideo(
       frames: frameIndex,
       expectedDuration: total,
       audioCodec: audioBuffer && audioPick ? audioPick.mux : (copied?.codec ?? "none"),
-      audioCopied: !!copied,
+      audioCopied: !!copied && !recordedMix,
+      soundsSkipped,
       videoCodec: videoConfig.codec,
       renderMs: performance.now() - started,
     };

@@ -28,6 +28,8 @@ export type TimelineLanes = {
    * free texts on rows below. When given, it replaces the word-by-word row.
    */
   texts?: { id: string; kind: "caption" | "text"; label: string; start: number; end: number }[];
+  /** Sound effects from the sound library (blue track, stacked when they overlap). */
+  sounds?: { id: string; label: string; start: number; end: number }[];
 };
 
 export type TextClipRef = { kind: "caption" | "text"; id: string };
@@ -72,6 +74,10 @@ type Props = {
   onSelectText?: (ref: TextClipRef) => void;
   /** A selected text clip dragged (move) or trimmed at an edge. */
   onTextTime?: (ref: TextClipRef, start: number, end: number) => void;
+  selectedSound?: string | null;
+  onSelectSound?: (id: string) => void;
+  /** A selected sound dragged (move) or trimmed at an edge. */
+  onSoundTime?: (id: string, start: number, end: number) => void;
   className?: string;
 };
 
@@ -84,6 +90,19 @@ const BUTTON_STEP = 1.35;
 const MOVE_SLOP = 4;
 
 const clampPps = (value: number) => Math.min(MAX_PPS, Math.max(MIN_PPS, value));
+
+/** Rows for clips that may overlap: each goes on the first row free at its start. */
+function stackRows(items: { id: string; start: number; end: number }[]) {
+  const ends: number[] = [];
+  const rowOf = new Map<string, number>();
+  for (const item of [...items].sort((a, b) => a.start - b.start)) {
+    let row = ends.findIndex((end) => end <= item.start + 0.001);
+    if (row < 0) row = ends.length;
+    ends[row] = item.end;
+    rowOf.set(item.id, row);
+  }
+  return { rowOf, count: Math.max(1, ends.length) };
+}
 
 type Drag = {
   index: number;
@@ -117,6 +136,9 @@ export function WordTrack({
   selectedText = null,
   onSelectText,
   onTextTime,
+  selectedSound = null,
+  onSelectSound,
+  onSoundTime,
   className,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -519,17 +541,9 @@ export function WordTrack({
   const peakStep = lanes?.peakStep ?? 0.05;
   const stickerItems = lanes?.stickers ?? [];
   // Overlapping stickers/texts go on separate rows, like CapCut's stacked tracks.
-  const stickerRows = useMemo(() => {
-    const ends: number[] = [];
-    const rowOf = new Map<string, number>();
-    for (const item of [...stickerItems].sort((a, b) => a.start - b.start)) {
-      let row = ends.findIndex((end) => end <= item.start + 0.001);
-      if (row < 0) row = ends.length;
-      ends[row] = item.end;
-      rowOf.set(item.id, row);
-    }
-    return { rowOf, count: Math.max(1, ends.length) };
-  }, [stickerItems]);
+  const stickerRows = useMemo(() => stackRows(stickerItems), [stickerItems]);
+  const soundItems = lanes?.sounds ?? [];
+  const soundRows = useMemo(() => stackRows(soundItems), [soundItems]);
   const showRuler = !compact || centered;
   const RULER = centered ? 18 : 24;
   // Phones get slimmer lanes so the tool panel under the timeline has room.
@@ -558,6 +572,7 @@ export function WordTrack({
   const textH = textMode ? textRows.count * (textRowH + 2) - 2 : 0;
   const stickerRowH = centered ? 22 : 26;
   const stickerH = stickerItems.length ? stickerRows.count * (stickerRowH + 2) - 2 : 0;
+  const soundH = soundItems.length ? soundRows.count * (stickerRowH + 2) - 2 : 0;
   const audioH = peaks.length ? (centered ? 16 : 24) : 0;
   let cursor = showRuler ? RULER + 4 : compact ? 9 : 30;
   const videoTop = cursor;
@@ -568,6 +583,8 @@ export function WordTrack({
   if (textH) cursor += textH + GAP;
   const stickerTop = cursor;
   if (stickerH) cursor += stickerH + GAP;
+  const soundTop = cursor;
+  if (soundH) cursor += soundH + GAP;
   const audioTop = cursor;
   if (audioH) cursor += audioH + GAP;
   const contentHeight = Math.max(compact && !centered ? 52 : 92, cursor + 2);
@@ -581,7 +598,7 @@ export function WordTrack({
     top: number;
     height: number;
     selected: boolean;
-    palette: "purple" | "amber";
+    palette: "purple" | "amber" | "sky";
     onSelect: () => void;
     onTime?: ((start: number, end: number) => void) | undefined;
   }) => {
@@ -620,6 +637,7 @@ export function WordTrack({
       laneDragRef.current = null;
     };
     const purple = item.palette === "purple";
+    const sky = item.palette === "sky";
     return (
       <div
         key={item.key}
@@ -641,10 +659,14 @@ export function WordTrack({
           item.selected
             ? purple
               ? "cursor-grab touch-none border-2 border-white bg-violet-500 text-white shadow-[0_0_0_1px_rgba(0,0,0,0.4)]"
-              : "cursor-grab touch-none border-2 border-amber-400 bg-amber-500/25"
+              : sky
+                ? "cursor-grab touch-none border-2 border-white bg-sky-500 text-white shadow-[0_0_0_1px_rgba(0,0,0,0.4)]"
+                : "cursor-grab touch-none border-2 border-amber-400 bg-amber-500/25"
             : purple
               ? "border-violet-400/40 bg-violet-600/85 text-white"
-              : "border-amber-700/60 bg-amber-900/40 text-amber-100",
+              : sky
+                ? "border-sky-400/40 bg-sky-700/80 text-white"
+                : "border-amber-700/60 bg-amber-900/40 text-amber-100",
         )}
         style={{
           left: item.start * pps,
@@ -665,7 +687,7 @@ export function WordTrack({
               onPointerCancel={end}
               className={cn(
                 "absolute inset-y-0 left-0 w-3 cursor-ew-resize touch-none",
-                purple ? "bg-white" : "bg-amber-400/80",
+                purple || sky ? "bg-white" : "bg-amber-400/80",
               )}
             />
             <span
@@ -676,7 +698,7 @@ export function WordTrack({
               onPointerCancel={end}
               className={cn(
                 "absolute inset-y-0 right-0 w-3 cursor-ew-resize touch-none",
-                purple ? "bg-white" : "bg-amber-400/80",
+                purple || sky ? "bg-white" : "bg-amber-400/80",
               )}
             />
           </>
@@ -886,6 +908,30 @@ export function WordTrack({
                   onSelect: () => onSelectSticker?.(item.id),
                   onTime: onStickerTime
                     ? (start, end) => onStickerTime(item.id, start, end)
+                    : undefined,
+                }),
+              )}
+            </div>
+          )}
+
+          {soundH > 0 && (
+            <div
+              className="absolute"
+              style={{ left: origin, width, top: soundTop, height: soundH }}
+            >
+              {soundItems.map((item) =>
+                laneBlock({
+                  key: `sound:${item.id}`,
+                  label: `♪ ${item.label}`,
+                  start: item.start,
+                  end: item.end,
+                  top: (soundRows.rowOf.get(item.id) ?? 0) * (stickerRowH + 2),
+                  height: stickerRowH,
+                  selected: selectedSound === item.id,
+                  palette: "sky",
+                  onSelect: () => onSelectSound?.(item.id),
+                  onTime: onSoundTime
+                    ? (start, end) => onSoundTime(item.id, start, end)
                     : undefined,
                 }),
               )}
