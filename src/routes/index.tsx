@@ -156,7 +156,7 @@ function ShowcasePhone({
 const SHOWCASE = [
   { id: "lao-2", label: "ตัวอย่างคลิปซับลาว" },
   { id: "thai-1", label: "ตัวอย่างคลิปซับไทย" },
-  { id: "lao-1", label: "ตัวอย่างคลิปซับลาว" },
+  { id: "lao-3", label: "ตัวอย่างคลิปซับลาว" },
 ] as const;
 
 function Landing() {
