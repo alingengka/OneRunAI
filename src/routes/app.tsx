@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useAudioFeedback } from "@/hooks/use-audio-feedback";
-import { AudioPreview } from "@/components/audio-preview";
 import { toast } from "sonner";
 import {
   Captions,
@@ -58,6 +56,17 @@ import { WordTrack, type TimelineLanes } from "@/components/editor/WordTrack";
 import { MobileWordBar } from "@/components/editor/MobileWordBar";
 import { moveWordTo } from "@/lib/word-actions";
 import { Inspector, type ClipEditing } from "@/components/editor/Inspector";
+import { SoundLibrary } from "@/components/editor/SoundLibrary";
+import type { SoundEditing } from "@/components/editor/SoundClipControls";
+import { useSoundPlayback } from "@/hooks/use-sound-playback";
+import {
+  makeSoundClip,
+  previewSound,
+  retimeSoundClip,
+  soundName,
+  splitSoundClip,
+  type SoundClip,
+} from "@/lib/sounds";
 import { computePeaks, makeThumbnails } from "@/lib/media/timeline-assets";
 import { CaptionList } from "@/components/editor/CaptionList";
 import { StyleControls } from "@/components/editor/StyleControls";
@@ -125,7 +134,6 @@ import {
   type SyncIssue,
 } from "@/lib/caption-editing";
 import { buildCapCutPackage } from "@/lib/capcut-package";
-import type { SoundPack } from "@/lib/audio-system";
 import { motionAt, type MotionKind } from "@/lib/media/motion";
 import { Clocked, createPlaybackClock, nextBoundaryAfter } from "@/lib/playback-clock";
 import { PlaybackDebug } from "@/components/editor/PlaybackDebug";
@@ -270,12 +278,6 @@ function useIsDesktop(): boolean {
 }
 
 function Studio() {
-  const {
-    play,
-    setVolume: setAudioVolume,
-    setEnabled: setAudioEnabled,
-    setPack: setAudioPack,
-  } = useAudioFeedback();
   const transcribeFn = useServerFn(transcribeAudio);
   // Surface engine failures (e.g. a bad API key) once instead of silently
   // returning lower-quality subtitles.
@@ -357,6 +359,9 @@ function Studio() {
   const [clipStyles, setClipStyles] = useState<Record<string, Partial<CaptionStyle>>>({});
   /** The selected caption line (clip id). */
   const [selectedCaption, setSelectedCaption] = useState<string | null>(null);
+  // sound effects from the sound library, and the one selected on the timeline
+  const [sounds, setSounds] = useState<SoundClip[]>([]);
+  const [selectedSound, setSelectedSound] = useState<string | null>(null);
 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [transcript, setTranscript] = useState("");
@@ -369,6 +374,10 @@ function Studio() {
     panelRef.current?.scrollTo({ top: 0 });
   }, [tab]);
   const [selectedWord, setSelectedWord] = useState<number | null>(null);
+  // picking anything else on the timeline lets go of the sound
+  useEffect(() => {
+    if (selectedWord != null || selectedCaption || selectedSticker) setSelectedSound(null);
+  }, [selectedWord, selectedCaption, selectedSticker]);
   const isDesktop = useIsDesktop();
   const [timelineThumbs, setTimelineThumbs] = useState<{ thumbs: string[]; step: number } | null>(
     null,
@@ -408,18 +417,12 @@ function Studio() {
   const [rendering, setRendering] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [retryingSync, setRetryingSync] = useState(false);
-  const [sfx, setSfx] = useState<{ enabled: boolean; volume: number; pack: SoundPack }>({
-    enabled: true,
-    volume: 0.35,
-    pack: "clean",
-  });
   const [savedInfo, setSavedInfo] = useState<{ savedAt: number; fileName: string } | null>(null);
   const [projectName, setProjectName] = useState("Untitled short");
   const [sceneElements, setSceneElements] = useState<SceneElement[]>([]);
   const [muted, setMuted] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
   const restoredProjectRef = useRef(false);
-  const lastSoundGroupRef = useRef<number>(-1);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem("onerunai-theme");
@@ -498,6 +501,7 @@ function Studio() {
     isDesktop &&
     (selectedWordValid != null ||
       selectedCaption != null ||
+      selectedSound != null ||
       stickers.some((sticker) => sticker.id === selectedSticker));
   /** The caption line around the selected word (for "re-transcribe this line"). */
   const selectedLineRange = useMemo(() => {
@@ -542,8 +546,14 @@ function Studio() {
                 ? `T ${sticker.asset.replace(/\s+/g, " ").slice(0, 24)}`
                 : "สติกเกอร์",
         })),
+      sounds: sounds.map((clip) => ({
+        id: clip.id,
+        label: soundName(clip.sound),
+        start: clip.start,
+        end: clip.start + clip.duration,
+      })),
     }),
-    [timelineThumbs, peaks, stickers, groups, textGroups, style.joinWords],
+    [timelineThumbs, peaks, stickers, groups, textGroups, style.joinWords, sounds],
   );
 
   // Video thumbnails for the timeline, made in the background after a clip loads.
@@ -719,24 +729,6 @@ function Studio() {
     return () => cancelAnimationFrame(raf);
   }, [outputSegments, silences, clock]);
 
-  useEffect(() => {
-    setAudioEnabled(sfx.enabled);
-    setAudioVolume(sfx.volume);
-    setAudioPack(sfx.pack);
-  }, [sfx, setAudioEnabled, setAudioPack, setAudioVolume]);
-
-  useEffect(() => {
-    if (
-      !playing ||
-      !sfx.enabled ||
-      activeGroupIndex < 0 ||
-      activeGroupIndex === lastSoundGroupRef.current
-    )
-      return;
-    lastSoundGroupRef.current = activeGroupIndex;
-    void play(style.animation);
-  }, [activeGroupIndex, play, playing, sfx.enabled, style.animation]);
-
   const analyze = useCallback(async (target: File, thresholdDb: number, minSil: number) => {
     setAnalyzing(true);
     try {
@@ -757,7 +749,6 @@ function Studio() {
       noiseFloorRef.current = estimateNoiseFloor(buffer);
       setSegments(segs);
       setDuration((d) => d || buffer!.duration);
-      play("success");
       return { buffer, segs };
     } catch (e) {
       const noSpeech = e instanceof Error && e.message.startsWith("ไม่พบช่วงเสียงพูด");
@@ -879,7 +870,7 @@ function Studio() {
       stickers,
       splitPoints,
       projectName,
-      sfx,
+      sounds,
       clipStyles,
     }),
     [
@@ -900,7 +891,7 @@ function Studio() {
       stickers,
       splitPoints,
       projectName,
-      sfx,
+      sounds,
       clipStyles,
     ],
   );
@@ -941,7 +932,7 @@ function Studio() {
     setSplitPoints(p.splitPoints ?? []);
     setProjectName(p.projectName ?? p.fileName.replace(/\.[^.]+$/, ""));
     restoredProjectRef.current = true;
-    if (p.sfx) setSfx(p.sfx);
+    setSounds(p.sounds ?? []);
     setClipStyles(p.clipStyles ?? {});
     setDuration((d) => d || p.duration);
     setCaptionsOn(true);
@@ -1230,10 +1221,8 @@ function Studio() {
       setWords(ruled.words);
       setCaptionsOn(true);
       toast.success("สร้างซับไตเติลเรียบร้อย");
-      play("success");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ถอดเสียงไม่สำเร็จ");
-      play("error");
     } finally {
       setTranscribing(false);
     }
@@ -1421,7 +1410,6 @@ function Studio() {
     setJob({ label, ratio: 0 });
     try {
       await work(controller.signal, (r) => setJob({ label, ratio: Math.max(0, Math.min(1, r)) }));
-      if (!controller.signal.aborted) play("success");
     } catch (error) {
       if (
         controller.signal.aborted ||
@@ -1430,7 +1418,6 @@ function Studio() {
         toast.message("ยกเลิกงานแล้ว");
       } else {
         toast.error(error instanceof Error ? error.message : "ทำงานไม่สำเร็จ");
-        play("error");
       }
     } finally {
       jobAbort.current = null;
@@ -1729,6 +1716,62 @@ function Studio() {
     };
   };
 
+  // ── Sound effects from the sound library ──
+  const selectSound = (id: string | null) => {
+    setSelectedWord(null);
+    setSelectedCaption(null);
+    setSelectedSticker(null);
+    setSelectedSound(id);
+  };
+  const addSound = (soundId: string) => {
+    const at = videoRef.current?.currentTime ?? time;
+    const clip = makeSoundClip(soundId, at);
+    setSounds((current) => [...current, clip]);
+    selectSound(clip.id);
+    toast.success(`เพิ่มเสียง ${soundName(soundId)} ที่ ${at.toFixed(1)} วิ`);
+  };
+  const updateSound = (id: string, patch: Partial<SoundClip>) =>
+    setSounds((current) => current.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  const retimeSound = (id: string, start: number, end: number) =>
+    setSounds((current) => current.map((c) => (c.id === id ? retimeSoundClip(c, start, end) : c)));
+  const deleteSound = (id: string) => {
+    setSounds((current) => current.filter((c) => c.id !== id));
+    setSelectedSound((current) => (current === id ? null : current));
+  };
+  const duplicateSound = (id: string) => {
+    const source = sounds.find((c) => c.id === id);
+    if (!source) return;
+    const copy = { ...source, id: makeSoundClip("", 0).id, start: source.start + source.duration };
+    setSounds((current) => [...current, copy]);
+    selectSound(copy.id);
+  };
+  const splitSound = (id: string) => {
+    const source = sounds.find((c) => c.id === id);
+    const at = videoRef.current?.currentTime ?? time;
+    const parts = source ? splitSoundClip(source, at) : null;
+    if (!parts) {
+      toast.message("เลื่อนเส้นเวลาไปไว้กลางเสียงก่อนตัด");
+      return;
+    }
+    setSounds((current) => current.flatMap((c) => (c.id === id ? parts : [c])));
+    selectSound(parts[1].id);
+  };
+  const soundEditing = (id: string | null): SoundEditing | null => {
+    const clip = id ? sounds.find((c) => c.id === id) : undefined;
+    if (!clip) return null;
+    return {
+      id: clip.id,
+      name: soundName(clip.sound),
+      volume: clip.volume,
+      onVolume: (volume) => updateSound(clip.id, { volume }),
+      onPreview: () => void previewSound(clip.sound, clip.volume),
+      onSplit: () => splitSound(clip.id),
+      onDuplicate: () => duplicateSound(clip.id),
+      onDelete: () => deleteSound(clip.id),
+    };
+  };
+  useSoundPlayback(videoRef, sounds, muted, videoUrl);
+
   const exportFinalVideo = (type: ExportType = exportType) => {
     if (type === "srt") {
       exportSrt();
@@ -1761,6 +1804,7 @@ function Studio() {
         resolution,
         fps: exportFps,
         stickers,
+        sounds,
       };
       const seconds = outputSegments.reduce((n, s) => n + (s.end - s.start), 0);
 
@@ -1791,12 +1835,22 @@ function Studio() {
         toast.success(
           `ได้วิดีโอพร้อมโพสต์แล้ว ${result.width}x${result.height} · ${result.fps}fps · ${result.frames} เฟรม`,
         );
+        if (result.soundsSkipped) {
+          toast.warning(
+            "เบราว์เซอร์นี้ใส่เสียงเอฟเฟกต์ลงไฟล์ไม่ได้ ลองส่งออกด้วย Chrome หรือ Safari รุ่นใหม่",
+          );
+        }
         if (result.audioCopied && noiseReduction) {
           toast.info("เบราว์เซอร์นี้ใช้เสียงต้นฉบับของคลิป จึงไม่ได้ลดเสียงรบกวนในไฟล์ส่งออก");
         }
         return;
       }
 
+      if (sounds.length) {
+        toast.warning(
+          "โหมดสำรองใส่เสียงเอฟเฟกต์ลงไฟล์ไม่ได้ แนะนำ Chrome, Edge หรือ Safari รุ่นใหม่",
+        );
+      }
       const {
         blob,
         ext,
@@ -1986,6 +2040,10 @@ function Studio() {
   // Delete / Backspace removes the selected word or sticker (desktop, like CapCut).
   const deleteSelectionRef = useRef<() => boolean>(() => false);
   deleteSelectionRef.current = () => {
+    if (selectedSound) {
+      deleteSound(selectedSound);
+      return true;
+    }
     if (selectedWordValid != null) {
       updateWords(words.filter((_, i) => i !== selectedWordValid));
       setSelectedWord(null);
@@ -2009,6 +2067,7 @@ function Studio() {
     stickers: Sticker[];
     style: CaptionStyle;
     clipStyles: Record<string, Partial<CaptionStyle>>;
+    sounds: SoundClip[];
   };
   const historyRef = useRef<{
     past: EditSnapshot[];
@@ -2020,7 +2079,7 @@ function Studio() {
   }>({ past: [], future: [], committed: null, pendingBase: null, restoring: false, timer: 0 });
   useEffect(() => {
     const h = historyRef.current;
-    const now = { words, stickers, style, clipStyles };
+    const now = { words, stickers, style, clipStyles, sounds };
     if (h.restoring || !h.committed) {
       h.restoring = false;
       h.committed = now;
@@ -2035,9 +2094,9 @@ function Studio() {
         h.future = [];
       }
       h.pendingBase = null;
-      h.committed = { words, stickers, style, clipStyles };
+      h.committed = { words, stickers, style, clipStyles, sounds };
     }, 400);
-  }, [words, stickers, style, clipStyles]);
+  }, [words, stickers, style, clipStyles, sounds]);
   // AI captions (and words added later) become caption clips right away, like
   // CapCut's auto captions. Not an edit of its own, so it is not an undo step.
   useEffect(() => {
@@ -2092,7 +2151,7 @@ function Studio() {
   const historyStepRef = useRef<(direction: "undo" | "redo") => boolean>(() => false);
   historyStepRef.current = (direction) => {
     const h = historyRef.current;
-    const current = { words, stickers, style, clipStyles };
+    const current = { words, stickers, style, clipStyles, sounds };
     // A change still settling counts as its own step first.
     if (h.pendingBase) {
       window.clearTimeout(h.timer);
@@ -2112,6 +2171,8 @@ function Studio() {
     setStickers(snap.stickers);
     setStyle(snap.style);
     setClipStyles(snap.clipStyles);
+    setSounds(snap.sounds);
+    setSelectedSound((id) => (id && snap.sounds.some((c) => c.id === id) ? id : null));
     setSelectedWord(null);
     setSelectedCaption(null);
     setSelectedSticker((id) => (id && snap.stickers.some((s) => s.id === id) ? id : null));
@@ -2121,14 +2182,35 @@ function Studio() {
   // ── Copy / paste (Ctrl+C, Ctrl+V) for texts and stickers, like CapCut:
   // the copy lands at the playhead, in the same place on the video.
   const clipboardRef = useRef<Sticker | null>(null);
+  const soundClipboardRef = useRef<SoundClip | null>(null);
+  const lastCopiedRef = useRef<"clip" | "sound">("clip");
   const clipboardKeyRef = useRef<(key: "c" | "v" | "x" | "d") => boolean>(() => false);
   clipboardKeyRef.current = (key) => {
+    const sound = sounds.find((c) => c.id === selectedSound);
+    if (sound && key !== "v") {
+      if (key === "d") duplicateSound(sound.id);
+      else {
+        soundClipboardRef.current = sound;
+        lastCopiedRef.current = "sound";
+        if (key === "x") deleteSound(sound.id);
+        else toast.message("คัดลอกเสียงแล้ว — กด Ctrl+V เพื่อวาง");
+      }
+      return true;
+    }
+    if (key === "v" && lastCopiedRef.current === "sound" && soundClipboardRef.current) {
+      const at = videoRef.current?.currentTime ?? time;
+      const copy = { ...soundClipboardRef.current, id: makeSoundClip("", 0).id, start: at };
+      setSounds((current) => [...current, copy]);
+      selectSound(copy.id);
+      return true;
+    }
     // A copied caption line pastes as a free text clip (same words, timing
     // inside it, and look), so the copy can overlap the original like CapCut.
     const captionGroup = selectedCaption ? groups.find((g) => g.id === selectedCaption) : undefined;
     if (captionGroup) {
       if (key === "c" || key === "x") {
         clipboardRef.current = captionToText(captionGroup);
+        lastCopiedRef.current = "clip";
         if (key === "x") deleteClip({ kind: "caption", id: captionGroup.id ?? "" });
         else toast.message("คัดลอกแล้ว — กด Ctrl+V เพื่อวาง");
         return true;
@@ -2142,6 +2224,7 @@ function Studio() {
     if (key === "c" || key === "x") {
       if (!selected) return false;
       clipboardRef.current = selected;
+      lastCopiedRef.current = "clip";
       if (key === "x") removeSticker(selected.id);
       else toast.message("คัดลอกแล้ว — กด Ctrl+V เพื่อวาง");
       return true;
@@ -2209,6 +2292,7 @@ function Studio() {
         setSelectedWord(null);
         setSelectedCaption(null);
         setSelectedSticker(null);
+        setSelectedSound(null);
         return;
       }
       if (deleteSelectionRef.current()) event.preventDefault();
@@ -2261,7 +2345,6 @@ function Studio() {
       return;
     }
     download(`${baseName()}-captions.srt`, buildSrt(groups, remap), "application/x-subrip");
-    play("pop");
     toast.success("ดาวน์โหลด .srt แล้ว — ลากเข้า CapCut ได้เลย");
   };
   const exportEdl = () => {
@@ -2270,7 +2353,6 @@ function Studio() {
       return;
     }
     download(`${file?.name ?? "clip"}.edl`, buildEdl(outputSegments, file?.name ?? "clip"));
-    play("pop");
     toast.success("ดาวน์โหลด .edl (cut list) แล้ว");
   };
   const exportJson = () => {
@@ -2548,7 +2630,6 @@ function Studio() {
                 aria-current={current ? "page" : undefined}
                 onClick={() => {
                   if (!current) setTab(target);
-                  play("hover");
                 }}
                 title={label}
                 className={cn(
@@ -2732,51 +2813,21 @@ function Studio() {
                     </Button>
                   </div>
 
-                  <div className="py-4">
-                    <div className="flex items-start gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
+                    <div className="flex min-w-0 items-start gap-3">
                       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
                         <AudioLines className="h-5 w-5" />
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold">เสียงประกอบ</p>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold">คลังเสียง</p>
                         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                          เพิ่มจังหวะเสียงให้ข้อความและการเปลี่ยนซีน
+                          เลือกเสียงเอฟเฟกต์มาวางบนไทม์ไลน์เอง
                         </p>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0"
-                        onClick={() => setTab("audio")}
-                      >
-                        แก้ไข
-                      </Button>
-                      <Switch
-                        className="mt-1 shrink-0"
-                        checked={sfx.enabled}
-                        onCheckedChange={(enabled) =>
-                          setSfx((current) => ({ ...current, enabled }))
-                        }
-                        aria-label="เปิดเสียงประกอบ"
-                      />
                     </div>
-                    <div className="mt-4 ml-0 space-y-2 border-l-2 border-primary/20 pl-3 sm:ml-[52px]">
-                      <Label className="flex justify-between text-xs text-muted-foreground">
-                        <span>ระดับเสียงประกอบ</span>
-                        <span className="font-mono text-foreground">
-                          {Math.round(sfx.volume * 100)}%
-                        </span>
-                      </Label>
-                      <Slider
-                        value={[sfx.volume * 100]}
-                        min={0}
-                        max={100}
-                        step={5}
-                        onValueChange={([volume]) =>
-                          setSfx((current) => ({ ...current, volume: (volume ?? 35) / 100 }))
-                        }
-                      />
-                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setTab("audio")}>
+                      เปิด
+                    </Button>
                   </div>
 
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
@@ -3209,7 +3260,6 @@ function Studio() {
                       ? current.fontFamily
                       : preset.fontFamily,
                 }));
-                void play(preset.animation);
                 toast.success(`ใช้สไตล์ ${preset.name}`);
               }}
             />
@@ -3219,10 +3269,7 @@ function Studio() {
             <div className="space-y-5">
               <StyleControls
                 style={style}
-                onChange={(p) => {
-                  changeGlobalStyle(p);
-                  if (p.animation) void play(p.animation);
-                }}
+                onChange={changeGlobalStyle}
                 scripts={languages.map((c) => (c === "en" ? "latin" : c))}
                 lineCount={Math.max(2, previewLineCount)}
                 language={languages[0] ?? "th"}
@@ -3380,12 +3427,12 @@ function Studio() {
           )}
 
           {tab === "audio" && (
-            <AudioPreview
-              animation={style.animation}
-              enabled={sfx.enabled}
-              volume={sfx.volume}
-              pack={sfx.pack}
-              onChange={(patch) => setSfx((current) => ({ ...current, ...patch }))}
+            <SoundLibrary
+              onAdd={addSound}
+              usage={sounds.reduce<Record<string, number>>((n, c) => {
+                n[c.sound] = (n[c.sound] ?? 0) + 1;
+                return n;
+              }, {})}
             />
           )}
         </section>
@@ -3659,7 +3706,11 @@ function Studio() {
             onStickerSplit={(id) => splitClip({ kind: "text", id })}
             onOpenStickers={() => setTab("stickers")}
             onStyleChange={changeGlobalStyle}
-            onClose={() => selectClip(null)}
+            onClose={() => {
+              selectClip(null);
+              setSelectedSound(null);
+            }}
+            sound={soundEditing(selectedSound)}
             clip={selectedClip ? clipEditing(selectedClip) : null}
           />
         )}
@@ -3692,6 +3743,9 @@ function Studio() {
                 if (!isDesktop && textSheet) setTextSheet(ref.id);
               }}
               onTextTime={retimeClip}
+              selectedSound={selectedSound}
+              onSelectSound={selectSound}
+              onSoundTime={retimeSound}
               onSelectSticker={(id) => {
                 setSelectedWord(null);
                 setSelectedSticker(id);
@@ -3700,6 +3754,7 @@ function Studio() {
               onDeselect={() => {
                 setSelectedWord(null);
                 setSelectedSticker(null);
+                setSelectedSound(null);
               }}
               onScrubStart={() => {
                 if (playing) {
@@ -3739,6 +3794,9 @@ function Studio() {
                   if (!isDesktop && textSheet) setTextSheet(ref.id);
                 }}
                 onTextTime={retimeClip}
+                selectedSound={selectedSound}
+                onSelectSound={selectSound}
+                onSoundTime={retimeSound}
                 onSelectSticker={(id) => {
                   setSelectedWord(null);
                   setSelectedSticker(id);
@@ -3758,6 +3816,58 @@ function Studio() {
           if (!ref || !clip) return null;
           const layer = ref.kind === "text" ? stickers.find((s) => s.id === ref.id) : undefined;
           return <MobileTextSheet clip={clip} autoFocus={layer?.asset === "ข้อความ"} />;
+        })()}
+
+      {/* Phone: tools for the selected sound replace the bottom menu */}
+      {!isDesktop &&
+        (() => {
+          const sound = soundEditing(selectedSound);
+          if (!sound) return null;
+          return (
+            <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+              <div className="flex items-center gap-3 px-4 pt-2.5">
+                <span className="max-w-[40%] truncate text-xs font-semibold text-sky-400">
+                  ♪ {sound.name}
+                </span>
+                <Slider
+                  value={[sound.volume * 100]}
+                  min={0}
+                  max={200}
+                  step={5}
+                  aria-label="ระดับเสียง"
+                  className="flex-1"
+                  onValueChange={([value]) => sound.onVolume((value ?? 100) / 100)}
+                />
+                <span className="w-10 text-right font-mono text-xs">
+                  {Math.round(sound.volume * 100)}%
+                </span>
+              </div>
+              <nav aria-label="เครื่องมือเสียง" className="grid h-14 grid-cols-5 px-1">
+                {(
+                  [
+                    { label: "ฟัง", icon: Play, run: sound.onPreview },
+                    { label: "ตัด", icon: Scissors, run: sound.onSplit },
+                    { label: "ทำซ้ำ", icon: Copy, run: sound.onDuplicate },
+                    { label: "ลบ", icon: Trash2, run: sound.onDelete },
+                    { label: "กลับ", icon: ChevronDown, run: () => setSelectedSound(null) },
+                  ] satisfies { label: string; icon: LucideIcon; run: () => void }[]
+                ).map(({ label, icon: Icon, run }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={run}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-1 text-[11px] text-muted-foreground",
+                      label === "ลบ" && "text-destructive",
+                    )}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </nav>
+            </div>
+          );
         })()}
 
       {/* Phone: tools for the selected text clip replace the bottom menu */}
@@ -3809,7 +3919,9 @@ function Studio() {
 
       {/* Phone: bottom toolbar */}
       <nav
-        hidden={!isDesktop && (selectedWordValid != null || selectedClip != null)}
+        hidden={
+          !isDesktop && (selectedWordValid != null || selectedClip != null || selectedSound != null)
+        }
         aria-label="เมนูเครื่องมือ"
         className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >

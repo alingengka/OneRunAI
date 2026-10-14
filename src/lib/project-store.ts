@@ -1,6 +1,6 @@
 import type { Segment } from "./media/audio";
 import type { CaptionStyle, Word } from "./captions";
-import type { SoundPack } from "./audio-system";
+import type { SoundClip } from "./sounds";
 import type { SceneElement } from "./scenes";
 import type { LexRule } from "./lao-glossary";
 import type { Sticker } from "./media/stickers";
@@ -26,7 +26,8 @@ export type SavedProject = {
   stickers?: Sticker[];
   splitPoints?: number[];
   projectName?: string;
-  sfx?: { enabled: boolean; volume: number; pack: SoundPack };
+  /** sound effects placed from the sound library */
+  sounds?: SoundClip[];
   /** caption lines' own looks, by clip id */
   clipStyles?: Record<string, Partial<CaptionStyle>>;
 };
