@@ -1,7 +1,13 @@
-import { useMemo, useState } from "react";
-import { Play, Plus, Search } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Play, Plus, Search, Square } from "lucide-react";
+import {
+  SOUND_CATEGORIES,
+  SOUND_LIBRARY,
+  previewSound,
+  stopPreview,
+  type SoundCategory,
+} from "@/lib/sounds";
 import { cn } from "@/lib/utils";
-import { SOUND_CATEGORIES, SOUND_LIBRARY, previewSound, type SoundCategory } from "@/lib/sounds";
 
 type Props = {
   /** adds the sound at the playhead */
@@ -25,14 +31,44 @@ export function SoundLibrary({ onAdd, usage = {}, className }: Props) {
     );
   }, [category, query]);
 
+  const timerRef = useRef(0);
+  // leaving the panel stops a preview (the music runs for minutes)
+  useEffect(
+    () => () => {
+      window.clearTimeout(timerRef.current);
+      stopPreview();
+    },
+    [],
+  );
+  /** ▶ plays the sound; tapping it again while it plays stops it. */
   const listen = (id: string, duration: number) => {
+    window.clearTimeout(timerRef.current);
+    if (playingId === id) {
+      stopPreview();
+      setPlayingId(null);
+      return;
+    }
     setPlayingId(id);
     void previewSound(id);
-    window.setTimeout(
+    timerRef.current = window.setTimeout(
       () => setPlayingId((current) => (current === id ? null : current)),
-      Math.min(4000, duration * 1000),
+      duration * 1000,
     );
   };
+  const counts = useMemo(() => {
+    const n: Record<string, number> = { all: SOUND_LIBRARY.length };
+    for (const s of SOUND_LIBRARY) n[s.category] = (n[s.category] ?? 0) + 1;
+    return n;
+  }, []);
+  // "All" lists the sounds under a heading per category
+  const sections = useMemo(
+    () =>
+      SOUND_CATEGORIES.map((c) => ({
+        ...c,
+        sounds: list.filter((s) => s.category === c.id),
+      })).filter((c) => c.sounds.length),
+    [list],
+  );
 
   return (
     <div className={cn("space-y-3", className)}>
@@ -70,43 +106,59 @@ export function SoundLibrary({ onAdd, usage = {}, className }: Props) {
             )}
           >
             {item.label}
+            <span className="ml-1 opacity-60">{counts[item.id] ?? 0}</span>
           </button>
         ))}
       </div>
 
       <ul className="divide-y divide-border rounded-xl border border-border">
-        {list.map((sound) => (
-          <li key={sound.id} className="flex items-center gap-2 px-2 py-1.5">
-            <button
-              type="button"
-              aria-label={`ฟังเสียง ${sound.name}`}
-              onClick={() => listen(sound.id, sound.duration)}
-              className={cn(
-                "grid h-9 w-9 shrink-0 place-items-center rounded-full",
-                playingId === sound.id
-                  ? "bg-teal-500 text-white"
-                  : "bg-teal-500/15 text-teal-500 hover:bg-teal-500/25",
+        {(category === "all" ? sections : [{ id: category, label: "", sounds: list }]).map(
+          (section) => (
+            <Fragment key={section.id}>
+              {section.label && (
+                <li className="sticky top-0 z-10 bg-muted/90 px-3 py-1.5 text-xs font-semibold text-muted-foreground backdrop-blur">
+                  {section.label}
+                </li>
               )}
-            >
-              <Play className="h-4 w-4" />
-            </button>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{sound.name}</p>
-              <p className="text-[11px] text-muted-foreground">
-                {sound.duration.toFixed(1)} วิ
-                {usage[sound.id] ? ` · ใช้แล้ว ${usage[sound.id]}` : ""}
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label={`เพิ่มเสียง ${sound.name}`}
-              onClick={() => onAdd(sound.id)}
-              className="flex h-9 shrink-0 items-center gap-1 rounded-full border border-border px-3 text-xs font-semibold hover:border-primary hover:text-primary"
-            >
-              <Plus className="h-4 w-4" /> เพิ่ม
-            </button>
-          </li>
-        ))}
+              {section.sounds.map((sound) => (
+                <li key={sound.id} className="flex items-center gap-2 px-2 py-1.5">
+                  <button
+                    type="button"
+                    aria-label={`${playingId === sound.id ? "หยุดเสียง" : "ฟังเสียง"} ${sound.name}`}
+                    onClick={() => listen(sound.id, sound.duration)}
+                    className={cn(
+                      "grid h-9 w-9 shrink-0 place-items-center rounded-full",
+                      playingId === sound.id
+                        ? "bg-teal-500 text-white"
+                        : "bg-teal-500/15 text-teal-500 hover:bg-teal-500/25",
+                    )}
+                  >
+                    {playingId === sound.id ? (
+                      <Square className="h-3.5 w-3.5 fill-current" />
+                    ) : (
+                      <Play className="h-4 w-4" />
+                    )}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{sound.name}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {sound.duration.toFixed(1)} วิ
+                      {usage[sound.id] ? ` · ใช้แล้ว ${usage[sound.id]}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`เพิ่มเสียง ${sound.name}`}
+                    onClick={() => onAdd(sound.id)}
+                    className="flex h-9 shrink-0 items-center gap-1 rounded-full border border-border px-3 text-xs font-semibold hover:border-primary hover:text-primary"
+                  >
+                    <Plus className="h-4 w-4" /> เพิ่ม
+                  </button>
+                </li>
+              ))}
+            </Fragment>
+          ),
+        )}
         {!list.length && (
           <li className="px-3 py-6 text-center text-sm text-muted-foreground">ไม่พบเสียง</li>
         )}
