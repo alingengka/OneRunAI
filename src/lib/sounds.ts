@@ -6,16 +6,7 @@
 import type { Segment } from "./media/audio";
 
 export type SoundCategory =
-  | "click"
-  | "pop"
-  | "whoosh"
-  | "notify"
-  | "typing"
-  | "reward"
-  | "wrong"
-  | "scifi"
-  | "other"
-  | "music";
+  "click" | "pop" | "whoosh" | "notify" | "typing" | "reward" | "wrong" | "scifi" | "other";
 
 export type LibrarySound = {
   id: string;
@@ -35,7 +26,6 @@ export const SOUND_CATEGORIES: { id: SoundCategory; label: string }[] = [
   { id: "wrong", label: "ผิด" },
   { id: "scifi", label: "ไซไฟ / ดิจิทัล" },
   { id: "other", label: "อื่น ๆ" },
-  { id: "music", label: "เพลง" },
 ];
 
 export const SOUND_LIBRARY: LibrarySound[] = [
@@ -144,7 +134,6 @@ export const SOUND_LIBRARY: LibrarySound[] = [
   { id: "x-sonar-ping", name: "Sonar Ping", category: "notify", duration: 1.907 },
   { id: "x-digital-text", name: "Digital Text", category: "typing", duration: 1.358 },
   { id: "x-iphone-keyboard", name: "iPhone Keyboard", category: "typing", duration: 21.107 },
-  { id: "x-iphone-texting", name: "iPhone Texting", category: "typing", duration: 51.357 },
   {
     id: "x-keyboard-typing-fast",
     name: "Keyboard Typing Fast",
@@ -169,13 +158,6 @@ export const SOUND_LIBRARY: LibrarySound[] = [
   { id: "x-sci-fi-6", name: "Sci-Fi 6", category: "scifi", duration: 1.306 },
   { id: "x-flowing-water", name: "Flowing Water", category: "other", duration: 15.882 },
   { id: "x-rope-creak", name: "Rope Creak", category: "other", duration: 1.176 },
-  { id: "x-gorilla-beat", name: "Gorilla Beat", category: "music", duration: 115.54 },
-  {
-    id: "x-nightfall-future-bass",
-    name: "Nightfall (Future Bass)",
-    category: "music",
-    duration: 141.662,
-  },
 ];
 
 export type SoundClip = {
