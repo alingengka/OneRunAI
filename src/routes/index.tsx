@@ -608,7 +608,15 @@ function Landing() {
             </div>
           </div>
           <div className="mx-auto flex max-w-6xl flex-col gap-2 border-t border-white/5 px-4 py-6 text-xs text-white/35 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <span>© {new Date().getFullYear()} OneRunAI</span>
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span>© {new Date().getFullYear()} OneRunAI</span>
+              <Link to="/terms" className="hover:text-white/70">
+                {t.footer.terms}
+              </Link>
+              <Link to="/privacy" className="hover:text-white/70">
+                {t.footer.privacy}
+              </Link>
+            </span>
             <span>{t.footer.emojiCredit}</span>
           </div>
         </footer>
