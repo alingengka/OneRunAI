@@ -2,11 +2,17 @@ import { supabase } from "@/integrations/supabase/client";
 
 const BUCKET = "broll-assets";
 const YEAR_SECONDS = 60 * 60 * 24 * 365;
+/** Same limit as the bucket (see the storage_limits migration). */
+const MAX_BYTES = 100 * 1024 * 1024;
 
 export type UploadedAsset = { url: string; type: "image" | "video" };
 
 /** อัปโหลดสื่อของผู้ใช้เองเข้าคลังไฟล์ แล้วคืนลิงก์ที่ใช้ได้ยาว 1 ปี */
 export async function uploadBrollAsset(file: File): Promise<UploadedAsset> {
+  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+    throw new Error("อัปโหลดได้เฉพาะรูปภาพหรือวิดีโอ");
+  }
+  if (file.size > MAX_BYTES) throw new Error("ไฟล์ใหญ่เกิน 100 MB");
   const type: "image" | "video" = file.type.startsWith("video/") ? "video" : "image";
   const ext =
     file.name

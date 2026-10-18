@@ -14,10 +14,9 @@ type Search = { redirect?: string; mode?: "signup" };
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): Search => ({
-    // Only same-site paths, never an open redirect.
-    ...(typeof search["redirect"] === "string" &&
-    search["redirect"].startsWith("/") &&
-    !search["redirect"].startsWith("//")
+    // Only same-site paths, never an open redirect ("//x" and "/\x" both
+    // lead to another site in browsers).
+    ...(typeof search["redirect"] === "string" && /^\/(?![/\\])/.test(search["redirect"])
       ? { redirect: search["redirect"] }
       : {}),
     ...(search["mode"] === "signup" ? { mode: "signup" as const } : {}),
