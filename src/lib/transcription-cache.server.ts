@@ -83,6 +83,18 @@ export async function writeCachedTranscription(
       created_at: new Date().toISOString(),
     });
     if (error) console.warn("[transcription-cache] write skipped:", String(error).slice(0, 200));
+    // The privacy policy promises transcripts are kept at most 30 days.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await (
+      supabaseAdmin as unknown as {
+        from: (name: string) => {
+          delete: () => { lt: (column: string, value: string) => Promise<unknown> };
+        };
+      }
+    )
+      .from("transcription_cache")
+      .delete()
+      .lt("created_at", new Date(Date.now() - MAX_AGE_DAYS * 86_400_000).toISOString());
   } catch {
     /* cache is best-effort */
   }

@@ -82,7 +82,14 @@ export type LandingCopy = {
   faqTitle: string;
   faq: { q: string; a: string }[];
   cta: { title: string; text: string };
-  footer: { tagline: string; menu: string; account: string; emojiCredit: string };
+  footer: {
+    tagline: string;
+    menu: string;
+    account: string;
+    emojiCredit: string;
+    terms: string;
+    privacy: string;
+  };
 };
 
 const th: LandingCopy = {
@@ -207,6 +214,8 @@ const th: LandingCopy = {
     menu: "เมนู",
     account: "บัญชี",
     emojiCredit: "อิโมจิเคลื่อนไหว: Google Noto Emoji (CC BY 4.0)",
+    terms: "เงื่อนไขการใช้งาน",
+    privacy: "นโยบายความเป็นส่วนตัว",
   },
 };
 
@@ -335,6 +344,8 @@ const lo: LandingCopy = {
     menu: "ເມນູ",
     account: "ບັນຊີ",
     emojiCredit: "ອີໂມຈິເຄື່ອນໄຫວ: Google Noto Emoji (CC BY 4.0)",
+    terms: "ເງື່ອນໄຂການນຳໃຊ້",
+    privacy: "ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ",
   },
 };
 
@@ -473,6 +484,8 @@ const en: LandingCopy = {
     menu: "Menu",
     account: "Account",
     emojiCredit: "Animated emoji: Google Noto Emoji (CC BY 4.0)",
+    terms: "Terms of use",
+    privacy: "Privacy policy",
   },
 };
 

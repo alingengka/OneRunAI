@@ -202,6 +202,16 @@ function LoginPage() {
                   {emailField}
                   {passwordField("new-password")}
                   {submit("สมัครและเริ่มทดลองใช้")}
+                  <p className="text-center text-xs leading-5 text-muted-foreground">
+                    การสมัครถือว่าคุณยอมรับ{" "}
+                    <Link to="/terms" target="_blank" className="underline hover:text-foreground">
+                      เงื่อนไขการใช้งาน
+                    </Link>{" "}
+                    และ{" "}
+                    <Link to="/privacy" target="_blank" className="underline hover:text-foreground">
+                      นโยบายความเป็นส่วนตัว
+                    </Link>
+                  </p>
                 </form>
               </TabsContent>
             </Tabs>
