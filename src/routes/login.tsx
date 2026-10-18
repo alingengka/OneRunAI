@@ -1,9 +1,10 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { OneRunLogo } from "@/components/brand/OneRunLogo";
+import { Turnstile, type TurnstileHandle } from "@/components/account/Turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +16,8 @@ type Search = { redirect?: string; mode?: "signup" };
 /** Supabase auth errors people commonly hit, in Thai. */
 function authMessage(message: string): string {
   if (message === "Invalid login credentials") return "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
+  if (/captcha/i.test(message))
+    return "ยืนยันว่าไม่ใช่บอทไม่สำเร็จ กรุณารอให้กล่องตรวจสอบด้านล่างผ่าน แล้วลองใหม่";
   if (/rate limit|too many/i.test(message))
     return "มีการขอหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่";
   if (/already registered|already been registered/i.test(message))
@@ -66,16 +69,30 @@ function LoginPage() {
     }
   };
 
+  // Anti-bot check; each auth request uses a fresh token.
+  const turnstileRef = useRef<TurnstileHandle>(null);
+  const captcha = async (): Promise<{ captchaToken?: string }> => {
+    const token = await turnstileRef.current?.token();
+    return token ? { captchaToken: token } : {};
+  };
+
   const signIn = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+        options: { ...(await captcha()) },
+      });
       if (error && /not confirmed/i.test(error.message)) {
         // Signed up but never clicked the link: send it again.
         await supabase.auth.resend({
           type: "signup",
           email,
-          options: { emailRedirectTo: `${window.location.origin}${target}` },
+          options: {
+            emailRedirectTo: `${window.location.origin}${target}`,
+            ...(await captcha()),
+          },
         });
         throw new Error(
           "อีเมลนี้ยังไม่ได้ยืนยัน เราส่งลิงก์ยืนยันให้ใหม่แล้ว กรุณาเช็คอีเมล (รวมถึงโฟลเดอร์สแปม)",
@@ -93,7 +110,10 @@ function LoginPage() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: `${window.location.origin}${target}` },
+        options: {
+          emailRedirectTo: `${window.location.origin}${target}`,
+          ...(await captcha()),
+        },
       });
       if (error) throw new Error(authMessage(error.message));
       if (data.session) await navigate({ to: target });
@@ -109,6 +129,7 @@ function LoginPage() {
     void run(async () => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
+        ...(await captcha()),
       });
       if (error) throw new Error(authMessage(error.message));
       setNotice("ถ้าอีเมลนี้มีบัญชีอยู่ เราได้ส่งลิงก์ตั้งรหัสผ่านใหม่ไปให้แล้ว");
@@ -216,6 +237,7 @@ function LoginPage() {
               </TabsContent>
             </Tabs>
           )}
+          <Turnstile ref={turnstileRef} className="mt-4 flex min-h-[65px] justify-center" />
           {notice && <p className="mt-4 rounded-lg bg-muted p-3 text-sm">{notice}</p>}
         </div>
       </div>
