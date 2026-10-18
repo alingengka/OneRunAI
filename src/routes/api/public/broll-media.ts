@@ -34,19 +34,41 @@ export const Route = createFileRoute("/api/public/broll-media")({
         if (parsed.protocol !== "https:" || !allowedHost(parsed.hostname)) {
           return new Response("host not allowed", { status: 403 });
         }
-        let upstream: Response;
+        // Redirects are followed by hand so they cannot lead off the allowed hosts.
+        let upstream: Response | null = null;
+        let next = parsed;
         try {
-          upstream = await fetch(parsed.toString(), {
-            headers: request.headers.has("range") ? { range: request.headers.get("range")! } : {},
-          });
+          for (let hop = 0; hop < 4; hop++) {
+            const response = await fetch(next.toString(), {
+              redirect: "manual",
+              headers: request.headers.has("range") ? { range: request.headers.get("range")! } : {},
+            });
+            const location = response.headers.get("location");
+            if (response.status >= 300 && response.status < 400 && location) {
+              next = new URL(location, next);
+              if (next.protocol !== "https:" || !allowedHost(next.hostname)) {
+                return new Response("host not allowed", { status: 403 });
+              }
+              continue;
+            }
+            upstream = response;
+            break;
+          }
         } catch {
           return new Response("upstream unreachable", { status: 502 });
         }
+        if (!upstream) return new Response("too many redirects", { status: 502 });
         if (!upstream.ok && upstream.status !== 206) {
           return new Response(`upstream error ${upstream.status}`, { status: upstream.status });
         }
+        // Media only: the proxy must not serve pages or scripts from our domain.
+        const type = upstream.headers.get("content-type") ?? "";
+        if (!/^(image|video|audio)\/|^application\/octet-stream/i.test(type)) {
+          return new Response("not a media file", { status: 415 });
+        }
         const headers = new Headers();
         const copy = ["content-type", "content-length", "content-range", "accept-ranges"];
+        headers.set("x-content-type-options", "nosniff");
         for (const key of copy) {
           const value = upstream.headers.get(key);
           if (value) headers.set(key, value);

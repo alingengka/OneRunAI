@@ -72,21 +72,4 @@ export async function assertAdmin(userId: string): Promise<void> {
   if (!data?.is_admin) throw new Error("ต้องเป็นผู้ดูแลระบบ");
 }
 
-/**
- * Duration of a PCM WAV given as base64, from its header byte rate. Billing
- * by real duration means a lower sample rate cannot shrink the charge.
- */
-export function wavSecondsFromBase64(base64: string): number {
-  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
-  const totalBytes = Math.floor((base64.length * 3) / 4) - padding;
-  let byteRate = 32000; // 16 kHz mono 16-bit, what the editor sends
-  try {
-    const header = Uint8Array.from(atob(base64.slice(0, 64)), (c) => c.charCodeAt(0));
-    const view = new DataView(header.buffer);
-    const rate = view.getUint32(28, true);
-    if (rate >= 8000 && rate <= 384000) byteRate = rate;
-  } catch {
-    /* fall back to the default byte rate */
-  }
-  return Math.max(0, totalBytes - 44) / byteRate;
-}
+export { wavSecondsFromBase64 } from "./wav-billing";

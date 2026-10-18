@@ -12,12 +12,23 @@ import { useSession } from "@/lib/auth";
 
 type Search = { redirect?: string; mode?: "signup" };
 
+/** Supabase auth errors people commonly hit, in Thai. */
+function authMessage(message: string): string {
+  if (message === "Invalid login credentials") return "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
+  if (/rate limit|too many/i.test(message))
+    return "มีการขอหลายครั้งเกินไป กรุณารอสักครู่แล้วลองใหม่";
+  if (/already registered|already been registered/i.test(message))
+    return "อีเมลนี้สมัครไว้แล้ว กรุณาเข้าสู่ระบบ";
+  if (/password should be|weak password/i.test(message))
+    return "รหัสผ่านนี้ไม่ปลอดภัยพอ กรุณาตั้งรหัสที่เดายากกว่านี้";
+  return message;
+}
+
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): Search => ({
-    // Only same-site paths, never an open redirect.
-    ...(typeof search["redirect"] === "string" &&
-    search["redirect"].startsWith("/") &&
-    !search["redirect"].startsWith("//")
+    // Only same-site paths, never an open redirect ("//x" and "/\x" both
+    // lead to another site in browsers).
+    ...(typeof search["redirect"] === "string" && /^\/(?![/\\])/.test(search["redirect"])
       ? { redirect: search["redirect"] }
       : {}),
     ...(search["mode"] === "signup" ? { mode: "signup" as const } : {}),
@@ -59,12 +70,18 @@ function LoginPage() {
     event.preventDefault();
     void run(async () => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error)
+      if (error && /not confirmed/i.test(error.message)) {
+        // Signed up but never clicked the link: send it again.
+        await supabase.auth.resend({
+          type: "signup",
+          email,
+          options: { emailRedirectTo: `${window.location.origin}${target}` },
+        });
         throw new Error(
-          error.message === "Invalid login credentials"
-            ? "อีเมลหรือรหัสผ่านไม่ถูกต้อง"
-            : error.message,
+          "อีเมลนี้ยังไม่ได้ยืนยัน เราส่งลิงก์ยืนยันให้ใหม่แล้ว กรุณาเช็คอีเมล (รวมถึงโฟลเดอร์สแปม)",
         );
+      }
+      if (error) throw new Error(authMessage(error.message));
       await navigate({ to: target });
     });
   };
@@ -78,7 +95,7 @@ function LoginPage() {
         password,
         options: { emailRedirectTo: `${window.location.origin}${target}` },
       });
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(authMessage(error.message));
       if (data.session) await navigate({ to: target });
       else
         setNotice(
@@ -93,7 +110,7 @@ function LoginPage() {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
-      if (error) throw new Error(error.message);
+      if (error) throw new Error(authMessage(error.message));
       setNotice("ถ้าอีเมลนี้มีบัญชีอยู่ เราได้ส่งลิงก์ตั้งรหัสผ่านใหม่ไปให้แล้ว");
     });
   };

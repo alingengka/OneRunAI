@@ -2,10 +2,17 @@ import { z } from "zod";
 import { GEMINI_TRANSLATE_MODEL, geminiChat, geminiKey } from "./ai-providers.server";
 
 export const translateLinesInputValidator = (data: unknown) =>
-  z.object({
-    lines: z.array(z.string()).min(1).max(400),
-    target: z.enum(["th", "lo", "en"]),
-  }).parse(data);
+  z
+    .object({
+      // Caption lines are short; the caps keep one request from becoming a
+      // huge (and costly) AI call.
+      lines: z.array(z.string().max(500)).min(1).max(400),
+      target: z.enum(["th", "lo", "en"]),
+    })
+    .refine((input) => input.lines.reduce((n, line) => n + line.length, 0) <= 40_000, {
+      message: "ข้อความที่จะแปลยาวเกินไป",
+    })
+    .parse(data);
 
 type TranslationInput = ReturnType<typeof translateLinesInputValidator>;
 
