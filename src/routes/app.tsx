@@ -338,6 +338,13 @@ function Studio() {
     [clock],
   );
   const [playing, setPlaying] = useState(false);
+  /**
+   * The person asked to play (set the moment they tap, before the video
+   * really starts). iPhones take a moment to start playback; the timeline
+   * must not treat its own scrolling in that moment as scrubbing.
+   */
+  const playIntentRef = useRef(false);
+  playIntentRef.current = playing;
   const [frameHeight, setFrameHeight] = useState(0);
   const [frameWidth, setFrameWidth] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -2013,9 +2020,13 @@ function Studio() {
     );
   };
 
+  // Non-null while playing, including the moment between the tap on play and
+  // the video really starting (slow on iPhones): a scroll of the timeline in
+  // that moment (the glide after dragging it) used to seek the video over and
+  // over, so it stuck, then jumped to the start or the end.
   const playClock = useCallback(() => {
     const v = videoRef.current;
-    return v && !v.paused ? v.currentTime : null;
+    return v && (!v.paused || playIntentRef.current) ? v.currentTime : null;
   }, []);
 
   const togglePlay = () => {
@@ -2025,10 +2036,12 @@ function Studio() {
     if (v.paused || isPriming(v)) {
       markUserPlay(v);
       v.muted = mutedRef.current; // the warm-up plays muted
+      playIntentRef.current = true;
       setPlaying(true);
       // The button must not claim it is playing when the browser refused.
       v.play()?.catch(() => setPlaying(v.paused ? false : true));
     } else {
+      playIntentRef.current = false;
       v.pause();
       setPlaying(false);
     }
