@@ -20,6 +20,7 @@ import { ColorSwatches } from "./ColorSwatches";
 import { CaptionColorControls, CaptionLayoutControls } from "./CaptionLayoutControls";
 import { TextClipEditor } from "./TextClipEditor";
 import { SoundClipControls, type SoundEditing } from "./SoundClipControls";
+import { StickerAnimationControls } from "./StickerAnimationControls";
 
 export type ClipEditing = {
   key: string;
@@ -220,6 +221,9 @@ export function Inspector({
           <p className="text-xs text-muted-foreground">
             ลากสติกเกอร์บนพรีวิวเพื่อย้าย ใช้มุมเพื่อหมุนหรือย่อขยาย
           </p>
+          {sticker.kind !== "text" && (
+            <StickerAnimationControls sticker={sticker} onChange={onStickerChange} />
+          )}
           <div className="grid gap-1 border-t border-border pt-3">
             <Button
               variant="ghost"

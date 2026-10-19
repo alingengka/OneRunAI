@@ -47,7 +47,13 @@ export type Sticker = {
   style?: Partial<CaptionStyle> | undefined;
   /** Text clips: word timings (for karaoke and highlight); spread evenly when absent. */
   words?: Word[] | undefined;
+  /** How the sticker appears and leaves (none when unset: it just cuts in and out). */
+  animIn?: StickerAnimIn | undefined;
+  animOut?: StickerAnimOut | undefined;
 };
+
+export type StickerAnimIn = "none" | "fade" | "pop" | "slide";
+export type StickerAnimOut = "none" | "fade" | "shrink" | "slide";
 
 export const DEFAULT_TEXT_FONT = "'Noto Sans Lao', 'Noto Sans Thai', 'Inter', sans-serif";
 
@@ -496,17 +502,50 @@ export type StickerLayer = {
   destroy: () => void;
 };
 
-/** Fades and pops a sticker in and out around its time window. */
-function stickerEnvelope(sticker: Sticker, time: number): { alpha: number; scale: number } {
-  const local = time - sticker.start;
-  const left = sticker.end - time;
-  const enter = clamp01(local / 0.18);
-  const exit = clamp01(left / 0.18);
-  return {
-    alpha: Math.min(enter, exit),
-    scale:
-      sticker.kind === "graphic" || sticker.kind === "text" ? 1 : 0.6 + 0.4 * easeBack(local / 0.3),
-  };
+const ANIM_IN_SECONDS = 0.3;
+const ANIM_OUT_SECONDS = 0.25;
+
+/**
+ * The sticker's chosen entrance and exit around its time window: opacity,
+ * scale, and a vertical offset in box heights.
+ */
+function stickerEnvelope(
+  sticker: Sticker,
+  time: number,
+): { alpha: number; scale: number; dy: number } {
+  const span = Math.max(0.01, sticker.end - sticker.start);
+  const enter = clamp01((time - sticker.start) / Math.min(ANIM_IN_SECONDS, span / 2));
+  const exit = clamp01((sticker.end - time) / Math.min(ANIM_OUT_SECONDS, span / 2));
+  let alpha = 1;
+  let scale = 1;
+  let dy = 0;
+  switch (sticker.animIn) {
+    case "fade":
+      alpha *= enter;
+      break;
+    case "pop":
+      alpha *= clamp01(enter * 3);
+      scale *= 0.6 + 0.4 * easeBack(enter);
+      break;
+    case "slide":
+      alpha *= enter;
+      dy += 0.4 * (1 - easeOut(enter));
+      break;
+  }
+  switch (sticker.animOut) {
+    case "fade":
+      alpha *= exit;
+      break;
+    case "shrink":
+      alpha *= clamp01(exit * 3);
+      scale *= 0.3 + 0.7 * easeOut(exit);
+      break;
+    case "slide":
+      alpha *= exit;
+      dy += 0.4 * (1 - easeOut(exit));
+      break;
+  }
+  return { alpha, scale, dy };
 }
 
 type AnimatedFrames = {
@@ -761,12 +800,12 @@ export function createStickerLayer(resolution = 512): StickerLayer {
     draw(ctx, stickers, time, width, height) {
       for (const sticker of stickers) {
         if (time < sticker.start || time > sticker.end) continue;
-        const { alpha, scale } = stickerEnvelope(sticker, time);
+        const { alpha, scale, dy } = stickerEnvelope(sticker, time);
         if (alpha <= 0) continue;
         const box = (sticker.size / 100) * height;
         ctx.save();
         ctx.globalAlpha *= alpha;
-        ctx.translate((sticker.x / 100) * width, (sticker.y / 100) * height);
+        ctx.translate((sticker.x / 100) * width, (sticker.y / 100) * height + dy * box);
         if (sticker.rotation) ctx.rotate((sticker.rotation * Math.PI) / 180);
         ctx.scale(scale, scale);
         if (sticker.kind === "text") {

@@ -22,6 +22,7 @@ import {
   stickerFromFile,
   type LibrarySticker,
 } from "@/lib/sticker-library";
+import { StickerAnimationControls } from "./StickerAnimationControls";
 
 type Props = {
   stickers: Sticker[];
@@ -470,6 +471,9 @@ export function StickerPanel({
                   </label>
                 ))}
               </div>
+              {selected && sticker.kind !== "text" && (
+                <StickerAnimationControls sticker={sticker} onChange={onChange} />
+              )}
             </div>
           );
         })}
