@@ -524,16 +524,82 @@ const MAX_FRAMES = 240;
 export const proxiedMediaUrl = (url: string) =>
   url.startsWith("http") ? `/api/public/broll-media?url=${encodeURIComponent(url)}` : url;
 
+/** GIFs often store 0 for "as fast as possible"; browsers show those at 10fps. */
+const frameSeconds = (ms: number) => (ms > 10 ? ms / 1000 : 0.1);
+
 /**
- * Decodes every frame of an animated GIF/WebP with ImageDecoder (Chrome,
- * Edge, Android). Browsers without it get the first frame as a still.
+ * Decodes a GIF in plain JavaScript, for browsers without ImageDecoder
+ * (Safari / iPhone). Each frame is a patch on top of the previous picture, so
+ * the patches are layered on one canvas honouring the GIF disposal rules.
+ */
+async function decodeGif(buffer: ArrayBuffer): Promise<AnimatedFrames | null> {
+  const { parseGIF, decompressFrames } = await import("gifuct-js");
+  const gif = parseGIF(buffer);
+  const parsed = decompressFrames(gif, true).slice(0, MAX_FRAMES);
+  const { width, height } = gif.lsd;
+  if (!parsed.length || !width || !height) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const patchCanvas = document.createElement("canvas");
+  const patchCtx = patchCanvas.getContext("2d");
+  if (!ctx || !patchCtx) return null;
+  const frames: ImageBitmap[] = [];
+  const ends: number[] = [];
+  let t = 0;
+  let previous: (typeof parsed)[number] | null = null;
+  let restore: ImageData | null = null;
+  for (const frame of parsed) {
+    // undo the previous frame as its disposal asks before drawing this one
+    if (previous?.disposalType === 2) {
+      const d = previous.dims;
+      ctx.clearRect(d.left, d.top, d.width, d.height);
+    } else if (previous?.disposalType === 3 && restore) {
+      ctx.putImageData(restore, 0, 0);
+    }
+    restore = frame.disposalType === 3 ? ctx.getImageData(0, 0, width, height) : null;
+    const { dims } = frame;
+    if (dims.width > 0 && dims.height > 0) {
+      patchCanvas.width = dims.width;
+      patchCanvas.height = dims.height;
+      patchCtx.putImageData(
+        new ImageData(frame.patch as Uint8ClampedArray<ArrayBuffer>, dims.width, dims.height),
+        0,
+        0,
+      );
+      // drawImage (not putImageData) keeps the transparent pixels of the patch see-through
+      ctx.drawImage(patchCanvas, dims.left, dims.top);
+    }
+    frames.push(await createImageBitmap(canvas));
+    t += frameSeconds(frame.delay);
+    ends.push(t);
+    previous = frame;
+  }
+  return { frames, ends, total: t, width, height };
+}
+
+const isGif = (bytes: Uint8Array) => bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46; // "GIF"
+
+/**
+ * Decodes every frame of an animated GIF/WebP: with ImageDecoder where the
+ * browser has it (Chrome, Edge, Android), otherwise GIFs in JavaScript (Safari).
+ * Anything still undecodable falls back to its first frame as a still.
  */
 async function decodeAnimated(url: string): Promise<AnimatedFrames | null> {
   try {
-    const response = await fetch(proxiedMediaUrl(url));
+    let response = await fetch(proxiedMediaUrl(url));
     if (!response.ok) return null;
-    const blob = await response.blob();
     const Decoder = (globalThis as { ImageDecoder?: typeof ImageDecoder }).ImageDecoder;
+    if (!Decoder && /\.webp(\?|$)/i.test(url)) {
+      // Older projects saved KLIPY's WebP; Safari can only animate the GIF twin.
+      const gif = await fetch(proxiedMediaUrl(url.replace(/\.webp(?=\?|$)/i, ".gif"))).catch(
+        () => null,
+      );
+      if (gif?.ok) response = gif;
+    }
+    const blob = await response.blob();
+    const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
     if (Decoder && blob.type && (await Decoder.isTypeSupported(blob.type))) {
       const decoder = new Decoder({ data: await blob.arrayBuffer(), type: blob.type });
       await decoder.tracks.ready;
@@ -543,8 +609,7 @@ async function decodeAnimated(url: string): Promise<AnimatedFrames | null> {
       let t = 0;
       for (let i = 0; i < count; i++) {
         const { image } = await decoder.decode({ frameIndex: i });
-        // GIFs often store 0 for "as fast as possible"; browsers show those at 10fps.
-        const seconds = image.duration && image.duration > 10_000 ? image.duration / 1e6 : 0.1;
+        const seconds = frameSeconds((image.duration ?? 0) / 1000);
         frames.push(await createImageBitmap(image));
         image.close();
         t += seconds;
@@ -553,6 +618,10 @@ async function decodeAnimated(url: string): Promise<AnimatedFrames | null> {
       decoder.close();
       const first = frames[0];
       if (first) return { frames, ends, total: t, width: first.width, height: first.height };
+    }
+    if (isGif(head)) {
+      const frames = await decodeGif(await blob.arrayBuffer());
+      if (frames) return frames;
     }
     const img = new Image();
     img.src = URL.createObjectURL(blob);

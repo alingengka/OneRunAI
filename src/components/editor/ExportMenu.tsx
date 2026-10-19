@@ -176,7 +176,8 @@ export function ExportMenu({ settings, onChange, onExport, busy, disabled }: Pro
           </Row>
           {settings.resolution === "4k" && settings.type !== "srt" && (
             <p className="pt-2 text-xs text-muted-foreground">
-              4K ใช้เวลาเรนเดอร์นานกว่ามาก แนะนำ 1080p สำหรับ TikTok / Reels
+              4K เรนเดอร์ทีละเฟรม ไม่กระตุก แต่ใช้เวลานานกว่า · ความคมขึ้นกับคลิปต้นฉบับ ถ้าถ่ายมา
+              1080p เลือก "ต้นฉบับ" จะคมเท่ากันและเร็วกว่า
             </p>
           )}
         </div>

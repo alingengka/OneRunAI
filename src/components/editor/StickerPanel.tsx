@@ -257,8 +257,7 @@ export function StickerPanel({
           </div>
           <p className="text-[11px] text-muted-foreground">
             สติกเกอร์จาก KLIPY เป็นผลงานของผู้ใช้ทั่วไป บางชิ้นอาจมีลิขสิทธิ์
-            ตรวจสอบก่อนใช้เชิงพาณิชย์ · เคลื่อนไหวในไฟล์ Export บน Chrome/Edge/Android (Safari
-            จะเป็นภาพนิ่ง)
+            ตรวจสอบก่อนใช้เชิงพาณิชย์
           </p>
         </div>
       ) : kind === "mine" ? (

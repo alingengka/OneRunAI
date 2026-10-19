@@ -138,6 +138,7 @@ import { motionAt, type MotionKind } from "@/lib/media/motion";
 import { Clocked, createPlaybackClock, nextBoundaryAfter } from "@/lib/playback-clock";
 import { PlaybackDebug } from "@/components/editor/PlaybackDebug";
 import { isPriming, markUserPlay, primeFirstFrame } from "@/lib/media/first-frame";
+import { createSeeker } from "@/lib/media/seeker";
 import {
   addSceneElement,
   buildScenes,
@@ -2024,6 +2025,9 @@ function Studio() {
   // the video really starting (slow on iPhones): a scroll of the timeline in
   // that moment (the glide after dragging it) used to seek the video over and
   // over, so it stuck, then jumped to the start or the end.
+  // Scrubbing seeks one at a time (see seeker.ts).
+  const seeker = useMemo(() => createSeeker(() => videoRef.current), []);
+
   const playClock = useCallback(() => {
     const v = videoRef.current;
     return v && (!v.paused || playIntentRef.current) ? v.currentTime : null;
@@ -2035,6 +2039,7 @@ function Studio() {
     // The muted warm-up counts as paused: the person wants to start playing.
     if (v.paused || isPriming(v)) {
       markUserPlay(v);
+      seeker.flush();
       v.muted = mutedRef.current; // the warm-up plays muted
       playIntentRef.current = true;
       setPlaying(true);
@@ -2407,11 +2412,9 @@ function Studio() {
   };
 
   const seekTo = (t: number) => {
-    const v = videoRef.current;
-    if (v) {
-      v.currentTime = Math.max(0, t);
-      setTime(v.currentTime);
-    }
+    if (!videoRef.current) return;
+    seeker.seek(t);
+    setTime(Math.max(0, t));
   };
 
   const saveNow = () => {
@@ -3088,7 +3091,7 @@ function Studio() {
                     {(
                       [
                         { id: "source", label: "ต้นฉบับ" },
-                        { id: "4k", label: "4K (ไม่แนะนำ)" },
+                        { id: "4k", label: "4K" },
                         { id: "1080", label: "1080 (HD)" },
                         { id: "720", label: "720" },
                       ] as { id: ExportResolution; label: string }[]
@@ -3124,11 +3127,19 @@ function Studio() {
                     CapCut Package ยังใช้ความละเอียดต้นฉบับ
                   </p>
                   {resolution === "4k" ? (
-                    <p className="text-[11px] text-amber-500">
-                      จากการทดสอบจริง เครื่องส่วนใหญ่เรนเดอร์ 4K ผ่านเบราว์เซอร์ได้เพียง ~6–12fps
-                      ระบบจะลด fps ให้อัตโนมัติเพื่อให้ภาพเดินสม่ำเสมอแทนที่จะเฟรมหลุดเป็นช่วง ๆ
-                      แนะนำให้ใช้ 1080 สำหรับงานจริง
-                    </p>
+                    supportsWebCodecsExport() ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        4K เรนเดอร์ทีละเฟรม ภาพเดินครบทุกเฟรมไม่กระตุก
+                        แต่ใช้เวลานานกว่าและไฟล์ใหญ่กว่า · ความคมขึ้นกับคลิปต้นฉบับ: ถ้าถ่ายมา 1080p
+                        ให้เลือก "ต้นฉบับ" จะคมเท่ากันและเร็วกว่า · อยากได้ 4K จริงให้ตั้งกล้อง
+                        iPhone เป็น 4K (การตั้งค่า › กล้อง › บันทึกวิดีโอ)
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-amber-500">
+                        เบราว์เซอร์นี้ไม่รองรับ WebCodecs จึงต้องอัดแบบเรียลไทม์ ซึ่งทำ 4K ได้เพียง
+                        ~6–12fps (ภาพจะไม่ลื่น) แนะนำเปิดด้วย Chrome หรือ Edge หรือใช้ 1080
+                      </p>
+                    )
                   ) : null}
                 </div>
                 <Button
@@ -3645,7 +3656,7 @@ function Studio() {
                       step={0.01}
                       aria-label="ตำแหน่งวิดีโอ"
                       onValueChange={([v]) => {
-                        if (videoRef.current) videoRef.current.currentTime = v ?? 0;
+                        seekTo(v ?? 0);
                       }}
                     />
                   )}
