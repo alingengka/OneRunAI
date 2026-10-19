@@ -37,7 +37,7 @@ export function ViralTextOverlay({ scenes, sceneElements, time, height }: Props)
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 flex justify-center px-[6%]"
+      className="pointer-events-none absolute inset-x-0 z-30 flex justify-center px-[6%]"
       style={{ top: hit.position === "middle" ? "44%" : "10%" }}
     >
       <span

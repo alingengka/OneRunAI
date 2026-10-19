@@ -763,9 +763,10 @@ export function createBurnRenderer(
       ctx.fillRect(0, 0, width, height);
       ctx.restore();
     }
+    // Stickers go under the text, as in the preview, so they never hide a caption.
+    if (options.stickers?.length) options.stickerLayer?.draw(ctx, options.stickers, time, width, height);
     drawCaption(time);
     drawViralText(time);
-    if (options.stickers?.length) options.stickerLayer?.draw(ctx, options.stickers, time, width, height);
   };
 
   return { paint };
