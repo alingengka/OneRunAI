@@ -113,6 +113,7 @@ import {
 import type { TimedWord } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo, targetSize, type ExportResolution } from "@/lib/media/export-burned";
+import { DEFAULT_TRANSITIONS, type VideoTransitions } from "@/lib/media/burn-render";
 import { exportWebCodecsVideo, supportsWebCodecsExport } from "@/lib/media/export-webcodecs";
 
 import {
@@ -171,7 +172,12 @@ import {
   CaptionColorControls,
   CaptionLayoutControls,
 } from "@/components/editor/CaptionLayoutControls";
-import { ExportMenu, loadExportPreset, type ExportType } from "@/components/editor/ExportMenu";
+import {
+  ExportMenu,
+  loadExportPreset,
+  TransitionSwitches,
+  type ExportType,
+} from "@/components/editor/ExportMenu";
 import { StickerOverlay } from "@/components/editor/StickerOverlay";
 import { StickerPanel } from "@/components/editor/StickerPanel";
 import {
@@ -398,12 +404,14 @@ function Studio() {
   const [resolution, setResolution] = useState<ExportResolution>("1080");
   const [exportFps, setExportFps] = useState(30);
   const [exportType, setExportType] = useState<ExportType>("captions");
+  const [transitions, setTransitions] = useState<VideoTransitions>(DEFAULT_TRANSITIONS);
   useEffect(() => {
     const preset = loadExportPreset();
     if (!preset) return;
     setResolution(preset.resolution);
     setExportFps(preset.fps);
     setExportType(preset.type);
+    setTransitions(preset.transitions);
   }, []);
   useEffect(() => {
     const el = previewSlotRef.current;
@@ -1805,6 +1813,7 @@ function Studio() {
         noiseReduction,
         noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
+        transitions,
         captions: type === "captions",
         signal,
         scenes,
@@ -2559,8 +2568,9 @@ function Studio() {
             {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>
           <ExportMenu
-            settings={{ resolution, fps: exportFps, type: exportType }}
+            settings={{ resolution, fps: exportFps, type: exportType, transitions }}
             onChange={(patch) => {
+              if (patch.transitions) setTransitions(patch.transitions);
               if (patch.resolution) setResolution(patch.resolution);
               if (patch.fps) setExportFps(patch.fps);
               if (patch.type) setExportType(patch.type);
@@ -3141,6 +3151,13 @@ function Studio() {
                       </p>
                     )
                   ) : null}
+                </div>
+                <div className="mb-3">
+                  <TransitionSwitches
+                    value={transitions}
+                    onChange={setTransitions}
+                    rowClassName="flex min-h-10 items-center justify-between gap-3"
+                  />
                 </div>
                 <Button
                   size="sm"

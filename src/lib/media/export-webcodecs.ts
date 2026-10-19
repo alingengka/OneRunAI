@@ -18,6 +18,7 @@ import {
   ensureCaptionFonts,
   targetSize,
   type ExportResolution,
+  type VideoTransitions,
 } from "./burn-render";
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
@@ -53,6 +54,17 @@ const dbg = (m: string) => {
   if ((window as unknown as { __EXPORT_DEBUG?: boolean }).__EXPORT_DEBUG)
     console.log("[webcodecs] " + m);
 };
+
+/** Waits (briefly) until the <video> has put a decoded frame on screen. */
+function presentedFrame(video: HTMLVideoElement): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = window.setTimeout(resolve, 300);
+    video.requestVideoFrameCallback?.(() => {
+      window.clearTimeout(timer);
+      resolve();
+    });
+  });
+}
 
 async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -417,6 +429,7 @@ export async function exportWebCodecsVideo(
     noiseReduction?: boolean;
     noiseFloor?: number;
     smoothCuts?: boolean;
+    transitions?: VideoTransitions;
     captions?: boolean;
     signal?: AbortSignal;
     scenes?: MotionScene[];
@@ -557,6 +570,8 @@ export async function exportWebCodecsVideo(
     const renderer = createBurnRenderer(ctx, width, height, groups, style, {
       captions: options.captions,
       smoothCuts: options.smoothCuts,
+      transitions: options.transitions,
+      segments,
       scenes: options.scenes,
       sceneElements: options.sceneElements,
       brollTrack,
@@ -686,6 +701,7 @@ export async function exportWebCodecsVideo(
 
     // ---- วนเฟรมทีละเฟรมตามเวลาที่ต้องการ ----
     let frameIndex = 0;
+    let videoPresented = false;
     const keyEvery = Math.round(fps * 2); // keyframe ทุก 2 วินาที เพื่อให้ seek ในไฟล์ผลลัพธ์ลื่น
     let lastYield = performance.now();
     for (const { time, sample, seg } of plan) {
@@ -705,6 +721,11 @@ export async function exportWebCodecsVideo(
       if (!image) {
         await ensureVideoReady();
         await seekTo(video, sample);
+        if (!videoPresented) {
+          // Safari draws a <video> as black until it has shown its first frame.
+          await presentedFrame(video);
+          videoPresented = true;
+        }
         image = video;
       }
       await brollTrack?.prepare(time);

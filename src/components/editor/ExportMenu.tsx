@@ -10,7 +10,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { ExportResolution } from "@/lib/media/burn-render";
+import {
+  DEFAULT_TRANSITIONS,
+  type ExportResolution,
+  type VideoTransitions,
+} from "@/lib/media/burn-render";
 
 export type ExportType = "captions" | "clean" | "srt";
 
@@ -18,6 +22,7 @@ export type ExportSettings = {
   resolution: ExportResolution;
   fps: number;
   type: ExportType;
+  transitions: VideoTransitions;
 };
 
 const QUALITY: { value: ExportResolution; label: string; short: string }[] = [
@@ -40,7 +45,13 @@ const PRESET_KEY = "onerun-export-preset";
 export function loadExportPreset(): ExportSettings | null {
   try {
     const raw = localStorage.getItem(PRESET_KEY);
-    return raw ? (JSON.parse(raw) as ExportSettings) : null;
+    if (!raw) return null;
+    const preset = JSON.parse(raw) as Partial<ExportSettings>;
+    // presets saved before transitions existed keep the old look
+    return {
+      ...preset,
+      transitions: { ...DEFAULT_TRANSITIONS, ...preset.transitions },
+    } as ExportSettings;
   } catch {
     return null;
   }
@@ -62,6 +73,41 @@ type Props = {
   busy: boolean;
   disabled: boolean;
 };
+
+const TRANSITIONS: { key: keyof VideoTransitions; label: string }[] = [
+  { key: "fadeIn", label: "Fade in ตอนเริ่มคลิป" },
+  { key: "cutDip", label: "ดำวูบสั้น ๆ ตรงรอยตัด" },
+  { key: "fadeOut", label: "Fade out ตอนจบคลิป" },
+];
+
+/** Opening fade, cut dip and closing fade of the exported video. */
+export function TransitionSwitches({
+  value,
+  onChange,
+  disabled,
+  rowClassName = "flex min-h-12 items-center justify-between gap-3 border-b border-border",
+}: {
+  value: VideoTransitions;
+  onChange: (value: VideoTransitions) => void;
+  disabled?: boolean;
+  rowClassName?: string;
+}) {
+  return (
+    <>
+      {TRANSITIONS.map((item) => (
+        <label key={item.key} className={rowClassName}>
+          <span className="text-sm">{item.label}</span>
+          <Switch
+            checked={value[item.key]}
+            disabled={disabled}
+            aria-label={item.label}
+            onCheckedChange={(checked) => onChange({ ...value, [item.key]: checked })}
+          />
+        </label>
+      ))}
+    </>
+  );
+}
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -164,6 +210,11 @@ export function ExportMenu({ settings, onChange, onExport, busy, disabled }: Pro
               </SelectContent>
             </Select>
           </Row>
+          <TransitionSwitches
+            value={settings.transitions}
+            disabled={settings.type === "srt"}
+            onChange={(transitions) => onChange({ transitions })}
+          />
           <Row label="จำค่าที่ตั้งไว้">
             <Switch
               checked={remember}

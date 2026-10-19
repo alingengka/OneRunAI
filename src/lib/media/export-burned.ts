@@ -1,7 +1,7 @@
 import type { Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
-import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution } from "./burn-render";
+import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution, type VideoTransitions } from "./burn-render";
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
 import type { CaptionGroup, CaptionStyle } from "../captions";
@@ -69,6 +69,7 @@ export async function exportBurnedVideo(
     /** RMS ของ noise floor ที่วัดจากคลิป ใช้เป็น threshold ของ noise gate */
     noiseFloor?: number;
     smoothCuts?: boolean;
+    transitions?: VideoTransitions;
     captions?: boolean;
     signal?: AbortSignal;
     scenes?: MotionScene[];
@@ -220,6 +221,8 @@ export async function exportBurnedVideo(
     const renderer = createBurnRenderer(ctx, width, height, groups, style, {
       captions: options.captions,
       smoothCuts: options.smoothCuts,
+      transitions: options.transitions,
+      segments,
       scenes: options.scenes,
       sceneElements: options.sceneElements,
       brollTrack,
