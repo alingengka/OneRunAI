@@ -1,7 +1,9 @@
 /**
  * Sound effects the user places on the timeline from the sound library
- * (files in public/sfx). Clip times are on the source timeline, like
- * captions and stickers; the export maps them onto the cut video.
+ * (files in public/sfx, loudness-matched: loudest 100 ms at about -14 dBFS
+ * RMS, peaks limited to -3 dBFS, so no sound is far quieter than another).
+ * Clip times are on the source timeline, like captions and stickers; the
+ * export maps them onto the cut video.
  */
 import type { Segment } from "./media/audio";
 
