@@ -228,9 +228,29 @@ export type BurnRenderOptions = {
   /** emoji and motion-graphic stickers, with a layer already prepared for them */
   stickers?: Sticker[] | undefined;
   stickerLayer?: StickerLayer | undefined;
+  /** How the video opens, cuts and closes (DEFAULT_TRANSITIONS when unset). */
+  transitions?: VideoTransitions | undefined;
+  /** The kept parts in order, so the first and last can be told apart from cuts. */
+  segments?: Segment[] | undefined;
+};
+
+export type VideoTransitions = {
+  /** fade up from black over the first half second */
+  fadeIn: boolean;
+  /** a short dip to black on every cut between kept parts */
+  cutDip: boolean;
+  /** fade down to black over the last half second */
+  fadeOut: boolean;
+};
+
+export const DEFAULT_TRANSITIONS: VideoTransitions = {
+  fadeIn: false,
+  cutDip: true,
+  fadeOut: false,
 };
 
 const FADE = 0.08; // วินาทีของ cross-fade ภาพตรงรอยตัด
+const OPEN_CLOSE_FADE = 0.5;
 
 export type BurnRenderer = {
   /** วาดหนึ่งเฟรม ณ เวลาต้นฉบับ time ภายใต้ segment seg */
@@ -695,6 +715,7 @@ export function createBurnRenderer(
     ctx.textAlign = "left";
   };
 
+  const transitions = options.transitions ?? DEFAULT_TRANSITIONS;
   const paint = (source: CanvasImageSource, time: number, seg: Segment) => {
     // B-roll (cutaway): ถ้าซีนนี้มีสื่อ ให้วาดสื่อแทนภาพต้นฉบับทั้งเฟรม
     const broll = options.brollTrack?.sourceAt(time) ?? null;
@@ -717,19 +738,30 @@ export function createBurnRenderer(
     } else {
       ctx.drawImage(image, fit.x, fit.y, fit.w, fit.h);
     }
-    if (options.smoothCuts !== false) {
+    // The very start and end of the video are not cuts: only the chosen
+    // fade-in / fade-out darkens them (an unasked dip there looked like a glitch).
+    const first = options.segments?.[0];
+    const last = options.segments?.[options.segments.length - 1];
+    const opens = first ? seg.start < first.end : false;
+    const closes = last ? seg.end > last.start : false;
+    const into = time - seg.start;
+    const left = seg.end - time;
+    let dark = 0;
+    if (options.smoothCuts !== false && transitions.cutDip) {
       // ช่วงสั้นได้ fade สั้นลงตามสัดส่วน ไม่งั้นคลิป 0.2s จะดำเกือบทั้งช่วง
       const fade = Math.max(0.02, Math.min(FADE, (seg.end - seg.start) / 5));
-      const into = time - seg.start;
-      const left = seg.end - time;
-      const edge = Math.min(into, left);
-      if (edge < fade) {
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, Math.min(1, 1 - edge / fade)) * 0.85;
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, width, height);
-        ctx.restore();
-      }
+      const edge = Math.min(opens ? Infinity : into, closes ? Infinity : left);
+      if (edge < fade) dark = Math.max(dark, (1 - edge / fade) * 0.85);
+    }
+    const openClose = Math.min(OPEN_CLOSE_FADE, (seg.end - seg.start) / 2);
+    if (opens && transitions.fadeIn) dark = Math.max(dark, 1 - into / openClose);
+    if (closes && transitions.fadeOut) dark = Math.max(dark, 1 - left / openClose);
+    if (dark > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, dark);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
     }
     drawCaption(time);
     drawViralText(time);

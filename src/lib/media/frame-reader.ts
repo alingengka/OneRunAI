@@ -37,7 +37,11 @@ export async function openFrameReader(
     }
     // A pool of 2 is enough: each canvas is drawn before the next one is asked for.
     const sink = new CanvasSink(track, { ...size, poolSize: 2 });
-    const frames = sink.canvasesAtTimestamps(times);
+    // iPhone clips often start their first frame a little after 0. Times before
+    // it have no frame, and falling back to the <video> there painted black, so
+    // they show the first frame instead.
+    const first = await track.getFirstTimestamp().catch(() => 0);
+    const frames = sink.canvasesAtTimestamps(times.map((time) => Math.max(time, first)));
     return {
       next: async () => {
         const result = await frames.next();
