@@ -23,7 +23,7 @@ import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
 import { openFrameReader, probeVideo, type FrameReader } from "./frame-reader";
 import { copyAudioPackets, type CopiedAudio } from "./audio-passthrough";
-import { loadSound, outputTimeOf, type SoundClip } from "../sounds";
+import { loadSound, outputTimeOf, restoreAudioSession, type SoundClip } from "../sounds";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 type Progress = (ratio: number) => void;
@@ -331,6 +331,7 @@ async function recordMix(
     return null;
   } finally {
     void ctx.close().catch(() => undefined);
+    restoreAudioSession();
   }
 }
 
@@ -715,30 +716,8 @@ export async function exportWebCodecsVideo(
     let videoPresented = false;
     const keyEvery = Math.round(fps * 2); // keyframe ทุก 2 วินาที เพื่อให้ seek ในไฟล์ผลลัพธ์ลื่น
     let lastYield = performance.now();
-    for (const { time, sample, seg } of plan) {
-      if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
-      if (encoderError) await recover();
-      let image: CanvasImageSource | null = null;
-      if (frames) {
-        try {
-          image = await frames.next();
-        } catch (error) {
-          // The decoder gave up part way: finish the rest by seeking.
-          dbg(`in-order decode failed, seeking instead: ${String(error)}`);
-          frames.dispose();
-          frames = null;
-        }
-      }
-      if (!image) {
-        await ensureVideoReady();
-        await seekTo(video, sample);
-        if (!videoPresented) {
-          // Safari draws a <video> as black until it has shown its first frame.
-          await presentedFrame(video);
-          videoPresented = true;
-        }
-        image = video;
-      }
+    /** Paints one output frame from `image` and hands it to the encoder. */
+    const emit = async (image: CanvasImageSource, time: number, seg: Segment) => {
       await brollTrack?.prepare(time);
       renderer.paint(image, time, seg);
       const timestamp = Math.round(frameIndex * frameDurationUs);
@@ -763,6 +742,55 @@ export async function exportWebCodecsVideo(
       }
       if ((frameIndex & 7) === 0)
         onProgress?.(Math.min(0.97, 0.16 + (frameIndex / plan.length) * 0.81));
+    };
+    const seekImage = async (sample: number): Promise<CanvasImageSource> => {
+      await ensureVideoReady();
+      await seekTo(video, sample);
+      if (!videoPresented) {
+        // Safari draws a <video> as black until it has shown its first frame.
+        await presentedFrame(video);
+        videoPresented = true;
+      }
+      return video;
+    };
+    /**
+     * The decoder has no picture for times before the clip's first shown
+     * frame (iPhone clips often start it a little late, behind reordered
+     * frames), and Safari draws the <video> fallback as black there: those
+     * opening frames wait for the first decoded picture and reuse it. A gap
+     * later on repeats the previous picture.
+     */
+    let lastImage: CanvasImageSource | null = null;
+    const waiting: { time: number; sample: number; seg: Segment }[] = [];
+    for (const { time, sample, seg } of plan) {
+      if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
+      if (encoderError) await recover();
+      let image: CanvasImageSource | null = null;
+      if (frames) {
+        try {
+          image = await frames.next();
+        } catch (error) {
+          // The decoder gave up part way: finish the rest by seeking.
+          dbg(`in-order decode failed, seeking instead: ${String(error)}`);
+          frames.dispose();
+          frames = null;
+        }
+      }
+      if (!image && frames) {
+        if (!lastImage && waiting.length < fps) {
+          waiting.push({ time, sample, seg });
+          continue;
+        }
+        image = lastImage;
+      }
+      image ??= await seekImage(sample);
+      for (const early of waiting.splice(0)) await emit(image, early.time, early.seg);
+      if (frames) lastImage = image;
+      await emit(image, time, seg);
+    }
+    // no picture ever came from the decoder for those: fall back to seeking
+    for (const early of waiting.splice(0)) {
+      await emit(await seekImage(early.sample), early.time, early.seg);
     }
     dbg(`frames=${frameIndex}`);
 

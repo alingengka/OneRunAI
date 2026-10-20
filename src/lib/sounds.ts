@@ -284,10 +284,23 @@ export function soundContext(): AudioContext | null {
   if (!Ctx) return null;
   // iPhone plays Web Audio as "ambient" sound, silenced by the ring/silent
   // switch even though the video's own sound is not; ask for media playback.
-  const session = (navigator as { audioSession?: { type: string } }).audioSession;
-  if (session) session.type = "playback";
+  restoreAudioSession();
   shared = new Ctx();
   return shared;
+}
+
+/**
+ * Puts the page's audio back to plain media playback. On iPhone, recording
+ * (the export records its sound mix with MediaRecorder on some phones) can
+ * leave the page in a record mode that sends sound to the quiet earpiece or
+ * mutes it, so the preview went silent after an export, cancelled or not.
+ */
+export function restoreAudioSession(): void {
+  const session = (navigator as { audioSession?: { type: string } }).audioSession;
+  if (!session) return;
+  // switching away and back makes the browser apply the type again
+  session.type = "auto";
+  session.type = "playback";
 }
 
 /**
