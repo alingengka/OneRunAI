@@ -6,8 +6,7 @@ const MAX_DRIFT = 0.06;
 
 /**
  * Plays the denoised copy of the clip's audio in place of the video's own
- * sound (the caller mutes the video while `buffer` is set), with a little of
- * the original underneath so the pauses do not fall into dead silence. Like the sound
+ * sound (the caller mutes the video while `buffer` is set). Like the sound
  * effects, it is (re)started from the video's current time whenever the video
  * plays, seeks or changes speed, and stops on pause; racing through a cut at
  * high speed stays silent, as the muted video does.
@@ -15,10 +14,6 @@ const MAX_DRIFT = 0.06;
 export function useDenoisedPlayback(
   videoRef: RefObject<HTMLVideoElement | null>,
   buffer: AudioBuffer | null,
-  /** the clip's original audio, mixed in quietly so pauses keep some room tone */
-  original: AudioBuffer | null,
-  /** how loud the original plays under the cleaned voice (0 = not at all) */
-  dry: number,
   muted: boolean,
   /** told whether Web Audio is actually running, so a refusal never leaves silence */
   onBlocked: (blocked: boolean) => void,
@@ -26,9 +21,6 @@ export function useDenoisedPlayback(
   const onBlockedRef = useRef(onBlocked);
   onBlockedRef.current = onBlocked;
   const masterRef = useRef<GainNode | null>(null);
-  const dryRef = useRef(dry);
-  dryRef.current = dry;
-  const dryGainRef = useRef<GainNode | null>(null);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
 
@@ -42,7 +34,6 @@ export function useDenoisedPlayback(
       rate: number;
     } | null = null;
     let master: GainNode | null = null;
-    let dryGain: GainNode | null = null;
     let generation = 0;
 
     const stop = () => {
@@ -107,17 +98,7 @@ export function useDenoisedPlayback(
         node.start(at, from);
         return node;
       };
-      const nodes = [play(buffer, master)];
-      if (original) {
-        if (!dryGain) {
-          dryGain = ctx.createGain();
-          dryGain.connect(master);
-          dryGainRef.current = dryGain;
-        }
-        dryGain.gain.value = dryRef.current;
-        nodes.push(play(original, dryGain));
-      }
-      live = { nodes, at, from, rate };
+      live = { nodes: [play(buffer, master)], at, from, rate };
     };
 
     // The audio clock and the video clock run apart slowly: re-sync when they do.
@@ -150,16 +131,10 @@ export function useDenoisedPlayback(
       video.removeEventListener("seeking", stop);
       video.removeEventListener("waiting", stop);
       video.removeEventListener("ended", stop);
-      dryGain?.disconnect();
-      dryGainRef.current = null;
       master?.disconnect();
       masterRef.current = null;
     };
-  }, [videoRef, buffer, original]);
-
-  useEffect(() => {
-    if (dryGainRef.current) dryGainRef.current.gain.value = dry;
-  }, [dry]);
+  }, [videoRef, buffer]);
 
   useEffect(() => {
     if (masterRef.current) masterRef.current.gain.value = muted ? 0 : 1;

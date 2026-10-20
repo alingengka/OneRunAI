@@ -60,7 +60,7 @@ import { SoundLibrary } from "@/components/editor/SoundLibrary";
 import type { SoundEditing } from "@/components/editor/SoundClipControls";
 import { useSoundPlayback } from "@/hooks/use-sound-playback";
 import { useDenoisedPlayback } from "@/hooks/use-denoised-playback";
-import { DENOISE_DRY, denoiseBuffer, type DenoiseStrength } from "@/lib/media/denoise";
+import { denoiseBuffer, type DenoiseEngine, type DenoiseStrength } from "@/lib/media/denoise";
 import {
   makeSoundClip,
   previewSound,
@@ -130,8 +130,6 @@ import {
 } from "@/lib/export";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { translateLines } from "@/lib/translate.functions";
-import { isolateVoice } from "@/lib/isolate.functions";
-import { isolateVoiceBuffer } from "@/lib/media/voice-isolation";
 import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import {
   wordsToTranscript,
@@ -307,7 +305,6 @@ function Studio() {
     [transcribeFn],
   );
   const translate = useServerFn(translateLines);
-  const isolate = useServerFn(isolateVoice);
   const videoRef = useRef<HTMLVideoElement>(null);
   /** The tool panel; a new tab starts at its top, not where the last one was scrolled. */
   const panelRef = useRef<HTMLElement>(null);
@@ -407,12 +404,13 @@ function Studio() {
 
   const [captionsOn, setCaptionsOn] = useState(true);
   const [noiseReduction, setNoiseReduction] = useState(false);
-  const [noiseStrength, setNoiseStrength] = useState<DenoiseStrength>("strong");
+  const [noiseStrength, setNoiseStrength] = useState<DenoiseStrength>("normal");
   /** The clip's audio with the noise removed, for the preview and the export. */
   const [denoised, setDenoised] = useState<{
     file: File;
     buffer: AudioBuffer;
-    engine: "elevenlabs" | "local";
+    strength: DenoiseStrength;
+    engine: DenoiseEngine;
   } | null>(null);
   /** 0–1 while the clean copy is being made, null otherwise. */
   const [denoiseProgress, setDenoiseProgress] = useState<number | null>(null);
@@ -681,7 +679,9 @@ function Studio() {
     coarseTimeRef.current.next = -Infinity; // re-evaluate against the new list
   }, [boundaries]);
   const denoisedBuffer =
-    noiseReduction && denoised && denoised.file === file ? denoised.buffer : null;
+    noiseReduction && denoised && denoised.file === file && denoised.strength === noiseStrength
+      ? denoised.buffer
+      : null;
   /** The browser refused to play Web Audio: keep the video's own sound instead of silence. */
   const [webAudioBlocked, setWebAudioBlocked] = useState(false);
   // While the cleaned audio plays, the video's own (noisy) sound stays muted.
@@ -965,7 +965,7 @@ function Studio() {
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
     setNoiseReduction(p.noiseReduction ?? false);
-    setNoiseStrength(p.noiseStrength ?? "strong");
+    setNoiseStrength(p.noiseStrength ?? "normal");
     setDropped(p.dropped ?? []);
     setSceneElements(p.sceneElements ?? []);
     setStickers(p.stickers ?? []);
@@ -1812,14 +1812,7 @@ function Studio() {
     };
   };
   useSoundPlayback(videoRef, sounds, muted, videoUrl);
-  useDenoisedPlayback(
-    videoRef,
-    denoisedBuffer,
-    denoisedBuffer ? audioBufferRef.current : null,
-    DENOISE_DRY[noiseStrength],
-    muted,
-    setWebAudioBlocked,
-  );
+  useDenoisedPlayback(videoRef, denoisedBuffer, muted, setWebAudioBlocked);
   useEffect(() => {
     const v = videoRef.current;
     if (v && !skippingRef.current && !isPriming(v)) v.muted = videoMuted;
@@ -1828,38 +1821,25 @@ function Studio() {
   // Turning noise reduction on cleans the whole clip once, so the preview can
   // play it and the export can reuse it.
   useEffect(() => {
-    if (!noiseReduction || !file || denoised?.file === file) return;
+    if (
+      !noiseReduction ||
+      !file ||
+      (denoised?.file === file && denoised.strength === noiseStrength)
+    )
+      return;
     const controller = new AbortController();
     setDenoiseProgress(0);
     void (async () => {
       try {
         const source = audioBufferRef.current ?? (await decodeAudioFromFile(file));
         audioBufferRef.current ??= source;
-        const options = { signal: controller.signal, onProgress: setDenoiseProgress };
-        // ElevenLabs Voice Isolator first (far cleaner); the in-browser model
-        // when it is not set up or fails, so the switch always does something.
-        let buffer: AudioBuffer | null = null;
-        let engine: "elevenlabs" | "local" = "elevenlabs";
-        try {
-          buffer = await isolateVoiceBuffer(
-            source,
-            (audioBase64) => isolate({ data: { audioBase64 } }),
-            options,
-          );
-        } catch (error) {
-          if (controller.signal.aborted) return;
-          console.error("[denoise] voice isolation failed", error);
-          toast.warning(
-            `${error instanceof Error ? error.message : "ลดเสียงรบกวนด้วย ElevenLabs ไม่สำเร็จ"} — ใช้ตัวลดเสียงในเครื่องแทน`,
-          );
-        }
-        if (!buffer) {
-          engine = "local";
-          setDenoiseProgress(0);
-          buffer = await denoiseBuffer(source, options);
-        }
+        const result = await denoiseBuffer(source, {
+          strength: noiseStrength,
+          signal: controller.signal,
+          onProgress: setDenoiseProgress,
+        });
         if (controller.signal.aborted) return;
-        if (buffer) setDenoised({ file, buffer, engine });
+        if (result) setDenoised({ file, strength: noiseStrength, ...result });
         else toast.error("โหลดตัวลดเสียงรบกวนไม่ได้ ไฟล์ส่งออกจะใช้ตัวกรองแบบเดิมแทน");
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -1874,7 +1854,7 @@ function Studio() {
       controller.abort();
       setDenoiseProgress(null);
     };
-  }, [noiseReduction, file, denoised, isolate]);
+  }, [noiseReduction, noiseStrength, file, denoised]);
 
   const exportFinalVideo = (type: ExportType = exportType) => {
     if (type === "srt") {
@@ -1902,7 +1882,7 @@ function Studio() {
         noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
         denoised: denoisedBuffer,
-        denoiseDry: DENOISE_DRY[noiseStrength],
+        denoiseStrength: noiseStrength,
         transitions,
         captions: type === "captions",
         signal,
@@ -3008,9 +2988,7 @@ function Studio() {
                             {denoiseProgress != null
                               ? `กำลังเตรียมเสียงสำหรับพรีวิว… ${Math.round(denoiseProgress * 100)}%`
                               : denoisedBuffer
-                                ? denoised?.engine === "elevenlabs"
-                                  ? "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว (ElevenLabs)"
-                                  : "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว (ตัวลดเสียงในเครื่อง)"
+                                ? "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว"
                                 : null}
                           </p>
                         ) : null}
@@ -3022,7 +3000,7 @@ function Studio() {
                           >
                             {(
                               [
-                                { id: "light", label: "เบา (เหลือเสียงบรรยากาศ)" },
+                                { id: "light", label: "เบา" },
                                 { id: "normal", label: "ปกติ" },
                                 { id: "strong", label: "แรงสุด" },
                               ] as { id: DenoiseStrength; label: string }[]
