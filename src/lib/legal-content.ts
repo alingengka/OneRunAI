@@ -30,9 +30,9 @@ export type LegalUi = {
 };
 
 export const LEGAL_UPDATED: Record<Lang, string> = {
-  lo: "18 ຕຸລາ 2026",
-  th: "18 ตุลาคม 2026",
-  en: "18 October 2026",
+  lo: "20 ຕຸລາ 2026",
+  th: "20 ตุลาคม 2026",
+  en: "20 October 2026",
 };
 
 export const LEGAL_UI: Record<Lang, LegalUi> = {
@@ -396,7 +396,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         items: [
           "Supabase: ฐานข้อมูล ระบบบัญชีผู้ใช้ และพื้นที่เก็บไฟล์",
           "Vercel: โฮสต์เว็บไซต์และเซิร์ฟเวอร์",
-          "Google (Gemini) และ ElevenLabs: ถอดเสียงและแปลซับ (ได้รับเฉพาะช่วงเสียงและข้อความที่ต้องประมวลผล)",
+          "Google (Gemini) และ ElevenLabs: ถอดเสียง แปลซับ และลดเสียงรบกวน (ได้รับเฉพาะช่วงเสียงและข้อความที่ต้องประมวลผล)",
           "Resend: ส่งอีเมลยืนยันและอีเมลตั้งรหัสผ่าน",
           "KLIPY และ Pixabay: ค้นหาสื่อ GIF สติกเกอร์ และ B-roll (ได้รับคำค้นหาของคุณ)",
           "Cloudflare: จัดการโดเมนและเครือข่าย",
@@ -501,7 +501,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         items: [
           "Supabase: ຖານຂໍ້ມູນ, ລະບົບບັນຊີຜູ້ໃຊ້ ແລະ ພື້ນທີ່ເກັບໄຟລ໌.",
           "Vercel: ໂຮສເວັບໄຊ ແລະ ເຊີບເວີ.",
-          "Google (Gemini) ແລະ ElevenLabs: ຖອດສຽງ ແລະ ແປຊັບ (ໄດ້ຮັບສະເພາະຊ່ວງສຽງ ແລະ ຂໍ້ຄວາມທີ່ຕ້ອງປະມວນຜົນ).",
+          "Google (Gemini) ແລະ ElevenLabs: ຖອດສຽງ, ແປຊັບ ແລະ ຫຼຸດສຽງລົບກວນ (ໄດ້ຮັບສະເພາະຊ່ວງສຽງ ແລະ ຂໍ້ຄວາມທີ່ຕ້ອງປະມວນຜົນ).",
           "Resend: ສົ່ງອີເມວຢືນຢັນ ແລະ ອີເມວຕັ້ງລະຫັດຜ່ານ.",
           "KLIPY ແລະ Pixabay: ຄົ້ນຫາສື່ GIF, ສະຕິກເກີ ແລະ B-roll (ໄດ້ຮັບຄຳຄົ້ນຫາຂອງທ່ານ).",
           "Cloudflare: ຈັດການໂດເມນ ແລະ ເຄືອຂ່າຍ.",
@@ -606,7 +606,7 @@ export const PRIVACY: Record<Lang, LegalDoc> = {
         items: [
           "Supabase: database, user accounts and file storage.",
           "Vercel: website and server hosting.",
-          "Google (Gemini) and ElevenLabs: transcription and translation (they receive only the audio clips and text to process).",
+          "Google (Gemini) and ElevenLabs: transcription, translation and noise removal (they receive only the audio clips and text to process).",
           "Resend: confirmation and password reset emails.",
           "KLIPY and Pixabay: GIF, sticker and B-roll search (they receive your search terms).",
           "Cloudflare: domain and network.",

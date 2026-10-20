@@ -130,6 +130,8 @@ import {
 } from "@/lib/export";
 import { transcribeAudio } from "@/lib/transcribe.functions";
 import { translateLines } from "@/lib/translate.functions";
+import { isolateVoice } from "@/lib/isolate.functions";
+import { isolateVoiceBuffer } from "@/lib/media/voice-isolation";
 import { clearProject, loadProject, saveProject } from "@/lib/project-store";
 import {
   wordsToTranscript,
@@ -305,6 +307,7 @@ function Studio() {
     [transcribeFn],
   );
   const translate = useServerFn(translateLines);
+  const isolate = useServerFn(isolateVoice);
   const videoRef = useRef<HTMLVideoElement>(null);
   /** The tool panel; a new tab starts at its top, not where the last one was scrolled. */
   const panelRef = useRef<HTMLElement>(null);
@@ -404,9 +407,13 @@ function Studio() {
 
   const [captionsOn, setCaptionsOn] = useState(true);
   const [noiseReduction, setNoiseReduction] = useState(false);
-  const [noiseStrength, setNoiseStrength] = useState<DenoiseStrength>("normal");
+  const [noiseStrength, setNoiseStrength] = useState<DenoiseStrength>("strong");
   /** The clip's audio with the noise removed, for the preview and the export. */
-  const [denoised, setDenoised] = useState<{ file: File; buffer: AudioBuffer } | null>(null);
+  const [denoised, setDenoised] = useState<{
+    file: File;
+    buffer: AudioBuffer;
+    engine: "elevenlabs" | "local";
+  } | null>(null);
   /** 0–1 while the clean copy is being made, null otherwise. */
   const [denoiseProgress, setDenoiseProgress] = useState<number | null>(null);
   const [resolution, setResolution] = useState<ExportResolution>("1080");
@@ -958,7 +965,7 @@ function Studio() {
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
     setNoiseReduction(p.noiseReduction ?? false);
-    setNoiseStrength(p.noiseStrength ?? "normal");
+    setNoiseStrength(p.noiseStrength ?? "strong");
     setDropped(p.dropped ?? []);
     setSceneElements(p.sceneElements ?? []);
     setStickers(p.stickers ?? []);
@@ -1828,12 +1835,31 @@ function Studio() {
       try {
         const source = audioBufferRef.current ?? (await decodeAudioFromFile(file));
         audioBufferRef.current ??= source;
-        const buffer = await denoiseBuffer(source, {
-          signal: controller.signal,
-          onProgress: setDenoiseProgress,
-        });
+        const options = { signal: controller.signal, onProgress: setDenoiseProgress };
+        // ElevenLabs Voice Isolator first (far cleaner); the in-browser model
+        // when it is not set up or fails, so the switch always does something.
+        let buffer: AudioBuffer | null = null;
+        let engine: "elevenlabs" | "local" = "elevenlabs";
+        try {
+          buffer = await isolateVoiceBuffer(
+            source,
+            (audioBase64) => isolate({ data: { audioBase64 } }),
+            options,
+          );
+        } catch (error) {
+          if (controller.signal.aborted) return;
+          console.error("[denoise] voice isolation failed", error);
+          toast.warning(
+            `${error instanceof Error ? error.message : "ลดเสียงรบกวนด้วย ElevenLabs ไม่สำเร็จ"} — ใช้ตัวลดเสียงในเครื่องแทน`,
+          );
+        }
+        if (!buffer) {
+          engine = "local";
+          setDenoiseProgress(0);
+          buffer = await denoiseBuffer(source, options);
+        }
         if (controller.signal.aborted) return;
-        if (buffer) setDenoised({ file, buffer });
+        if (buffer) setDenoised({ file, buffer, engine });
         else toast.error("โหลดตัวลดเสียงรบกวนไม่ได้ ไฟล์ส่งออกจะใช้ตัวกรองแบบเดิมแทน");
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -1848,7 +1874,7 @@ function Studio() {
       controller.abort();
       setDenoiseProgress(null);
     };
-  }, [noiseReduction, file, denoised]);
+  }, [noiseReduction, file, denoised, isolate]);
 
   const exportFinalVideo = (type: ExportType = exportType) => {
     if (type === "srt") {
@@ -2982,7 +3008,9 @@ function Studio() {
                             {denoiseProgress != null
                               ? `กำลังเตรียมเสียงสำหรับพรีวิว… ${Math.round(denoiseProgress * 100)}%`
                               : denoisedBuffer
-                                ? "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว"
+                                ? denoised?.engine === "elevenlabs"
+                                  ? "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว (ElevenLabs)"
+                                  : "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว (ตัวลดเสียงในเครื่อง)"
                                 : null}
                           </p>
                         ) : null}
