@@ -1,6 +1,5 @@
 import type { Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
-import { createNoiseGate, type NoiseGateNode } from "./noise-gate";
 import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution, type VideoTransitions } from "./burn-render";
 import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
@@ -65,9 +64,6 @@ export async function exportBurnedVideo(
   style: CaptionStyle,
   onProgress?: Progress,
   options: {
-    noiseReduction?: boolean;
-    /** RMS ของ noise floor ที่วัดจากคลิป ใช้เป็น threshold ของ noise gate */
-    noiseFloor?: number;
     smoothCuts?: boolean;
     transitions?: VideoTransitions;
     captions?: boolean;
@@ -113,7 +109,6 @@ export async function exportBurnedVideo(
   let audioContext: AudioContext | null = null;
   let outputStream: MediaStream | null = null;
   let recorder: MediaRecorder | null = null;
-  let gate: NoiseGateNode | null = null;
   /** จำนวนเฟรมที่วาดจริง ใช้ตรวจเฟรมตกตอนเรนเดอร์ความละเอียดสูง */
   let painted = 0;
   let brollTrack: BrollTrack | null = null;
@@ -159,30 +154,21 @@ export async function exportBurnedVideo(
     const captureTrack = stream.getVideoTracks()[0] as (MediaStreamTrack & { requestFrame?: () => void }) | undefined;
     outputStream = stream;
 
-    // Audio: route the element through Web Audio so we can clean and fade it.
+    // Audio: route the element through Web Audio so we can fade it at cuts.
     audioContext = new AudioContext();
     const source = audioContext.createMediaElementSource(video);
     const highpass = audioContext.createBiquadFilter();
     highpass.type = "highpass";
-    highpass.frequency.value = options.noiseReduction ? 95 : 20;
+    highpass.frequency.value = 20;
     const lowpass = audioContext.createBiquadFilter();
     lowpass.type = "lowpass";
-    lowpass.frequency.value = options.noiseReduction ? 10500 : 20000;
+    lowpass.frequency.value = 20000;
     const compressor = audioContext.createDynamicsCompressor();
-    compressor.threshold.value = options.noiseReduction ? -38 : -24;
-    compressor.ratio.value = options.noiseReduction ? 5 : 2;
+    compressor.threshold.value = -24;
+    compressor.ratio.value = 2;
     const boundaryGain = audioContext.createGain();
     const destination = audioContext.createMediaStreamDestination();
-    // noise gate จริง: ลดเสียงช่วงที่เบากว่า noise floor ลงจริง ไม่ใช่แค่กรองความถี่
-    gate = options.noiseReduction && options.noiseFloor
-      ? await createNoiseGate(audioContext, { noiseFloor: options.noiseFloor })
-      : null;
-    if (gate) {
-      source.connect(highpass).connect(lowpass).connect(compressor).connect(gate.input);
-      gate.output.connect(boundaryGain).connect(destination);
-    } else {
-      source.connect(highpass).connect(lowpass).connect(compressor).connect(boundaryGain).connect(destination);
-    }
+    source.connect(highpass).connect(lowpass).connect(compressor).connect(boundaryGain).connect(destination);
     destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
 
     const mimeType = pickMime();
@@ -526,7 +512,6 @@ export async function exportBurnedVideo(
     video.remove();
     if (recorder && recorder.state !== "inactive") recorder.stop();
     outputStream?.getTracks().forEach((track) => track.stop());
-    gate?.dispose();
     if (audioContext) void audioContext.close();
   }
 }

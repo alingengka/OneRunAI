@@ -12,8 +12,6 @@
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { decodeAudioFromFile, type Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
-import { createNoiseGate } from "./noise-gate";
-import { denoiseBuffer } from "./denoise";
 import {
   createBurnRenderer,
   ensureCaptionFonts,
@@ -337,7 +335,7 @@ async function recordMix(
 }
 
 /**
- * ประมวลผลเสียงล่วงหน้า: ตัดเฉพาะช่วงที่เก็บไว้มาต่อกัน + noise reduction เดิม
+ * ประมวลผลเสียงล่วงหน้า: ตัดเฉพาะช่วงที่เก็บไว้มาต่อกัน และผสมเสียงเอฟเฟกต์
  * คืนค่าเป็น AudioBuffer ของ timeline ผลลัพธ์ (เวลาต่อเนื่องหลังตัดช่วงเงียบแล้ว)
  */
 async function renderAudio(
@@ -345,14 +343,10 @@ async function renderAudio(
   segments: Segment[],
   total: number,
   options: {
-    noiseReduction?: boolean;
-    noiseFloor?: number;
     smoothCuts?: boolean;
-    denoised?: AudioBuffer | null;
     sourceAudio?: AudioBuffer | null;
   },
   sounds: SoundClip[] = [],
-  onProgress?: (done: number) => void,
 ): Promise<AudioBuffer | null> {
   // The editor already decoded the clip's audio; reading a large phone video
   // again was the slowest part of starting an export.
@@ -367,16 +361,7 @@ async function renderAudio(
   if (decoded && !decoded.length) decoded = null;
   // no sound of its own and no effects: picture only
   if (!decoded && !sounds.length) return null;
-  // Real noise removal; when it cannot run, the older filters and gate below stand in.
-  // (the preview may already have cleaned the clip's audio: no need to redo it)
-  const denoised =
-    decoded && options.noiseReduction
-      ? (options.denoised ?? (await denoiseBuffer(decoded, { onProgress })))
-      : null;
-  // the clean copy is mono; the file keeps the clip's own channel count
   const channels = decoded ? Math.min(2, Math.max(1, decoded.numberOfChannels)) : 2;
-  if (denoised) decoded = denoised;
-  const filters = !!options.noiseReduction && !denoised;
 
   const sampleRate = decoded?.sampleRate ?? 48000;
   const offline = new OfflineAudioContext(
@@ -387,26 +372,14 @@ async function renderAudio(
 
   const highpass = offline.createBiquadFilter();
   highpass.type = "highpass";
-  highpass.frequency.value = filters ? 95 : denoised ? 80 : 20;
+  highpass.frequency.value = 20;
   const lowpass = offline.createBiquadFilter();
   lowpass.type = "lowpass";
-  lowpass.frequency.value = filters ? 10500 : 20000;
+  lowpass.frequency.value = 20000;
   const compressor = offline.createDynamicsCompressor();
-  compressor.threshold.value = filters ? -38 : -24;
-  compressor.ratio.value = filters ? 5 : 2;
-
-  const gate =
-    filters && options.noiseFloor
-      ? await createNoiseGate(offline, { noiseFloor: options.noiseFloor })
-      : null;
-
-  highpass.connect(lowpass).connect(compressor);
-  if (gate) {
-    compressor.connect(gate.input);
-    gate.output.connect(offline.destination);
-  } else {
-    compressor.connect(offline.destination);
-  }
+  compressor.threshold.value = -24;
+  compressor.ratio.value = 2;
+  highpass.connect(lowpass).connect(compressor).connect(offline.destination);
 
   let cursor = 0;
   for (const segment of decoded ? segments : []) {
@@ -446,7 +419,6 @@ async function renderAudio(
   });
 
   const rendered = await offline.startRendering();
-  gate?.dispose();
   return rendered;
 }
 
@@ -457,11 +429,7 @@ export async function exportWebCodecsVideo(
   style: CaptionStyle,
   onProgress?: Progress,
   options: {
-    noiseReduction?: boolean;
-    noiseFloor?: number;
     smoothCuts?: boolean;
-    /** the clip's audio already denoised by the preview (source timeline) */
-    denoised?: AudioBuffer | null;
     /** the clip's audio as the editor already decoded it (saves reading the file again) */
     sourceAudio?: AudioBuffer | null;
     /** a note for the person about a slow step in progress (null when it ends) */
@@ -630,22 +598,21 @@ export async function exportWebCodecsVideo(
     const canEncodeAudio = typeof AudioEncoder !== "undefined" && typeof AudioData !== "undefined";
     const effects = options.sounds ?? [];
     const audioBuffer =
-      canEncodeAudio || effects.length || options.noiseReduction
-        ? await renderAudio(sourceBlob, normalized, total, options, effects, (done) =>
-            onProgress?.(0.02 + done * 0.08),
-          )
+      canEncodeAudio || effects.length
+        ? await renderAudio(sourceBlob, normalized, total, options, effects)
         : null;
+    onProgress?.(0.1);
     const audioPick =
       audioBuffer && canEncodeAudio
         ? await pickAudioCodec(audioBuffer.sampleRate, Math.min(2, audioBuffer.numberOfChannels))
         : null;
     // No AudioEncoder (older iPhone Safari): record the mix when there are
-    // sound effects or noise removal, else copy the clip's own audio.
+    // sound effects, else copy the clip's own audio.
     let copied: CopiedAudio | null = null;
     let soundsSkipped = false;
     let recordedMix = false;
     if (!audioPick) {
-      if (audioBuffer && (effects.length || options.noiseReduction)) {
+      if (audioBuffer && effects.length) {
         options.onStage?.("ระบบกำลังบันทึกเสียงลงไฟล์ ใช้เวลาประมาณเท่าความยาวคลิป");
         copied = await recordMix(audioBuffer, total, (done) => onProgress?.(0.1 + done * 0.06));
         options.onStage?.(null);

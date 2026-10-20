@@ -11,7 +11,6 @@ import {
   Play,
   Sparkles,
   Upload,
-  Waves,
   Wand2,
   Maximize2,
   X,
@@ -59,8 +58,6 @@ import { Inspector, type ClipEditing } from "@/components/editor/Inspector";
 import { SoundLibrary } from "@/components/editor/SoundLibrary";
 import type { SoundEditing } from "@/components/editor/SoundClipControls";
 import { useSoundPlayback } from "@/hooks/use-sound-playback";
-import { useDenoisedPlayback } from "@/hooks/use-denoised-playback";
-import { denoiseBuffer } from "@/lib/media/denoise";
 import {
   makeSoundClip,
   previewSound,
@@ -100,7 +97,6 @@ import {
   reconcileSegmentsWithWords,
   splitSegmentsAtWordGaps,
   uncoveredSpeech,
-  estimateNoiseFloor,
   refineSpeechSegments,
   smoothSpeechSegments,
   type Segment,
@@ -322,7 +318,6 @@ function Studio() {
   /** งานวิเคราะห์เสียงที่กำลังทำอยู่ของไฟล์ล่าสุด — ปุ่มถอดเสียงต้องรอให้เสร็จก่อน */
   const analysisPromiseRef = useRef<Promise<unknown> | null>(null);
   /** ระดับเสียงรบกวนพื้นหลังของคลิป ใช้เป็น threshold ของ noise gate ตอน export */
-  const noiseFloorRef = useRef(0);
 
   const [file, setFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string>("");
@@ -403,14 +398,6 @@ function Studio() {
   const [languages, setLanguages] = useState<LangCode[]>(["th"]);
 
   const [captionsOn, setCaptionsOn] = useState(true);
-  const [noiseReduction, setNoiseReduction] = useState(false);
-  /** The clip's audio with the noise removed, for the preview and the export. */
-  const [denoised, setDenoised] = useState<{
-    file: File;
-    buffer: AudioBuffer;
-  } | null>(null);
-  /** 0–1 while the clean copy is being made, null otherwise. */
-  const [denoiseProgress, setDenoiseProgress] = useState<number | null>(null);
   const [resolution, setResolution] = useState<ExportResolution>("1080");
   const [exportFps, setExportFps] = useState(30);
   const [exportType, setExportType] = useState<ExportType>("captions");
@@ -679,14 +666,8 @@ function Studio() {
   useEffect(() => {
     coarseTimeRef.current.next = -Infinity; // re-evaluate against the new list
   }, [boundaries]);
-  const denoisedBuffer =
-    noiseReduction && denoised && denoised.file === file ? denoised.buffer : null;
-  /** The browser refused to play Web Audio: keep the video's own sound instead of silence. */
-  const [webAudioBlocked, setWebAudioBlocked] = useState(false);
-  // While the cleaned audio plays, the video's own (noisy) sound stays muted.
-  const videoMuted = muted || (!!denoisedBuffer && !webAudioBlocked);
-  const mutedRef = useRef(videoMuted);
-  mutedRef.current = videoMuted;
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
   /** Fast-forwarding through a cut right now (muted, high playbackRate). */
   const skippingRef = useRef(false);
   useEffect(() => {
@@ -782,7 +763,6 @@ function Studio() {
       const segs = smoothSpeechSegments(detected, buffer.duration);
       if (!segs.length) throw new Error("ไม่พบช่วงเสียงพูด ลองลดค่าความไวเสียง");
       analysisSegmentsRef.current = segs;
-      noiseFloorRef.current = estimateNoiseFloor(buffer);
       setSegments(segs);
       setDuration((d) => d || buffer!.duration);
       return { buffer, segs };
@@ -900,7 +880,6 @@ function Studio() {
       languages,
       threshold,
       minSilence,
-      noiseReduction,
       dropped,
       sceneElements,
       stickers,
@@ -921,7 +900,6 @@ function Studio() {
       languages,
       threshold,
       minSilence,
-      noiseReduction,
       dropped,
       sceneElements,
       stickers,
@@ -961,7 +939,6 @@ function Studio() {
     setLanguages((p.languages as LangCode[]).length ? (p.languages as LangCode[]) : ["th"]);
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
-    setNoiseReduction(p.noiseReduction ?? false);
     setDropped(p.dropped ?? []);
     setSceneElements(p.sceneElements ?? []);
     setStickers(p.stickers ?? []);
@@ -1502,8 +1479,6 @@ function Studio() {
     }
     void runJob("เรนเดอร์วิดีโอ", async (signal, onProgress) => {
       const blob = await exportTrimmedWebm(videoUrl, [...outputSegments], onProgress, {
-        noiseReduction,
-        noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
         signal,
       });
@@ -1823,43 +1798,6 @@ function Studio() {
     };
   };
   useSoundPlayback(videoRef, sounds, muted, videoUrl);
-  useDenoisedPlayback(videoRef, denoisedBuffer, muted, setWebAudioBlocked);
-  useEffect(() => {
-    const v = videoRef.current;
-    if (v && !skippingRef.current && !isPriming(v)) v.muted = videoMuted;
-  }, [videoMuted]);
-
-  // Turning noise reduction on cleans the whole clip once, so the preview can
-  // play it and the export can reuse it.
-  useEffect(() => {
-    if (!noiseReduction || !file || denoised?.file === file) return;
-    const controller = new AbortController();
-    setDenoiseProgress(0);
-    void (async () => {
-      try {
-        const source = audioBufferRef.current ?? (await decodeAudioFromFile(file));
-        audioBufferRef.current ??= source;
-        const buffer = await denoiseBuffer(source, {
-          signal: controller.signal,
-          onProgress: setDenoiseProgress,
-        });
-        if (controller.signal.aborted) return;
-        if (buffer) setDenoised({ file, buffer });
-        else toast.error("โหลดตัวลดเสียงรบกวนไม่ได้ ไฟล์ส่งออกจะใช้ตัวกรองแบบเดิมแทน");
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          console.error("[denoise] preview copy failed", error);
-          toast.error("เตรียมเสียงที่ลดเสียงรบกวนไม่สำเร็จ");
-        }
-      } finally {
-        if (!controller.signal.aborted) setDenoiseProgress(null);
-      }
-    })();
-    return () => {
-      controller.abort();
-      setDenoiseProgress(null);
-    };
-  }, [noiseReduction, file, denoised]);
 
   const exportFinalVideo = (type: ExportType = exportType) => {
     if (type === "srt") {
@@ -1883,10 +1821,7 @@ function Studio() {
     setPlaying(false);
     void runJob("เรนเดอร์วิดีโอพร้อมซับ", async (signal, onProgress) => {
       const shared = {
-        noiseReduction,
-        noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
-        denoised: denoisedBuffer,
         sourceAudio: audioBufferRef.current,
         onStage: (note: string | null) => setJob((current) => current && { ...current, note }),
         transitions,
@@ -1935,9 +1870,6 @@ function Studio() {
           toast.warning(
             "เบราว์เซอร์นี้ใส่เสียงเอฟเฟกต์ลงไฟล์ไม่ได้ ลองส่งออกด้วย Chrome หรือ Safari รุ่นใหม่",
           );
-        }
-        if (result.audioCopied && noiseReduction) {
-          toast.info("เบราว์เซอร์นี้ใช้เสียงต้นฉบับของคลิป จึงไม่ได้ลดเสียงรบกวนในไฟล์ส่งออก");
         }
         return;
       }
@@ -2006,8 +1938,6 @@ function Studio() {
         [...outputSegments],
         (r) => onProgress(r * 0.9),
         {
-          noiseReduction,
-          noiseFloor: noiseFloorRef.current,
           smoothCuts: true,
           signal,
         },
@@ -2981,47 +2911,6 @@ function Studio() {
 
               <section
                 className="border-t border-border pt-6"
-                aria-labelledby="video-tools-heading"
-              >
-                <div className="mb-1">
-                  <h2 id="video-tools-heading" className="text-base font-bold text-foreground">
-                    ปรับแต่งวิดีโอ
-                  </h2>
-                </div>
-                <div className="divide-y divide-border">
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-4">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary">
-                        <Waves className="h-5 w-5" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">ลดเสียงรบกวน</p>
-                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                          ใช้ AI ลบเสียงพัดลม รถ ลม และเสียงอื้อรอบตัว ให้เหลือแต่เสียงพูด · บน
-                          iPhone บางรุ่น Export จะนานขึ้นประมาณเท่าความยาวคลิป
-                        </p>
-                        {noiseReduction && file ? (
-                          <p className="mt-1 text-xs text-primary" role="status">
-                            {denoiseProgress != null
-                              ? `กำลังเตรียมเสียงสำหรับพรีวิว… ${Math.round(denoiseProgress * 100)}%`
-                              : denoisedBuffer
-                                ? "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว"
-                                : null}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                    <Switch
-                      checked={noiseReduction}
-                      onCheckedChange={setNoiseReduction}
-                      aria-label="ลดเสียงรบกวน"
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section
-                className="border-t border-border pt-6"
                 aria-labelledby="caption-actions-heading"
               >
                 <h2
@@ -3798,8 +3687,7 @@ function Studio() {
                   onClick={() => {
                     const next = !muted;
                     setMuted(next);
-                    if (videoRef.current)
-                      videoRef.current.muted = next || (!!denoisedBuffer && !webAudioBlocked);
+                    if (videoRef.current) videoRef.current.muted = next;
                   }}
                   disabled={!videoUrl}
                   aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}
