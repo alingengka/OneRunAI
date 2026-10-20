@@ -20,7 +20,6 @@ export type SavedProject = {
   languages: string[];
   threshold: number;
   minSilence: number;
-  noiseReduction?: boolean;
   dropped?: string[];
   sceneElements?: SceneElement[];
   stickers?: Sticker[];

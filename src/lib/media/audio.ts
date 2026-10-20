@@ -669,26 +669,3 @@ export function splitSegmentsAtWordGaps(
     }, [])
     .filter((s) => s.end - s.start > 0.05);
 }
-
-/**
- * ระดับเสียงรบกวนพื้นหลัง (RMS) จากคลิป ใช้เป็น threshold ของ noise gate ตอน export
- * ใช้เปอร์เซ็นไทล์ที่ 15 แบบเดียวกับ detectSpeechSegments เพื่อให้สอดคล้องกัน
- */
-export function estimateNoiseFloor(buffer: AudioBuffer): number {
-  const sr = buffer.sampleRate;
-  const win = Math.max(256, Math.floor(sr * 0.025));
-  const hop = Math.max(128, Math.floor(sr * 0.01));
-  const data = buffer.getChannelData(0);
-  const frames: number[] = [];
-  for (let i = 0; i + win < buffer.length; i += hop) {
-    let sum = 0;
-    for (let j = i; j < i + win; j++) {
-      const v = data[j] ?? 0;
-      sum += v * v;
-    }
-    frames.push(Math.sqrt(sum / win));
-  }
-  if (!frames.length) return 0;
-  frames.sort((a, b) => a - b);
-  return frames[Math.floor(frames.length * 0.15)] ?? 0;
-}
