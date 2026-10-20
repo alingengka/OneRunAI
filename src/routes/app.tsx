@@ -60,7 +60,7 @@ import { SoundLibrary } from "@/components/editor/SoundLibrary";
 import type { SoundEditing } from "@/components/editor/SoundClipControls";
 import { useSoundPlayback } from "@/hooks/use-sound-playback";
 import { useDenoisedPlayback } from "@/hooks/use-denoised-playback";
-import { denoiseBuffer, type DenoiseEngine, type DenoiseStrength } from "@/lib/media/denoise";
+import { denoiseBuffer } from "@/lib/media/denoise";
 import {
   makeSoundClip,
   previewSound,
@@ -404,13 +404,10 @@ function Studio() {
 
   const [captionsOn, setCaptionsOn] = useState(true);
   const [noiseReduction, setNoiseReduction] = useState(false);
-  const [noiseStrength, setNoiseStrength] = useState<DenoiseStrength>("normal");
   /** The clip's audio with the noise removed, for the preview and the export. */
   const [denoised, setDenoised] = useState<{
     file: File;
     buffer: AudioBuffer;
-    strength: DenoiseStrength;
-    engine: DenoiseEngine;
   } | null>(null);
   /** 0–1 while the clean copy is being made, null otherwise. */
   const [denoiseProgress, setDenoiseProgress] = useState<number | null>(null);
@@ -468,7 +465,11 @@ function Studio() {
   };
 
   const [dropped, setDropped] = useState<string[]>([]);
-  const [job, setJob] = useState<{ label: string; ratio: number | null } | null>(null);
+  const [job, setJob] = useState<{
+    label: string;
+    ratio: number | null;
+    note?: string | null;
+  } | null>(null);
   const jobAbort = useRef<AbortController | null>(null);
   const [threshold, setThreshold] = useState(defaultSilenceOptions.thresholdDb);
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
@@ -679,9 +680,7 @@ function Studio() {
     coarseTimeRef.current.next = -Infinity; // re-evaluate against the new list
   }, [boundaries]);
   const denoisedBuffer =
-    noiseReduction && denoised && denoised.file === file && denoised.strength === noiseStrength
-      ? denoised.buffer
-      : null;
+    noiseReduction && denoised && denoised.file === file ? denoised.buffer : null;
   /** The browser refused to play Web Audio: keep the video's own sound instead of silence. */
   const [webAudioBlocked, setWebAudioBlocked] = useState(false);
   // While the cleaned audio plays, the video's own (noisy) sound stays muted.
@@ -902,7 +901,6 @@ function Studio() {
       threshold,
       minSilence,
       noiseReduction,
-      noiseStrength,
       dropped,
       sceneElements,
       stickers,
@@ -924,7 +922,6 @@ function Studio() {
       threshold,
       minSilence,
       noiseReduction,
-      noiseStrength,
       dropped,
       sceneElements,
       stickers,
@@ -965,7 +962,6 @@ function Studio() {
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
     setNoiseReduction(p.noiseReduction ?? false);
-    setNoiseStrength(p.noiseStrength ?? "normal");
     setDropped(p.dropped ?? []);
     setSceneElements(p.sceneElements ?? []);
     setStickers(p.stickers ?? []);
@@ -1454,7 +1450,13 @@ function Studio() {
     setRendering(true);
     setJob({ label, ratio: 0 });
     try {
-      await work(controller.signal, (r) => setJob({ label, ratio: Math.max(0, Math.min(1, r)) }));
+      await work(controller.signal, (r) =>
+        setJob((current) => ({
+          label,
+          ratio: Math.max(0, Math.min(1, r)),
+          note: current?.note ?? null,
+        })),
+      );
     } catch (error) {
       if (
         controller.signal.aborted ||
@@ -1825,25 +1827,19 @@ function Studio() {
   // Turning noise reduction on cleans the whole clip once, so the preview can
   // play it and the export can reuse it.
   useEffect(() => {
-    if (
-      !noiseReduction ||
-      !file ||
-      (denoised?.file === file && denoised.strength === noiseStrength)
-    )
-      return;
+    if (!noiseReduction || !file || denoised?.file === file) return;
     const controller = new AbortController();
     setDenoiseProgress(0);
     void (async () => {
       try {
         const source = audioBufferRef.current ?? (await decodeAudioFromFile(file));
         audioBufferRef.current ??= source;
-        const result = await denoiseBuffer(source, {
-          strength: noiseStrength,
+        const buffer = await denoiseBuffer(source, {
           signal: controller.signal,
           onProgress: setDenoiseProgress,
         });
         if (controller.signal.aborted) return;
-        if (result) setDenoised({ file, strength: noiseStrength, ...result });
+        if (buffer) setDenoised({ file, buffer });
         else toast.error("โหลดตัวลดเสียงรบกวนไม่ได้ ไฟล์ส่งออกจะใช้ตัวกรองแบบเดิมแทน");
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -1858,7 +1854,7 @@ function Studio() {
       controller.abort();
       setDenoiseProgress(null);
     };
-  }, [noiseReduction, noiseStrength, file, denoised]);
+  }, [noiseReduction, file, denoised]);
 
   const exportFinalVideo = (type: ExportType = exportType) => {
     if (type === "srt") {
@@ -1886,8 +1882,8 @@ function Studio() {
         noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
         denoised: denoisedBuffer,
-        denoiseStrength: noiseStrength,
         sourceAudio: audioBufferRef.current,
+        onStage: (note: string | null) => setJob((current) => current && { ...current, note }),
         transitions,
         captions: type === "captions",
         signal,
@@ -2704,6 +2700,7 @@ function Studio() {
               />
             </div>
           </div>
+          {job.note ? <p className="max-w-xs text-sm text-primary">{job.note}</p> : null}
           <p className="max-w-xs text-sm text-muted-foreground">
             กรุณาอย่าปิดหน้านี้หรือสลับไปแอปอื่นจนกว่าจะเสร็จ
           </p>
@@ -2994,7 +2991,8 @@ function Studio() {
                       <div className="min-w-0">
                         <p className="text-sm font-semibold">ลดเสียงรบกวน</p>
                         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                          ใช้ AI ลบเสียงพัดลม รถ ลม และเสียงอื้อรอบตัว ให้เหลือแต่เสียงพูด
+                          ใช้ AI ลบเสียงพัดลม รถ ลม และเสียงอื้อรอบตัว ให้เหลือแต่เสียงพูด · บน
+                          iPhone บางรุ่น Export จะนานขึ้นประมาณเท่าความยาวคลิป
                         </p>
                         {noiseReduction && file ? (
                           <p className="mt-1 text-xs text-primary" role="status">
@@ -3004,37 +3002,6 @@ function Studio() {
                                 ? "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว"
                                 : null}
                           </p>
-                        ) : null}
-                        {noiseReduction ? (
-                          <div
-                            role="radiogroup"
-                            aria-label="ความแรงของการลดเสียงรบกวน"
-                            className="mt-2 flex flex-wrap gap-1.5"
-                          >
-                            {(
-                              [
-                                { id: "light", label: "เบา" },
-                                { id: "normal", label: "ปกติ" },
-                                { id: "strong", label: "แรงสุด" },
-                              ] as { id: DenoiseStrength; label: string }[]
-                            ).map((option) => (
-                              <button
-                                key={option.id}
-                                type="button"
-                                role="radio"
-                                aria-checked={noiseStrength === option.id}
-                                onClick={() => setNoiseStrength(option.id)}
-                                className={cn(
-                                  "rounded-full border px-2.5 py-1 text-xs transition",
-                                  noiseStrength === option.id
-                                    ? "border-primary bg-primary text-primary-foreground"
-                                    : "border-border bg-secondary text-muted-foreground hover:text-foreground",
-                                )}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
                         ) : null}
                       </div>
                     </div>

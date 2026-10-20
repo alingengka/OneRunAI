@@ -4,7 +4,6 @@ import type { SoundClip } from "./sounds";
 import type { SceneElement } from "./scenes";
 import type { LexRule } from "./lao-glossary";
 import type { Sticker } from "./media/stickers";
-import type { DenoiseStrength } from "./media/denoise";
 
 const KEY = "shortcut-studio-project-v1";
 
@@ -22,7 +21,6 @@ export type SavedProject = {
   threshold: number;
   minSilence: number;
   noiseReduction?: boolean;
-  noiseStrength?: DenoiseStrength;
   dropped?: string[];
   sceneElements?: SceneElement[];
   stickers?: Sticker[];

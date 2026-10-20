@@ -1,24 +1,19 @@
 /// <reference lib="webworker" />
 /**
- * Runs the noise-removal models off the page's main thread (see denoise.ts).
+ * Runs the noise-removal model off the page's main thread (see denoise.ts).
  * One job per worker: the page closes it afterwards to free the model.
  */
 import { cleanSamples } from "./denoise-core";
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 
-scope.onmessage = async (
-  event: MessageEvent<{ source: Float32Array<ArrayBuffer>; limitDb: number }>,
-) => {
+scope.onmessage = async (event: MessageEvent<{ source: Float32Array<ArrayBuffer> }>) => {
   try {
-    const result = await cleanSamples(event.data.source, event.data.limitDb, {
+    const samples = await cleanSamples(event.data.source, {
       onProgress: (done) => scope.postMessage({ type: "progress", done }),
     });
-    if (!result) scope.postMessage({ type: "done", samples: null, engine: "rnnoise" });
-    else
-      scope.postMessage({ type: "done", samples: result.samples, engine: result.engine }, [
-        result.samples.buffer,
-      ]);
+    if (!samples) scope.postMessage({ type: "done", samples: null });
+    else scope.postMessage({ type: "done", samples }, [samples.buffer]);
   } catch (error) {
     scope.postMessage({
       type: "error",
