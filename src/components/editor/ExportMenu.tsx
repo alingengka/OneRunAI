@@ -76,7 +76,6 @@ type Props = {
 
 const TRANSITIONS: { key: keyof VideoTransitions; label: string }[] = [
   { key: "fadeIn", label: "Fade in ตอนเริ่มคลิป" },
-  { key: "cutDip", label: "ดำวูบสั้น ๆ ตรงรอยตัด" },
   { key: "fadeOut", label: "Fade out ตอนจบคลิป" },
 ];
 

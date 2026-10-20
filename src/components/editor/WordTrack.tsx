@@ -268,7 +268,9 @@ export function WordTrack({
     cancelAnimationFrame(seekFrameRef.current);
     seekFrameRef.current = requestAnimationFrame(() => {
       const now = scrollRef.current;
-      if (!now) return;
+      // play may have been pressed in between: a late scrub seek would make
+      // the starting video seek away (iPhones then stall or jump)
+      if (!now || clockRef.current?.() != null) return;
       onSeek(Math.max(0, Math.min(duration, now.scrollLeft / ppsRef.current)));
     });
   };
