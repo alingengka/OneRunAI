@@ -830,6 +830,7 @@ function Studio() {
 
   const onPickFile = async (f: File) => {
     audioBufferRef.current = null;
+    lastClockRef.current = 0; // a new clip must not be "restored" to the old one's spot
     setPeaks([]);
     // ไฟล์ใหม่ต้องไม่ใช้ผลวิเคราะห์ของไฟล์เก่า ไม่งั้นการกดถอดเสียงทันที
     // จะได้ช่วงพูดของคลิปก่อนหน้า → ซับออกมาไม่ครบ
@@ -1808,6 +1809,48 @@ function Studio() {
     };
   };
   useSoundPlayback(videoRef, sounds, muted, videoUrl);
+
+  // Play watchdog: iPhones can accept play() yet never move (typically right
+  // after a seek), leaving the button on "playing" with a frozen picture.
+  // Nudge the video twice; if it still does not move, show it as paused so
+  // the next tap starts it cleanly.
+  useEffect(() => {
+    if (!playing) return;
+    const v = videoRef.current;
+    if (!v) return;
+    let last = v.currentTime;
+    let still = 0;
+    let nudges = 0;
+    const id = window.setInterval(() => {
+      if (v.paused || v.ended || skippingRef.current || isPriming(v)) {
+        last = v.currentTime;
+        still = 0;
+        return;
+      }
+      if (Math.abs(v.currentTime - last) > 0.01) {
+        last = v.currentTime;
+        still = 0;
+        nudges = 0;
+        return;
+      }
+      still += 0.5;
+      if (still < 1.5) return;
+      still = 0;
+      if (nudges < 2) {
+        nudges++;
+        v.currentTime = v.currentTime + 0.001;
+        void v.play()?.catch(() => undefined);
+      } else {
+        playIntentRef.current = false;
+        v.pause();
+        setPlaying(false);
+      }
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [playing]);
+
+  /** Where to put the video back after Safari resets it (it then restarts at 0). */
+  const restoreAtRef = useRef<number | null>(null);
 
   const exportFinalVideo = (type: ExportType = exportType) => {
     if (type === "srt") {
@@ -3541,7 +3584,25 @@ function Studio() {
                     onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
                     className="h-full w-full object-cover will-change-transform"
                     playsInline
-                    onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                    onLoadedMetadata={(e) => {
+                      setDuration(e.currentTarget.duration);
+                      const at = restoreAtRef.current;
+                      restoreAtRef.current = null;
+                      if (at != null) e.currentTarget.currentTime = at;
+                    }}
+                    // iPhone Safari can drop the decoded video under memory
+                    // pressure or a failed seek: the element empties and starts
+                    // over at 0. Reload it and return to where the person was.
+                    onEmptied={() => {
+                      if (lastClockRef.current > 0.2) restoreAtRef.current = lastClockRef.current;
+                    }}
+                    onError={(e) => {
+                      const v = e.currentTarget;
+                      if (lastClockRef.current > 0.2) restoreAtRef.current = lastClockRef.current;
+                      playIntentRef.current = false;
+                      setPlaying(false);
+                      window.setTimeout(() => v.load(), 300);
+                    }}
                     onEnded={() => setPlaying(false)}
                     // Follow the real state: iOS can pause on its own (calls,
                     // other audio), and a play can start late.
