@@ -1887,6 +1887,7 @@ function Studio() {
         smoothCuts: true,
         denoised: denoisedBuffer,
         denoiseStrength: noiseStrength,
+        sourceAudio: audioBufferRef.current,
         transitions,
         captions: type === "captions",
         signal,
