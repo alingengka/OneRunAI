@@ -17,8 +17,8 @@ export type DenoiseStrength = "light" | "normal" | "strong";
  */
 export const DENOISE_LIMIT_DB: Record<DenoiseStrength, number> = {
   light: 12,
-  normal: 20,
-  strong: 30,
+  normal: 26,
+  strong: 34,
 };
 
 export type DenoiseEngine = "deepfilter" | "rnnoise";
@@ -60,9 +60,9 @@ export async function denoiseBuffer(
   if (!target) return null;
 
   // Removing the noise also takes some energy out of the speech: bring the
-  // voice back to its old level (at most +9 dB, so leftover hiss is not pumped up).
+  // voice back towards its old level (at most +4 dB, so leftover noise is not pumped up).
   const gain = Math.min(
-    2.8,
+    1.6,
     Math.max(1, speechLevel(source) / Math.max(1e-6, speechLevel(target))),
   );
   if (gain > 1.01) for (let i = 0; i < target.length; i++) target[i]! *= gain;
