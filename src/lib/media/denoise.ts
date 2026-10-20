@@ -18,7 +18,7 @@ export type DenoiseStrength = "light" | "normal" | "strong";
 export const DENOISE_LIMIT_DB: Record<DenoiseStrength, number> = {
   light: 12,
   normal: 26,
-  strong: 34,
+  strong: 30,
 };
 
 export type DenoiseEngine = "deepfilter" | "rnnoise";
