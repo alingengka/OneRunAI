@@ -54,6 +54,29 @@ const dbg = (m: string) => {
     console.log("[webcodecs] " + m);
 };
 
+let probeCtx: CanvasRenderingContext2D | null = null;
+
+/** True when a picture is (all but) pure black, judged on a 16x16 thumbnail. */
+function isBlackPicture(image: CanvasImageSource): boolean {
+  if (!probeCtx) {
+    const probe = document.createElement("canvas");
+    probe.width = probe.height = 16;
+    probeCtx = probe.getContext("2d", { willReadFrequently: true });
+  }
+  if (!probeCtx) return false;
+  try {
+    probeCtx.clearRect(0, 0, 16, 16);
+    probeCtx.drawImage(image, 0, 0, 16, 16);
+    const data = probeCtx.getImageData(0, 0, 16, 16).data;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i]! > 24 || data[i + 1]! > 24 || data[i + 2]! > 24) return false;
+    }
+    return true;
+  } catch {
+    return false; // unreadable: treat as a real picture
+  }
+}
+
 /** Waits (briefly) until the <video> has put a decoded frame on screen. */
 function presentedFrame(video: HTMLVideoElement): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -720,6 +743,9 @@ export async function exportWebCodecsVideo(
     const emit = async (image: CanvasImageSource, time: number, seg: Segment) => {
       await brollTrack?.prepare(time);
       renderer.paint(image, time, seg);
+      // Reading the canvas back makes Safari finish drawing it before the
+      // VideoFrame copies it (the very first frames could come out blank).
+      if (frameIndex < 15) isBlackPicture(canvas);
       const timestamp = Math.round(frameIndex * frameDurationUs);
       const frame = new VideoFrame(canvas, { timestamp, duration: Math.round(frameDurationUs) });
       // The encoder copies the frame; this copy stays until its chunk is out.
@@ -761,6 +787,7 @@ export async function exportWebCodecsVideo(
      * later on repeats the previous picture.
      */
     let lastImage: CanvasImageSource | null = null;
+    let opening = true;
     const waiting: { time: number; sample: number; seg: Segment }[] = [];
     for (const { time, sample, seg } of plan) {
       if (options.signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
@@ -784,6 +811,16 @@ export async function exportWebCodecsVideo(
         image = lastImage;
       }
       image ??= await seekImage(sample);
+      // Phones can also hand over pure black pictures for the first frame or
+      // two. While the opening is still dark (up to half a second) those wait
+      // too, so the file starts on the first real picture.
+      if (opening) {
+        if (waiting.length < Math.round(fps / 2) && isBlackPicture(image)) {
+          waiting.push({ time, sample, seg });
+          continue;
+        }
+        opening = false;
+      }
       for (const early of waiting.splice(0)) await emit(image, early.time, early.seg);
       if (frames) lastImage = image;
       await emit(image, time, seg);
