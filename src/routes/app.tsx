@@ -60,7 +60,7 @@ import { SoundLibrary } from "@/components/editor/SoundLibrary";
 import type { SoundEditing } from "@/components/editor/SoundClipControls";
 import { useSoundPlayback } from "@/hooks/use-sound-playback";
 import { useDenoisedPlayback } from "@/hooks/use-denoised-playback";
-import { denoiseBuffer } from "@/lib/media/denoise";
+import { DENOISE_DRY, denoiseBuffer, type DenoiseStrength } from "@/lib/media/denoise";
 import {
   makeSoundClip,
   previewSound,
@@ -404,6 +404,7 @@ function Studio() {
 
   const [captionsOn, setCaptionsOn] = useState(true);
   const [noiseReduction, setNoiseReduction] = useState(false);
+  const [noiseStrength, setNoiseStrength] = useState<DenoiseStrength>("normal");
   /** The clip's audio with the noise removed, for the preview and the export. */
   const [denoised, setDenoised] = useState<{ file: File; buffer: AudioBuffer } | null>(null);
   /** 0–1 while the clean copy is being made, null otherwise. */
@@ -894,6 +895,7 @@ function Studio() {
       threshold,
       minSilence,
       noiseReduction,
+      noiseStrength,
       dropped,
       sceneElements,
       stickers,
@@ -915,6 +917,7 @@ function Studio() {
       threshold,
       minSilence,
       noiseReduction,
+      noiseStrength,
       dropped,
       sceneElements,
       stickers,
@@ -955,6 +958,7 @@ function Studio() {
     setThreshold(p.threshold);
     setMinSilence(p.minSilence);
     setNoiseReduction(p.noiseReduction ?? false);
+    setNoiseStrength(p.noiseStrength ?? "normal");
     setDropped(p.dropped ?? []);
     setSceneElements(p.sceneElements ?? []);
     setStickers(p.stickers ?? []);
@@ -1801,7 +1805,14 @@ function Studio() {
     };
   };
   useSoundPlayback(videoRef, sounds, muted, videoUrl);
-  useDenoisedPlayback(videoRef, denoisedBuffer, muted, setWebAudioBlocked);
+  useDenoisedPlayback(
+    videoRef,
+    denoisedBuffer,
+    denoisedBuffer ? audioBufferRef.current : null,
+    DENOISE_DRY[noiseStrength],
+    muted,
+    setWebAudioBlocked,
+  );
   useEffect(() => {
     const v = videoRef.current;
     if (v && !skippingRef.current && !isPriming(v)) v.muted = videoMuted;
@@ -1865,6 +1876,7 @@ function Studio() {
         noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
         denoised: denoisedBuffer,
+        denoiseDry: DENOISE_DRY[noiseStrength],
         transitions,
         captions: type === "captions",
         signal,
@@ -2973,6 +2985,37 @@ function Studio() {
                                 ? "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว"
                                 : null}
                           </p>
+                        ) : null}
+                        {noiseReduction ? (
+                          <div
+                            role="radiogroup"
+                            aria-label="ความแรงของการลดเสียงรบกวน"
+                            className="mt-2 flex flex-wrap gap-1.5"
+                          >
+                            {(
+                              [
+                                { id: "light", label: "เบา (เหลือเสียงบรรยากาศ)" },
+                                { id: "normal", label: "ปกติ" },
+                                { id: "strong", label: "แรงสุด" },
+                              ] as { id: DenoiseStrength; label: string }[]
+                            ).map((option) => (
+                              <button
+                                key={option.id}
+                                type="button"
+                                role="radio"
+                                aria-checked={noiseStrength === option.id}
+                                onClick={() => setNoiseStrength(option.id)}
+                                className={cn(
+                                  "rounded-full border px-2.5 py-1 text-xs transition",
+                                  noiseStrength === option.id
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                                )}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
                         ) : null}
                       </div>
                     </div>
