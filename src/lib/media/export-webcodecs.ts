@@ -216,7 +216,11 @@ function onsetOf(buffer: AudioBuffer): number | null {
  * The recorder starts a little late, so the recording is lined up with the
  * mix by where the sound first begins in each.
  */
-async function recordMix(mix: AudioBuffer, total: number): Promise<CopiedAudio | null> {
+async function recordMix(
+  mix: AudioBuffer,
+  total: number,
+  onProgress?: (done: number) => void,
+): Promise<CopiedAudio | null> {
   if (typeof MediaRecorder === "undefined") return null;
   const mime = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus"].find((type) =>
     MediaRecorder.isTypeSupported(type),
@@ -257,9 +261,15 @@ async function recordMix(mix: AudioBuffer, total: number): Promise<CopiedAudio |
     source.buffer = padded;
     source.connect(destination);
     source.start();
+    const startedAt = ctx.currentTime;
+    // it plays in real time: show how far along it is
+    const ticker = window.setInterval(
+      () => onProgress?.(Math.min(1, (ctx.currentTime - startedAt) / padded.duration)),
+      250,
+    );
     await new Promise<void>((resolve) => {
       source.onended = () => resolve();
-    });
+    }).finally(() => window.clearInterval(ticker));
     await new Promise((r) => window.setTimeout(r, 150));
     recorder.stop();
     await stopped;
@@ -340,14 +350,20 @@ async function renderAudio(
     smoothCuts?: boolean;
     denoised?: AudioBuffer | null;
     denoiseStrength?: DenoiseStrength;
+    sourceAudio?: AudioBuffer | null;
   },
   sounds: SoundClip[] = [],
+  onProgress?: (done: number) => void,
 ): Promise<AudioBuffer | null> {
-  let decoded: AudioBuffer | null = null;
-  try {
-    decoded = await decodeAudioFromFile(source);
-  } catch {
-    decoded = null; // คลิปไม่มีแทร็กเสียง หรืออ่านไม่ได้
+  // The editor already decoded the clip's audio; reading a large phone video
+  // again was the slowest part of starting an export.
+  let decoded: AudioBuffer | null = options.sourceAudio ?? null;
+  if (!decoded) {
+    try {
+      decoded = await decodeAudioFromFile(source);
+    } catch {
+      decoded = null; // คลิปไม่มีแทร็กเสียง หรืออ่านไม่ได้
+    }
   }
   if (decoded && !decoded.length) decoded = null;
   // no sound of its own and no effects: picture only
@@ -357,7 +373,7 @@ async function renderAudio(
   const denoised =
     decoded && options.noiseReduction
       ? (options.denoised ??
-        (await denoiseBuffer(decoded, { strength: options.denoiseStrength }))?.buffer ??
+        (await denoiseBuffer(decoded, { strength: options.denoiseStrength, onProgress }))?.buffer ??
         null)
       : null;
   // the clean copy is mono; the file keeps the clip's own channel count
@@ -451,6 +467,8 @@ export async function exportWebCodecsVideo(
     denoised?: AudioBuffer | null;
     /** how hard to clean when the preview has not already (DENOISE_LIMIT_DB) */
     denoiseStrength?: DenoiseStrength;
+    /** the clip's audio as the editor already decoded it (saves reading the file again) */
+    sourceAudio?: AudioBuffer | null;
     transitions?: VideoTransitions;
     captions?: boolean;
     signal?: AbortSignal;
@@ -528,6 +546,7 @@ export async function exportWebCodecsVideo(
 
   try {
     const sourceBlob = await fetch(url).then((response) => response.blob());
+    onProgress?.(0.01);
     // Read size and duration from the file; fall back to the <video> element.
     const probe = await probeVideo(sourceBlob);
     if (!probe) await ensureVideoReady();
@@ -615,7 +634,9 @@ export async function exportWebCodecsVideo(
     const effects = options.sounds ?? [];
     const audioBuffer =
       canEncodeAudio || effects.length || options.noiseReduction
-        ? await renderAudio(sourceBlob, normalized, total, options, effects)
+        ? await renderAudio(sourceBlob, normalized, total, options, effects, (done) =>
+            onProgress?.(0.02 + done * 0.08),
+          )
         : null;
     const audioPick =
       audioBuffer && canEncodeAudio
@@ -628,7 +649,7 @@ export async function exportWebCodecsVideo(
     let recordedMix = false;
     if (!audioPick) {
       if (audioBuffer && (effects.length || options.noiseReduction))
-        copied = await recordMix(audioBuffer, total);
+        copied = await recordMix(audioBuffer, total, (done) => onProgress?.(0.1 + done * 0.06));
       recordedMix = !!copied;
       if (!copied) {
         soundsSkipped = effects.length > 0;
@@ -720,7 +741,7 @@ export async function exportWebCodecsVideo(
     // Keep the encoder's queue short: WebKit fails more often when flooded.
     const queueLimit = 4;
 
-    onProgress?.(0.01); // setup done: show that work has started
+    onProgress?.(0.16); // audio and setup done; the frames take the rest
 
     // ---- วนเฟรมทีละเฟรมตามเวลาที่ต้องการ ----
     let frameIndex = 0;
@@ -773,7 +794,8 @@ export async function exportWebCodecsVideo(
         await new Promise<void>((r) => window.setTimeout(r, 0));
         lastYield = performance.now();
       }
-      if ((frameIndex & 7) === 0) onProgress?.(Math.min(0.97, frameIndex / plan.length));
+      if ((frameIndex & 7) === 0)
+        onProgress?.(Math.min(0.97, 0.16 + (frameIndex / plan.length) * 0.81));
     }
     dbg(`frames=${frameIndex}`);
 
