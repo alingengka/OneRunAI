@@ -72,6 +72,8 @@ const cooledDown = new Map<string, number>();
 const COOLDOWN_MS = 10 * 60 * 1000;
 /** Models Google answered 404 for (retired), skipped for a day. */
 const RETIRED_MS = 24 * 60 * 60 * 1000;
+/** Google's "model is overloaded right now" (503 and friends) passes quickly. */
+const BUSY_MS = 60 * 1000;
 
 /**
  * Flash models this key can use right now, newest first (full models before
@@ -133,7 +135,9 @@ export async function geminiChat(
     options.fallback === false
       ? [model]
       : [model, ...GEMINI_FALLBACK_MODELS.filter((name) => name !== model)];
-  const models = chain.filter((name) => !isCoolingDown(name));
+  // When every model is resting, try them anyway rather than fail without asking.
+  const resting = chain.filter((name) => !isCoolingDown(name));
+  const models = resting.length ? resting : [...chain];
   let lastError: Error | null = null;
   let searched = options.fallback === false;
   for (let index = 0; ; index++) {
@@ -176,9 +180,11 @@ export async function geminiChat(
     const unknownModel =
       response.status === 404 || (response.status === 400 && /model/i.test(body));
     const limited = response.status === 429;
+    const busy = [500, 502, 503, 504].includes(response.status);
     if (limited) cooledDown.set(candidate, Date.now() + COOLDOWN_MS);
     else if (unknownModel) cooledDown.set(candidate, Date.now() + RETIRED_MS);
-    if (!unknownModel && !limited) break;
+    else if (busy) cooledDown.set(candidate, Date.now() + BUSY_MS);
+    if (!unknownModel && !limited && !busy) break;
     console.error(
       `[gemini] ${candidate} unavailable [${response.status}], trying next model`,
       body.slice(0, 200),
