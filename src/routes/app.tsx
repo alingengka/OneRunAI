@@ -1450,13 +1450,18 @@ function Studio() {
     setRendering(true);
     setJob({ label, ratio: 0 });
     try {
-      await work(controller.signal, (r) =>
-        setJob((current) => ({
-          label,
-          ratio: Math.max(0, Math.min(1, r)),
-          note: current?.note ?? null,
-        })),
-      );
+      // At most ~4 updates a second: each one re-renders the whole editor,
+      // which takes time away from the render itself.
+      let shown = -1;
+      let shownAt = 0;
+      await work(controller.signal, (r) => {
+        const ratio = Math.max(0, Math.min(1, r));
+        const now = performance.now();
+        if (ratio < 1 && now - shownAt < 250 && Math.abs(ratio - shown) < 0.05) return;
+        shown = ratio;
+        shownAt = now;
+        setJob((current) => ({ label, ratio, note: current?.note ?? null }));
+      });
     } catch (error) {
       if (
         controller.signal.aborted ||
@@ -1914,7 +1919,10 @@ function Studio() {
           const encoderTrouble =
             error instanceof Error && /เข้ารหัสวิดีโอ/.test(error.message) && !signal.aborted;
           if (!encoderTrouble || resolution === "720") throw error;
-          toast.info("เครื่องนี้เข้ารหัสความละเอียดนี้ไม่ไหว กำลังลองใหม่ที่ 720p…");
+          console.error("[export-webcodecs] encoder failed, retrying at 720p", error);
+          toast.info(
+            `เครื่องนี้เข้ารหัสความละเอียดนี้ไม่ไหว กำลังลองใหม่ที่ 720p… (${error instanceof Error ? error.message.slice(0, 160) : ""})`,
+          );
           result = await run({ ...shared, resolution: "720" });
         }
         if (signal.aborted) return;
@@ -2685,19 +2693,17 @@ function Studio() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-4 bg-background/90 px-6 text-center backdrop-blur-sm"
+          // Opaque, no blur and no spinner: a blurred backdrop is redrawn on
+          // every frame and competed with the render for the graphics chip.
+          className="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-4 bg-background px-6 text-center"
         >
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <div className="w-full max-w-xs">
             <div className="flex justify-between gap-3 text-sm font-semibold">
               <span className="truncate">{job.label}</span>
               <span>{Math.round((job.ratio ?? 0) * 100)}%</span>
             </div>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${(job.ratio ?? 0) * 100}%` }}
-              />
+              <div className="h-full bg-primary" style={{ width: `${(job.ratio ?? 0) * 100}%` }} />
             </div>
           </div>
           {job.note ? <p className="max-w-xs text-sm text-primary">{job.note}</p> : null}
