@@ -23,7 +23,7 @@ import { brollWindows, createBrollTrack, type BrollTrack } from "./broll";
 import { createStickerLayer, type Sticker, type StickerLayer } from "./stickers";
 import { openFrameReader, probeVideo, type FrameReader } from "./frame-reader";
 import { copyAudioPackets, type CopiedAudio } from "./audio-passthrough";
-import { loadSound, outputTimeOf, type SoundClip } from "../sounds";
+import { loadSound, outputTimeOf, restoreAudioSession, type SoundClip } from "../sounds";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
 type Progress = (ratio: number) => void;
@@ -331,6 +331,7 @@ async function recordMix(
     return null;
   } finally {
     void ctx.close().catch(() => undefined);
+    restoreAudioSession();
   }
 }
 

@@ -63,6 +63,7 @@ import {
   previewSound,
   retimeSoundClip,
   soundName,
+  restoreAudioSession,
   splitSoundClip,
   unlockAudio,
   type SoundClip,
@@ -1452,6 +1453,15 @@ function Studio() {
       jobAbort.current = null;
       setJob(null);
       setRendering(false);
+      // Hand the sound back to the preview, finished or cancelled: the render
+      // may have left the page's audio in record mode on iPhone.
+      restoreAudioSession();
+      const v = videoRef.current;
+      if (v) {
+        skippingRef.current = false;
+        v.playbackRate = 1;
+        v.muted = mutedRef.current;
+      }
     }
   };
 
