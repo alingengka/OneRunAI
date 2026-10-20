@@ -2,7 +2,9 @@ import { useEffect, useRef, type RefObject } from "react";
 import { soundContext } from "@/lib/sounds";
 
 /** How far the cleaned audio may drift from the picture before it is re-synced. */
-const MAX_DRIFT = 0.06;
+const MAX_DRIFT = 0.08;
+/** Re-syncs no more often than this, so a jittery clock cannot cause a restart loop. */
+const MIN_RESYNC_GAP = 2;
 
 /**
  * Plays the denoised copy of the clip's audio in place of the video's own
@@ -32,7 +34,14 @@ export function useDenoisedPlayback(
       at: number;
       from: number;
       rate: number;
+      /**
+       * How far the audio clock reads from the video clock just after starting.
+       * Phones report the two with a steady offset (output latency), so only a
+       * change from this is real drift.
+       */
+      offset: number | null;
     } | null = null;
+    let lastResync = 0;
     let master: GainNode | null = null;
     let generation = 0;
 
@@ -61,7 +70,7 @@ export function useDenoisedPlayback(
         ctx0 &&
         !video.paused &&
         live.rate === (video.playbackRate || 1) &&
-        Math.abs(heardAt(ctx0) - video.currentTime) < 0.03
+        Math.abs(heardAt(ctx0) - video.currentTime - (live.offset ?? 0)) < 0.03
       )
         return;
       stop();
@@ -98,14 +107,21 @@ export function useDenoisedPlayback(
         node.start(at, from);
         return node;
       };
-      live = { nodes: [play(buffer, master)], at, from, rate };
+      live = { nodes: [play(buffer, master)], at, from, rate, offset: null };
     };
 
     // The audio clock and the video clock run apart slowly: re-sync when they do.
     const check = () => {
       const ctx = soundContext();
       if (!live || !ctx || video.paused) return;
-      if (Math.abs(heardAt(ctx) - video.currentTime) > MAX_DRIFT) {
+      const gap = heardAt(ctx) - video.currentTime;
+      if (live.offset == null) {
+        live.offset = gap;
+        return;
+      }
+      const now = performance.now() / 1000;
+      if (Math.abs(gap - live.offset) > MAX_DRIFT && now - lastResync > MIN_RESYNC_GAP) {
+        lastResync = now;
         stop();
         void start();
       }
