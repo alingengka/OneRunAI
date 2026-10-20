@@ -59,6 +59,8 @@ import { Inspector, type ClipEditing } from "@/components/editor/Inspector";
 import { SoundLibrary } from "@/components/editor/SoundLibrary";
 import type { SoundEditing } from "@/components/editor/SoundClipControls";
 import { useSoundPlayback } from "@/hooks/use-sound-playback";
+import { useDenoisedPlayback } from "@/hooks/use-denoised-playback";
+import { denoiseBuffer } from "@/lib/media/denoise";
 import {
   makeSoundClip,
   previewSound,
@@ -401,6 +403,10 @@ function Studio() {
 
   const [captionsOn, setCaptionsOn] = useState(true);
   const [noiseReduction, setNoiseReduction] = useState(false);
+  /** The clip's audio with the noise removed, for the preview and the export. */
+  const [denoised, setDenoised] = useState<{ file: File; buffer: AudioBuffer } | null>(null);
+  /** 0–1 while the clean copy is being made, null otherwise. */
+  const [denoiseProgress, setDenoiseProgress] = useState<number | null>(null);
   const [resolution, setResolution] = useState<ExportResolution>("1080");
   const [exportFps, setExportFps] = useState(30);
   const [exportType, setExportType] = useState<ExportType>("captions");
@@ -665,8 +671,12 @@ function Studio() {
   useEffect(() => {
     coarseTimeRef.current.next = -Infinity; // re-evaluate against the new list
   }, [boundaries]);
-  const mutedRef = useRef(muted);
-  mutedRef.current = muted;
+  const denoisedBuffer =
+    noiseReduction && denoised && denoised.file === file ? denoised.buffer : null;
+  // While the cleaned audio plays, the video's own (noisy) sound stays muted.
+  const videoMuted = muted || !!denoisedBuffer;
+  const mutedRef = useRef(videoMuted);
+  mutedRef.current = videoMuted;
   /** Fast-forwarding through a cut right now (muted, high playbackRate). */
   const skippingRef = useRef(false);
   useEffect(() => {
@@ -1787,6 +1797,43 @@ function Studio() {
     };
   };
   useSoundPlayback(videoRef, sounds, muted, videoUrl);
+  useDenoisedPlayback(videoRef, denoisedBuffer, muted);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v && !skippingRef.current && !isPriming(v)) v.muted = videoMuted;
+  }, [videoMuted]);
+
+  // Turning noise reduction on cleans the whole clip once, so the preview can
+  // play it and the export can reuse it.
+  useEffect(() => {
+    if (!noiseReduction || !file || denoised?.file === file) return;
+    const controller = new AbortController();
+    setDenoiseProgress(0);
+    void (async () => {
+      try {
+        const source = audioBufferRef.current ?? (await decodeAudioFromFile(file));
+        audioBufferRef.current ??= source;
+        const buffer = await denoiseBuffer(source, {
+          signal: controller.signal,
+          onProgress: setDenoiseProgress,
+        });
+        if (controller.signal.aborted) return;
+        if (buffer) setDenoised({ file, buffer });
+        else toast.error("โหลดตัวลดเสียงรบกวนไม่ได้ ไฟล์ส่งออกจะใช้ตัวกรองแบบเดิมแทน");
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("[denoise] preview copy failed", error);
+          toast.error("เตรียมเสียงที่ลดเสียงรบกวนไม่สำเร็จ");
+        }
+      } finally {
+        if (!controller.signal.aborted) setDenoiseProgress(null);
+      }
+    })();
+    return () => {
+      controller.abort();
+      setDenoiseProgress(null);
+    };
+  }, [noiseReduction, file, denoised]);
 
   const exportFinalVideo = (type: ExportType = exportType) => {
     if (type === "srt") {
@@ -1813,6 +1860,7 @@ function Studio() {
         noiseReduction,
         noiseFloor: noiseFloorRef.current,
         smoothCuts: true,
+        denoised: denoisedBuffer,
         transitions,
         captions: type === "captions",
         signal,
@@ -2911,8 +2959,16 @@ function Studio() {
                         <p className="text-sm font-semibold">ลดเสียงรบกวน</p>
                         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
                           ใช้ AI ลบเสียงพัดลม รถ ลม และเสียงอื้อรอบตัว ให้เหลือแต่เสียงพูด
-                          (มีผลในไฟล์ที่ส่งออก)
                         </p>
+                        {noiseReduction && file ? (
+                          <p className="mt-1 text-xs text-primary" role="status">
+                            {denoiseProgress != null
+                              ? `กำลังเตรียมเสียงสำหรับพรีวิว… ${Math.round(denoiseProgress * 100)}%`
+                              : denoisedBuffer
+                                ? "พรีวิวกำลังเล่นเสียงที่ลดเสียงรบกวนแล้ว"
+                                : null}
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                     <Switch
@@ -3702,7 +3758,7 @@ function Studio() {
                   onClick={() => {
                     const next = !muted;
                     setMuted(next);
-                    if (videoRef.current) videoRef.current.muted = next;
+                    if (videoRef.current) videoRef.current.muted = next || !!denoisedBuffer;
                   }}
                   disabled={!videoUrl}
                   aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}

@@ -334,7 +334,12 @@ async function renderAudio(
   source: Blob,
   segments: Segment[],
   total: number,
-  options: { noiseReduction?: boolean; noiseFloor?: number; smoothCuts?: boolean },
+  options: {
+    noiseReduction?: boolean;
+    noiseFloor?: number;
+    smoothCuts?: boolean;
+    denoised?: AudioBuffer | null;
+  },
   sounds: SoundClip[] = [],
 ): Promise<AudioBuffer | null> {
   let decoded: AudioBuffer | null = null;
@@ -347,12 +352,15 @@ async function renderAudio(
   // no sound of its own and no effects: picture only
   if (!decoded && !sounds.length) return null;
   // Real noise removal; when it cannot run, the older filters and gate below stand in.
-  const denoised = decoded && options.noiseReduction ? await denoiseBuffer(decoded) : null;
+  // (the preview may already have cleaned the clip's audio: no need to redo it)
+  const denoised =
+    decoded && options.noiseReduction ? (options.denoised ?? (await denoiseBuffer(decoded))) : null;
+  // the clean copy is mono; the file keeps the clip's own channel count
+  const channels = decoded ? Math.min(2, Math.max(1, decoded.numberOfChannels)) : 2;
   if (denoised) decoded = denoised;
   const filters = !!options.noiseReduction && !denoised;
 
   const sampleRate = decoded?.sampleRate ?? 48000;
-  const channels = decoded ? Math.min(2, Math.max(1, decoded.numberOfChannels)) : 2;
   const offline = new OfflineAudioContext(
     channels,
     Math.max(1, Math.ceil(total * sampleRate)),
@@ -434,6 +442,8 @@ export async function exportWebCodecsVideo(
     noiseReduction?: boolean;
     noiseFloor?: number;
     smoothCuts?: boolean;
+    /** the clip's audio already denoised by the preview (source timeline) */
+    denoised?: AudioBuffer | null;
     transitions?: VideoTransitions;
     captions?: boolean;
     signal?: AbortSignal;

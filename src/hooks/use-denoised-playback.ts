@@ -1,0 +1,118 @@
+import { useEffect, useRef, type RefObject } from "react";
+import { soundContext } from "@/lib/sounds";
+
+/** How far the cleaned audio may drift from the picture before it is re-synced. */
+const MAX_DRIFT = 0.06;
+
+/**
+ * Plays the denoised copy of the clip's audio in place of the video's own
+ * sound (the caller mutes the video while `buffer` is set). Like the sound
+ * effects, it is (re)started from the video's current time whenever the video
+ * plays, seeks or changes speed, and stops on pause; racing through a cut at
+ * high speed stays silent, as the muted video does.
+ */
+export function useDenoisedPlayback(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  buffer: AudioBuffer | null,
+  muted: boolean,
+) {
+  const masterRef = useRef<GainNode | null>(null);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !buffer) return;
+    let live: { node: AudioBufferSourceNode; at: number; from: number; rate: number } | null = null;
+    let master: GainNode | null = null;
+    let generation = 0;
+
+    const stop = () => {
+      generation++;
+      if (!live) return;
+      try {
+        live.node.stop();
+      } catch {
+        /* already ended */
+      }
+      live = null;
+    };
+
+    /** Where the playing audio is now, in clip seconds. */
+    const heardAt = (ctx: AudioContext) =>
+      live ? live.from + (ctx.currentTime - live.at) * live.rate : NaN;
+
+    const start = async () => {
+      // "seeked" and "playing" often both fire: keep audio that is already in step
+      const ctx0 = soundContext();
+      if (
+        live &&
+        ctx0 &&
+        !video.paused &&
+        live.rate === (video.playbackRate || 1) &&
+        Math.abs(heardAt(ctx0) - video.currentTime) < 0.03
+      )
+        return;
+      stop();
+      const mine = generation;
+      if (video.paused || video.ended || video.playbackRate > 2) return;
+      const ctx = soundContext();
+      if (!ctx) return;
+      if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
+      if (mine !== generation || video.paused) return;
+      if (!master) {
+        master = ctx.createGain();
+        master.connect(ctx.destination);
+        masterRef.current = master;
+      }
+      master.gain.value = mutedRef.current ? 0 : 1;
+      const from = video.currentTime;
+      if (from >= buffer.duration) return;
+      const rate = video.playbackRate || 1;
+      const node = ctx.createBufferSource();
+      node.buffer = buffer;
+      node.playbackRate.value = rate;
+      node.connect(master);
+      node.start(ctx.currentTime, from);
+      live = { node, at: ctx.currentTime, from, rate };
+    };
+
+    // The audio clock and the video clock run apart slowly: re-sync when they do.
+    const check = () => {
+      const ctx = soundContext();
+      if (!live || !ctx || video.paused) return;
+      if (Math.abs(heardAt(ctx) - video.currentTime) > MAX_DRIFT) {
+        stop();
+        void start();
+      }
+    };
+
+    const restart = () => void start();
+    video.addEventListener("playing", restart);
+    video.addEventListener("seeked", restart);
+    video.addEventListener("ratechange", restart);
+    video.addEventListener("timeupdate", check);
+    video.addEventListener("pause", stop);
+    video.addEventListener("seeking", stop);
+    video.addEventListener("waiting", stop);
+    video.addEventListener("ended", stop);
+    void start(); // turned on while already playing
+    return () => {
+      stop();
+      video.removeEventListener("playing", restart);
+      video.removeEventListener("seeked", restart);
+      video.removeEventListener("ratechange", restart);
+      video.removeEventListener("timeupdate", check);
+      video.removeEventListener("pause", stop);
+      video.removeEventListener("seeking", stop);
+      video.removeEventListener("waiting", stop);
+      video.removeEventListener("ended", stop);
+      master?.disconnect();
+      masterRef.current = null;
+    };
+  }, [videoRef, buffer]);
+
+  useEffect(() => {
+    if (masterRef.current) masterRef.current.gain.value = muted ? 0 : 1;
+  }, [muted]);
+}
