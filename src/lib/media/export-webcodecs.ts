@@ -339,6 +339,7 @@ async function renderAudio(
     noiseFloor?: number;
     smoothCuts?: boolean;
     denoised?: AudioBuffer | null;
+    denoiseDry?: number;
   },
   sounds: SoundClip[] = [],
 ): Promise<AudioBuffer | null> {
@@ -357,6 +358,8 @@ async function renderAudio(
     decoded && options.noiseReduction ? (options.denoised ?? (await denoiseBuffer(decoded))) : null;
   // the clean copy is mono; the file keeps the clip's own channel count
   const channels = decoded ? Math.min(2, Math.max(1, decoded.numberOfChannels)) : 2;
+  // a little of the original stays under the cleaned voice (see DENOISE_DRY)
+  const dry = denoised && decoded && options.denoiseDry ? decoded : null;
   if (denoised) decoded = denoised;
   const filters = !!options.noiseReduction && !denoised;
 
@@ -398,6 +401,14 @@ async function renderAudio(
     source.buffer = decoded;
     const gain = offline.createGain();
     source.connect(gain).connect(highpass);
+    if (dry) {
+      const original = offline.createBufferSource();
+      original.buffer = dry;
+      const level = offline.createGain();
+      level.gain.value = options.denoiseDry ?? 0;
+      original.connect(level).connect(gain);
+      original.start(cursor, segment.start, length);
+    }
     if (options.smoothCuts !== false) {
       // เฟดสั้น ๆ ตรงรอยตัด กันเสียงป็อป (ตรงกับพฤติกรรมเดิม)
       const fade = Math.min(0.02, length / 4);
@@ -444,6 +455,8 @@ export async function exportWebCodecsVideo(
     smoothCuts?: boolean;
     /** the clip's audio already denoised by the preview (source timeline) */
     denoised?: AudioBuffer | null;
+    /** how loud the original stays under the cleaned voice (DENOISE_DRY) */
+    denoiseDry?: number;
     transitions?: VideoTransitions;
     captions?: boolean;
     signal?: AbortSignal;

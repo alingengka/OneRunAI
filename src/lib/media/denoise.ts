@@ -5,6 +5,20 @@
  * speech, not just the pauses between words.
  */
 
+export type DenoiseStrength = "light" | "normal" | "strong";
+
+/**
+ * How loud the original sound stays under the cleaned voice. Removing every
+ * trace of background leaves pauses in dead digital silence and speech that
+ * pops in and out of it, which sounds strange; a little of the original keeps
+ * a natural room tone and hides the model's small artefacts.
+ */
+export const DENOISE_DRY: Record<DenoiseStrength, number> = {
+  light: 0.3, // about -10 dB of the original
+  normal: 0.15, // about -16 dB
+  strong: 0,
+};
+
 const RATE = 48_000; // RNNoise works on 48 kHz audio in 10 ms frames
 const PCM_SCALE = 32768; // it expects 16-bit sample values in float form
 
