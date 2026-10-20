@@ -13,7 +13,7 @@ import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { decodeAudioFromFile, type Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
-import { denoiseBuffer, type DenoiseStrength } from "./denoise";
+import { denoiseBuffer } from "./denoise";
 import {
   createBurnRenderer,
   ensureCaptionFonts,
@@ -349,7 +349,6 @@ async function renderAudio(
     noiseFloor?: number;
     smoothCuts?: boolean;
     denoised?: AudioBuffer | null;
-    denoiseStrength?: DenoiseStrength;
     sourceAudio?: AudioBuffer | null;
   },
   sounds: SoundClip[] = [],
@@ -372,9 +371,7 @@ async function renderAudio(
   // (the preview may already have cleaned the clip's audio: no need to redo it)
   const denoised =
     decoded && options.noiseReduction
-      ? (options.denoised ??
-        (await denoiseBuffer(decoded, { strength: options.denoiseStrength, onProgress }))?.buffer ??
-        null)
+      ? (options.denoised ?? (await denoiseBuffer(decoded, { onProgress })))
       : null;
   // the clean copy is mono; the file keeps the clip's own channel count
   const channels = decoded ? Math.min(2, Math.max(1, decoded.numberOfChannels)) : 2;
@@ -465,10 +462,10 @@ export async function exportWebCodecsVideo(
     smoothCuts?: boolean;
     /** the clip's audio already denoised by the preview (source timeline) */
     denoised?: AudioBuffer | null;
-    /** how hard to clean when the preview has not already (DENOISE_LIMIT_DB) */
-    denoiseStrength?: DenoiseStrength;
     /** the clip's audio as the editor already decoded it (saves reading the file again) */
     sourceAudio?: AudioBuffer | null;
+    /** a note for the person about a slow step in progress (null when it ends) */
+    onStage?: (note: string | null) => void;
     transitions?: VideoTransitions;
     captions?: boolean;
     signal?: AbortSignal;
@@ -648,8 +645,11 @@ export async function exportWebCodecsVideo(
     let soundsSkipped = false;
     let recordedMix = false;
     if (!audioPick) {
-      if (audioBuffer && (effects.length || options.noiseReduction))
+      if (audioBuffer && (effects.length || options.noiseReduction)) {
+        options.onStage?.("ระบบกำลังบันทึกเสียงลงไฟล์ ใช้เวลาประมาณเท่าความยาวคลิป");
         copied = await recordMix(audioBuffer, total, (done) => onProgress?.(0.1 + done * 0.06));
+        options.onStage?.(null);
+      }
       recordedMix = !!copied;
       if (!copied) {
         soundsSkipped = effects.length > 0;
