@@ -13,7 +13,7 @@ import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { decodeAudioFromFile, type Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
-import { denoiseBuffer } from "./denoise";
+import { denoiseBuffer, type DenoiseStrength } from "./denoise";
 import {
   createBurnRenderer,
   ensureCaptionFonts,
@@ -339,7 +339,7 @@ async function renderAudio(
     noiseFloor?: number;
     smoothCuts?: boolean;
     denoised?: AudioBuffer | null;
-    denoiseDry?: number;
+    denoiseStrength?: DenoiseStrength;
   },
   sounds: SoundClip[] = [],
 ): Promise<AudioBuffer | null> {
@@ -355,11 +355,13 @@ async function renderAudio(
   // Real noise removal; when it cannot run, the older filters and gate below stand in.
   // (the preview may already have cleaned the clip's audio: no need to redo it)
   const denoised =
-    decoded && options.noiseReduction ? (options.denoised ?? (await denoiseBuffer(decoded))) : null;
+    decoded && options.noiseReduction
+      ? (options.denoised ??
+        (await denoiseBuffer(decoded, { strength: options.denoiseStrength }))?.buffer ??
+        null)
+      : null;
   // the clean copy is mono; the file keeps the clip's own channel count
   const channels = decoded ? Math.min(2, Math.max(1, decoded.numberOfChannels)) : 2;
-  // a little of the original stays under the cleaned voice (see DENOISE_DRY)
-  const dry = denoised && decoded && options.denoiseDry ? decoded : null;
   if (denoised) decoded = denoised;
   const filters = !!options.noiseReduction && !denoised;
 
@@ -401,14 +403,6 @@ async function renderAudio(
     source.buffer = decoded;
     const gain = offline.createGain();
     source.connect(gain).connect(highpass);
-    if (dry) {
-      const original = offline.createBufferSource();
-      original.buffer = dry;
-      const level = offline.createGain();
-      level.gain.value = options.denoiseDry ?? 0;
-      original.connect(level).connect(gain);
-      original.start(cursor, segment.start, length);
-    }
     if (options.smoothCuts !== false) {
       // เฟดสั้น ๆ ตรงรอยตัด กันเสียงป็อป (ตรงกับพฤติกรรมเดิม)
       const fade = Math.min(0.02, length / 4);
@@ -455,8 +449,8 @@ export async function exportWebCodecsVideo(
     smoothCuts?: boolean;
     /** the clip's audio already denoised by the preview (source timeline) */
     denoised?: AudioBuffer | null;
-    /** how loud the original stays under the cleaned voice (DENOISE_DRY) */
-    denoiseDry?: number;
+    /** how hard to clean when the preview has not already (DENOISE_LIMIT_DB) */
+    denoiseStrength?: DenoiseStrength;
     transitions?: VideoTransitions;
     captions?: boolean;
     signal?: AbortSignal;
