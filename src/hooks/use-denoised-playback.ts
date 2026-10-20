@@ -15,7 +15,11 @@ export function useDenoisedPlayback(
   videoRef: RefObject<HTMLVideoElement | null>,
   buffer: AudioBuffer | null,
   muted: boolean,
+  /** told whether Web Audio is actually running, so a refusal never leaves silence */
+  onBlocked: (blocked: boolean) => void,
 ) {
+  const onBlockedRef = useRef(onBlocked);
+  onBlockedRef.current = onBlocked;
   const masterRef = useRef<GainNode | null>(null);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
@@ -58,8 +62,17 @@ export function useDenoisedPlayback(
       if (video.paused || video.ended || video.playbackRate > 2) return;
       const ctx = soundContext();
       if (!ctx) return;
-      if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
+      if (ctx.state !== "running") {
+        // a refused resume can hang instead of failing: give it a moment
+        await Promise.race([
+          ctx.resume().catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, 600)),
+        ]);
+      }
       if (mine !== generation || video.paused) return;
+      const running = ctx.state === "running";
+      onBlockedRef.current(!running);
+      if (!running) return;
       if (!master) {
         master = ctx.createGain();
         master.connect(ctx.destination);

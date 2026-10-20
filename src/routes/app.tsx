@@ -67,6 +67,7 @@ import {
   retimeSoundClip,
   soundName,
   splitSoundClip,
+  unlockAudio,
   type SoundClip,
 } from "@/lib/sounds";
 import { computePeaks, makeThumbnails } from "@/lib/media/timeline-assets";
@@ -673,8 +674,10 @@ function Studio() {
   }, [boundaries]);
   const denoisedBuffer =
     noiseReduction && denoised && denoised.file === file ? denoised.buffer : null;
+  /** The browser refused to play Web Audio: keep the video's own sound instead of silence. */
+  const [webAudioBlocked, setWebAudioBlocked] = useState(false);
   // While the cleaned audio plays, the video's own (noisy) sound stays muted.
-  const videoMuted = muted || !!denoisedBuffer;
+  const videoMuted = muted || (!!denoisedBuffer && !webAudioBlocked);
   const mutedRef = useRef(videoMuted);
   mutedRef.current = videoMuted;
   /** Fast-forwarding through a cut right now (muted, high playbackRate). */
@@ -1259,6 +1262,7 @@ function Studio() {
     if (!video) return;
     video.currentTime = Math.max(0, start - 0.18);
     markUserPlay(video);
+    unlockAudio();
     void video.play();
     setPlaying(true);
     window.setTimeout(
@@ -1797,7 +1801,7 @@ function Studio() {
     };
   };
   useSoundPlayback(videoRef, sounds, muted, videoUrl);
-  useDenoisedPlayback(videoRef, denoisedBuffer, muted);
+  useDenoisedPlayback(videoRef, denoisedBuffer, muted, setWebAudioBlocked);
   useEffect(() => {
     const v = videoRef.current;
     if (v && !skippingRef.current && !isPriming(v)) v.muted = videoMuted;
@@ -2096,6 +2100,7 @@ function Studio() {
     // The muted warm-up counts as paused: the person wants to start playing.
     if (v.paused || isPriming(v)) {
       markUserPlay(v);
+      unlockAudio(); // the cleaned audio and sound effects play through Web Audio
       seeker.flush();
       v.muted = mutedRef.current; // the warm-up plays muted
       playIntentRef.current = true;
@@ -3758,7 +3763,8 @@ function Studio() {
                   onClick={() => {
                     const next = !muted;
                     setMuted(next);
-                    if (videoRef.current) videoRef.current.muted = next || !!denoisedBuffer;
+                    if (videoRef.current)
+                      videoRef.current.muted = next || (!!denoisedBuffer && !webAudioBlocked);
                   }}
                   disabled={!videoUrl}
                   aria-label={muted ? "เปิดเสียง" : "ปิดเสียง"}

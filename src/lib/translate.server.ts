@@ -128,7 +128,14 @@ export async function translateLinesHandler({ data }: { data: TranslationInput }
   });
 
   if (items.length) {
-    const translated = await translateBatch(items, data.target);
+    const translated = await translateBatch(items, data.target).catch((error: unknown) => {
+      console.error("[translate] failed", error);
+      // Google's overload / quota answers are temporary: say so plainly.
+      if (error instanceof Error && /\[(429|5\d\d)\]/.test(error.message)) {
+        throw new Error("AI แปลภาษามีผู้ใช้งานเยอะชั่วคราว ลองกดแปลอีกครั้งในอีกสักครู่");
+      }
+      throw error;
+    });
     items.forEach((item, index) => {
       const originalIndex = Number(item.id.slice("line_".length));
       output[originalIndex] = translated[index] ?? data.lines[originalIndex] ?? "";

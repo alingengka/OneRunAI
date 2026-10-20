@@ -282,8 +282,26 @@ export function soundContext(): AudioContext | null {
     window.AudioContext ??
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctx) return null;
+  // iPhone plays Web Audio as "ambient" sound, silenced by the ring/silent
+  // switch even though the video's own sound is not; ask for media playback.
+  const session = (navigator as { audioSession?: { type: string } }).audioSession;
+  if (session) session.type = "playback";
   shared = new Ctx();
   return shared;
+}
+
+/**
+ * Call from a tap: iPhone keeps an AudioContext silent until it is resumed
+ * and has played something inside a user gesture.
+ */
+export function unlockAudio(): void {
+  const ctx = soundContext();
+  if (!ctx) return;
+  if (ctx.state !== "running") void ctx.resume().catch(() => undefined);
+  const silent = ctx.createBufferSource();
+  silent.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+  silent.connect(ctx.destination);
+  silent.start();
 }
 
 let previewing: AudioBufferSourceNode | null = null;
