@@ -2910,7 +2910,8 @@ function Studio() {
                       <div className="min-w-0">
                         <p className="text-sm font-semibold">ลดเสียงรบกวน</p>
                         <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                          กรองเสียงต่ำ เสียงฮัม และปรับระดับเสียงพูดให้นิ่งขึ้น
+                          ใช้ AI ลบเสียงพัดลม รถ ลม และเสียงอื้อรอบตัว ให้เหลือแต่เสียงพูด
+                          (มีผลในไฟล์ที่ส่งออก)
                         </p>
                       </div>
                     </div>

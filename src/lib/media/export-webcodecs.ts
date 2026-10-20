@@ -13,6 +13,7 @@ import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { decodeAudioFromFile, type Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createNoiseGate } from "./noise-gate";
+import { denoiseBuffer } from "./denoise";
 import {
   createBurnRenderer,
   ensureCaptionFonts,
@@ -345,6 +346,10 @@ async function renderAudio(
   if (decoded && !decoded.length) decoded = null;
   // no sound of its own and no effects: picture only
   if (!decoded && !sounds.length) return null;
+  // Real noise removal; when it cannot run, the older filters and gate below stand in.
+  const denoised = decoded && options.noiseReduction ? await denoiseBuffer(decoded) : null;
+  if (denoised) decoded = denoised;
+  const filters = !!options.noiseReduction && !denoised;
 
   const sampleRate = decoded?.sampleRate ?? 48000;
   const channels = decoded ? Math.min(2, Math.max(1, decoded.numberOfChannels)) : 2;
@@ -356,16 +361,16 @@ async function renderAudio(
 
   const highpass = offline.createBiquadFilter();
   highpass.type = "highpass";
-  highpass.frequency.value = options.noiseReduction ? 95 : 20;
+  highpass.frequency.value = filters ? 95 : denoised ? 80 : 20;
   const lowpass = offline.createBiquadFilter();
   lowpass.type = "lowpass";
-  lowpass.frequency.value = options.noiseReduction ? 10500 : 20000;
+  lowpass.frequency.value = filters ? 10500 : 20000;
   const compressor = offline.createDynamicsCompressor();
-  compressor.threshold.value = options.noiseReduction ? -38 : -24;
-  compressor.ratio.value = options.noiseReduction ? 5 : 2;
+  compressor.threshold.value = filters ? -38 : -24;
+  compressor.ratio.value = filters ? 5 : 2;
 
   const gate =
-    options.noiseReduction && options.noiseFloor
+    filters && options.noiseFloor
       ? await createNoiseGate(offline, { noiseFloor: options.noiseFloor })
       : null;
 
@@ -592,7 +597,7 @@ export async function exportWebCodecsVideo(
     const canEncodeAudio = typeof AudioEncoder !== "undefined" && typeof AudioData !== "undefined";
     const effects = options.sounds ?? [];
     const audioBuffer =
-      canEncodeAudio || effects.length
+      canEncodeAudio || effects.length || options.noiseReduction
         ? await renderAudio(sourceBlob, normalized, total, options, effects)
         : null;
     const audioPick =
@@ -600,12 +605,13 @@ export async function exportWebCodecsVideo(
         ? await pickAudioCodec(audioBuffer.sampleRate, Math.min(2, audioBuffer.numberOfChannels))
         : null;
     // No AudioEncoder (older iPhone Safari): record the mix when there are
-    // sound effects, else copy the clip's own audio.
+    // sound effects or noise removal, else copy the clip's own audio.
     let copied: CopiedAudio | null = null;
     let soundsSkipped = false;
     let recordedMix = false;
     if (!audioPick) {
-      if (audioBuffer && effects.length) copied = await recordMix(audioBuffer, total);
+      if (audioBuffer && (effects.length || options.noiseReduction))
+        copied = await recordMix(audioBuffer, total);
       recordedMix = !!copied;
       if (!copied) {
         soundsSkipped = effects.length > 0;
