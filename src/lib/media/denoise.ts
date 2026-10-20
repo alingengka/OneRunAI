@@ -9,12 +9,12 @@ const RATE = 48_000; // RNNoise works on 48 kHz audio in 10 ms frames
 const PCM_SCALE = 32768; // it expects 16-bit sample values in float form
 
 /**
- * A denoised copy of `input` at 48 kHz (up to 2 identical channels), or null when the
+ * A denoised mono copy of `input` at 48 kHz, or null when the
  * model could not load, so the caller can keep the plain filters.
  */
 export async function denoiseBuffer(
   input: AudioBuffer,
-  signal?: AbortSignal,
+  { signal, onProgress }: { signal?: AbortSignal; onProgress?: (done: number) => void } = {},
 ): Promise<AudioBuffer | null> {
   let rnnoise: Awaited<ReturnType<typeof import("@shiguredo/rnnoise-wasm").Rnnoise.load>>;
   try {
@@ -29,8 +29,8 @@ export async function denoiseBuffer(
   const resampled = input.sampleRate === RATE ? input : await resample(input, channels);
   const frameSize = rnnoise.frameSize;
   const length = resampled.length;
-  // Phone speech is effectively mono: clean one mixed channel (half the work)
-  // and put it on every output channel.
+  // Phone speech is effectively mono: clean one mixed channel (half the work
+  // and memory); playback spreads it over both speakers.
   const source = new Float32Array(length);
   for (let c = 0; c < channels; c++) {
     const data = resampled.getChannelData(c);
@@ -59,6 +59,7 @@ export async function denoiseBuffer(
         // keep the page responsive on long clips
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
         if (signal?.aborted) throw new DOMException("ยกเลิกการเรนเดอร์", "AbortError");
+        onProgress?.(Math.min(1, start / length));
         lastYield = performance.now();
       }
     }
@@ -69,8 +70,8 @@ export async function denoiseBuffer(
   // voice back to its old level (at most +6 dB, so leftover hiss is not pumped up).
   const gain = Math.min(2, Math.max(1, speechLevel(source) / Math.max(1e-6, speechLevel(target))));
   if (gain > 1.01) for (let i = 0; i < length; i++) target[i]! *= gain;
-  const output = new AudioBuffer({ numberOfChannels: channels, length, sampleRate: RATE });
-  for (let c = 0; c < channels; c++) output.copyToChannel(target, c);
+  const output = new AudioBuffer({ numberOfChannels: 1, length, sampleRate: RATE });
+  output.copyToChannel(target, 0);
   return output;
 }
 
