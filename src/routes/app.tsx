@@ -1447,6 +1447,10 @@ function Studio() {
   ) => {
     const controller = new AbortController();
     jobAbort.current = controller;
+    // the preview would compete with the job for the phone's video hardware
+    videoRef.current?.pause();
+    playIntentRef.current = false;
+    setPlaying(false);
     setRendering(true);
     setJob({ label, ratio: 0 });
     try {
@@ -2678,25 +2682,33 @@ function Studio() {
       )}
 
       {job && (
-        <div className="mx-auto w-full max-w-[1500px] shrink-0 px-2 pt-2 sm:px-6 sm:pt-4">
-          <div className="flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 px-3 py-1.5 sm:p-3">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <div className="min-w-0 flex-1">
-              <div className="flex justify-between text-xs font-medium">
-                <span className="truncate">{job.label}</span>
-                <span>{Math.round((job.ratio ?? 0) * 100)}%</span>
-              </div>
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                <div
-                  className="h-full bg-primary transition-all"
-                  style={{ width: `${(job.ratio ?? 0) * 100}%` }}
-                />
-              </div>
+        // Covers the editor while a render runs: playing the preview or
+        // switching panels competes with the render for the phone and made
+        // the page half-draw (and the render slower).
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-4 bg-background/90 px-6 text-center backdrop-blur-sm"
+        >
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="w-full max-w-xs">
+            <div className="flex justify-between gap-3 text-sm font-semibold">
+              <span className="truncate">{job.label}</span>
+              <span>{Math.round((job.ratio ?? 0) * 100)}%</span>
             </div>
-            <Button size="sm" variant="ghost" onClick={cancelJob}>
-              ยกเลิก
-            </Button>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full bg-primary transition-all"
+                style={{ width: `${(job.ratio ?? 0) * 100}%` }}
+              />
+            </div>
           </div>
+          <p className="max-w-xs text-sm text-muted-foreground">
+            กรุณาอย่าปิดหน้านี้หรือสลับไปแอปอื่นจนกว่าจะเสร็จ
+          </p>
+          <Button variant="ghost" size="sm" onClick={cancelJob}>
+            ยกเลิก
+          </Button>
         </div>
       )}
 
