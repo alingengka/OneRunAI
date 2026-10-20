@@ -237,19 +237,15 @@ export type BurnRenderOptions = {
 export type VideoTransitions = {
   /** fade up from black over the first half second */
   fadeIn: boolean;
-  /** a short dip to black on every cut between kept parts */
-  cutDip: boolean;
   /** fade down to black over the last half second */
   fadeOut: boolean;
 };
 
 export const DEFAULT_TRANSITIONS: VideoTransitions = {
   fadeIn: false,
-  cutDip: true,
   fadeOut: false,
 };
 
-const FADE = 0.08; // วินาทีของ cross-fade ภาพตรงรอยตัด
 const OPEN_CLOSE_FADE = 0.5;
 
 export type BurnRenderer = {
@@ -738,8 +734,8 @@ export function createBurnRenderer(
     } else {
       ctx.drawImage(image, fit.x, fit.y, fit.w, fit.h);
     }
-    // The very start and end of the video are not cuts: only the chosen
-    // fade-in / fade-out darkens them (an unasked dip there looked like a glitch).
+    // Only the chosen fade-in / fade-out darken the picture; cuts stay clean
+    // (a short dip to black at each cut looked like a glitch on phones).
     const first = options.segments?.[0];
     const last = options.segments?.[options.segments.length - 1];
     const opens = first ? seg.start < first.end : false;
@@ -747,12 +743,6 @@ export function createBurnRenderer(
     const into = time - seg.start;
     const left = seg.end - time;
     let dark = 0;
-    if (options.smoothCuts !== false && transitions.cutDip) {
-      // ช่วงสั้นได้ fade สั้นลงตามสัดส่วน ไม่งั้นคลิป 0.2s จะดำเกือบทั้งช่วง
-      const fade = Math.max(0.02, Math.min(FADE, (seg.end - seg.start) / 5));
-      const edge = Math.min(opens ? Infinity : into, closes ? Infinity : left);
-      if (edge < fade) dark = Math.max(dark, (1 - edge / fade) * 0.85);
-    }
     const openClose = Math.min(OPEN_CLOSE_FADE, (seg.end - seg.start) / 2);
     if (opens && transitions.fadeIn) dark = Math.max(dark, 1 - into / openClose);
     if (closes && transitions.fadeOut) dark = Math.max(dark, 1 - left / openClose);
