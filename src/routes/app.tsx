@@ -980,22 +980,31 @@ function Studio() {
   /** The caption text a translation is made from (and checked against). */
   const subtitleSource = (group: CaptionGroup) =>
     joinCaptionWords(group.words, true).replace(/\n/g, " ");
-  const translateCaptions = async (target: LangCode) => {
+  const translateCaptions = async (target: LangCode, { quiet = false } = {}) => {
     const captionGroups = groups.filter((g) => !g.free && g.id);
     if (!captionGroups.length) {
-      toast.error("ยังไม่มีซับให้แปล");
+      if (!quiet) toast.error("ยังไม่มีซับให้แปล");
       return;
     }
     // Same language again: only lines that are new or whose caption changed.
-    const keep = subtitles?.lang === target ? subtitles.lines : {};
+    // A line split differently (words per line changed) gets a new id, so a
+    // line with the same words reuses the translation made for it before.
+    const keep = { ...(subtitles?.lang === target ? subtitles.lines : {}) };
+    const bySource = new Map(Object.values(keep).map((line) => [line.source, line]));
+    for (const g of captionGroups) {
+      const line =
+        keep[g.id!]?.source === subtitleSource(g) ? null : bySource.get(subtitleSource(g));
+      if (line) keep[g.id!] = line;
+    }
     const todo = captionGroups.filter((g) => keep[g.id!]?.source !== subtitleSource(g));
     const lang = LANGUAGES.find((l) => l.code === target);
     if (!todo.length) {
-      toast.info(`ซับแปลภาษา${lang?.label ?? target} ครบทุกบรรทัดแล้ว`);
+      if (quiet) setSubtitles({ lang: target, lines: keep });
+      else toast.info(`ซับแปลภาษา${lang?.label ?? target} ครบทุกบรรทัดแล้ว`);
       return;
     }
     setTranslating(true);
-    const id = toast.loading("กำลังแปลซับ…");
+    const id = toast.loading(quiet ? "กำลังแปลซับให้ตรงกับบรรทัดใหม่…" : "กำลังแปลซับ…");
     try {
       const sources = todo.map(subtitleSource);
       const translated: string[] = [];
@@ -1014,13 +1023,24 @@ function Studio() {
         ...s,
         subFontFamily: subtitles?.lang === target && s.subFontFamily ? s.subFontFamily : lang?.font,
       }));
-      toast.success(`เพิ่มซับแปลภาษา${lang?.label ?? target}แล้ว`, { id });
+      toast.success(
+        quiet ? "แปลซับตามบรรทัดใหม่แล้ว" : `เพิ่มซับแปลภาษา${lang?.label ?? target}แล้ว`,
+        { id },
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "แปลไม่สำเร็จ", { id });
     } finally {
       setTranslating(false);
     }
   };
+  const resubtitleRef = useRef(false);
+  const translateCaptionsRef = useRef(translateCaptions);
+  translateCaptionsRef.current = translateCaptions;
+  useEffect(() => {
+    if (!resubtitleRef.current || !subtitles) return;
+    resubtitleRef.current = false;
+    void translateCaptionsRef.current(subtitles.lang, { quiet: true });
+  }, [groups, subtitles]);
   const editSubtitle = (groupId: string, text: string) =>
     setSubtitles((current) => {
       if (!current) return current;
@@ -2274,6 +2294,8 @@ function Studio() {
     }
     if (keys.includes("captionMode") || keys.includes("wordsPerGroup")) {
       setClipStyles({});
+      // the lines get new ids; the translation follows once they are regrouped
+      if (subtitles) resubtitleRef.current = true;
       setWords((current) =>
         assignClipIds(
           current.map(({ clip: _clip, ...w }) => w),
@@ -3026,7 +3048,7 @@ function Studio() {
                       <p className="text-sm font-semibold">แปลซับด้วย AI</p>
                       <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
                         {subtitles
-                          ? `มีซับแปล${LANGUAGES.find((l) => l.code === subtitles.lang)?.label ?? ""}อยู่ใต้ซับ ตรงจังหวะเดิม`
+                          ? `มีซับแปล ${LANGUAGES.find((l) => l.code === subtitles.lang)?.label ?? ""} อยู่ใต้ซับ ตรงจังหวะเดิม`
                           : "เพิ่มบรรทัดคำแปลใต้ซับ ตรงจังหวะเดิม"}
                       </p>
                     </div>
@@ -3752,6 +3774,11 @@ function Studio() {
                               onPositionChange={({ posX, posY }) => styleClip(ref, { posX, posY })}
                               onEditText={(text) => editClipText(ref, text)}
                               onTransform={(patch) => styleClip(ref, patch)}
+                              onSubResize={
+                                ref.kind === "caption"
+                                  ? (subSize) => changeGlobalStyle({ subSize })
+                                  : undefined
+                              }
                               onDelete={() => deleteClip(ref)}
                               onEdit={() =>
                                 ref.kind === "text"

@@ -1,4 +1,4 @@
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Pencil, RotateCw, X } from "lucide-react";
 import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, SUBTITLE_GAP, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokePxFor, subtitleLook, withAlpha, needsSpace, balancedSplitIndex } from "@/lib/captions";
 
@@ -25,10 +25,12 @@ type Props = {
   onEdit?: () => void;
   /** stacking order among overlapping clips */
   zIndex?: number;
+  /** resize the translation line (bilingual subtitles); one size for every line */
+  onSubResize?: ((size: number) => void) | undefined;
 };
 
 type Gesture =
-  | { kind: "resize"; cx: number; cy: number; startDist: number; startSize: number }
+  | { kind: "resize" | "subresize"; cx: number; cy: number; startDist: number; startSize: number }
   | { kind: "rotate"; cx: number; cy: number };
 
 /** Snaps an angle to the nearest quarter turn when it is within 4°. */
@@ -44,10 +46,18 @@ const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 const boldStroke = (fontSize: number) => `${Math.max(1, Math.round(fontSize * 0.035))}px currentColor`;
 
-export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText, onTransform, showHandles, onSelect, onDelete, onEdit, zIndex }: Props) {
+export function CaptionOverlay({ group, time, style, height, safeArea, onPositionChange, onEditText, onTransform, showHandles, onSelect, onDelete, onEdit, zIndex, onSubResize }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [gesture, setGesture] = useState<Gesture | null>(null);
+  // the translation line was tapped: it gets its own frame and resize handle
+  const [subActive, setSubActive] = useState(false);
+  // two fingers on the text: pinch to resize the caption, or the translation when it is picked
+  const pinchRef = useRef<{ points: Map<number, { x: number; y: number }>; startDist: number; startSize: number } | null>(null);
+
+  useEffect(() => {
+    if (!showHandles) setSubActive(false);
+  }, [showHandles]);
 
   useEffect(() => {
     if (!editing) setDraft("");
@@ -155,15 +165,15 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
     const cx = box.left + box.width / 2;
     const cy = box.top + box.height / 2;
     setGesture(
-      kind === "resize"
-        ? {
+      kind === "rotate"
+        ? { kind, cx, cy }
+        : {
             kind,
             cx,
             cy,
             startDist: Math.max(8, Math.hypot(event.clientX - cx, event.clientY - cy)),
-            startSize: style.size,
-          }
-        : { kind, cx, cy },
+            startSize: kind === "subresize" ? subtitleLook(style).size : style.size,
+          },
     );
   };
   const moveGesture = (event: ReactPointerEvent<HTMLElement>) => {
@@ -171,7 +181,10 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
     event.stopPropagation();
     const dx = event.clientX - gesture.cx;
     const dy = event.clientY - gesture.cy;
-    if (gesture.kind === "resize") {
+    if (gesture.kind === "subresize") {
+      const size = (gesture.startSize * Math.hypot(dx, dy)) / gesture.startDist;
+      onSubResize?.(Math.round(clamp(size, 1.5, 12) * 10) / 10);
+    } else if (gesture.kind === "resize") {
       const size = (gesture.startSize * Math.hypot(dx, dy)) / gesture.startDist;
       onTransform({ size: Math.round(clamp(size, 2, 16) * 10) / 10 });
     } else {
@@ -229,10 +242,36 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         event.preventDefault();
         event.stopPropagation();
         onSelect?.();
+        const onSub = !!(event.target as HTMLElement).closest?.("[data-subtitle-line]");
+        const pinch = pinchRef.current ?? { points: new Map(), startDist: 0, startSize: 0 };
+        pinch.points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        pinchRef.current = pinch;
+        if (pinch.points.size === 2) {
+          const [a, b] = [...pinch.points.values()];
+          pinch.startDist = Math.max(8, Math.hypot(a!.x - b!.x, a!.y - b!.y));
+          pinch.startSize = subActive ? subtitleLook(style).size : style.size;
+        } else if (pinch.points.size === 1) {
+          setSubActive(onSub && !!onSubResize);
+        }
         event.currentTarget.setPointerCapture(event.pointerId);
+      } : undefined}
+      onPointerUp={onPositionChange ? (event) => {
+        pinchRef.current?.points.delete(event.pointerId);
+      } : undefined}
+      onPointerCancel={onPositionChange ? (event) => {
+        pinchRef.current?.points.delete(event.pointerId);
       } : undefined}
       onPointerMove={onPositionChange ? (event) => {
         if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        const pinch = pinchRef.current;
+        if (pinch?.points.has(event.pointerId)) pinch.points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (pinch && pinch.points.size >= 2) {
+          const [a, b] = [...pinch.points.values()];
+          const scale = Math.hypot(a!.x - b!.x, a!.y - b!.y) / pinch.startDist;
+          if (subActive) onSubResize?.(Math.round(clamp(pinch.startSize * scale, 1.5, 12) * 10) / 10);
+          else onTransform?.({ size: Math.round(clamp(pinch.startSize * scale, 2, 16) * 10) / 10 });
+          return;
+        }
         const frame = event.currentTarget.parentElement?.getBoundingClientRect();
         if (!frame) return;
         onPositionChange({
@@ -406,10 +445,29 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         );
       })}
       {group.sub?.trim() ? (
-        <SubtitleLine text={group.sub.trim()} style={style} height={height} fontSize={fontSize} />
+        <SubtitleLine text={group.sub.trim()} style={style} height={height} fontSize={fontSize}>
+          {subActive && onSubResize && (showHandles || gesture) ? (
+            <>
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -inset-1.5 rounded-md border border-dashed border-white/80 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+              />
+              <span
+                role="button"
+                aria-label="ลากเพื่อย่อหรือขยายซับแปล"
+                title="ลากเพื่อย่อ/ขยายซับแปล"
+                onPointerDown={(event) => beginGesture(event, "subresize")}
+                onPointerMove={moveGesture}
+                onPointerUp={endGesture}
+                onPointerCancel={endGesture}
+                className="absolute -bottom-3.5 -right-3.5 h-7 w-7 before:absolute before:-inset-3 before:content-[''] cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
+              />
+            </>
+          ) : null}
+        </SubtitleLine>
       ) : null}
       {visibleWords.length === 0 && null}
-      {onTransform && (showHandles || gesture) && (
+      {onTransform && !subActive && (showHandles || gesture) && (
         <>
           <span
             aria-hidden="true"
@@ -488,11 +546,14 @@ function SubtitleLine({
   style,
   height,
   fontSize,
+  children,
 }: {
   text: string;
   style: CaptionStyle;
   height: number;
   fontSize: number;
+  /** frame and handle while the line is picked */
+  children?: React.ReactNode;
 }) {
   const look = subtitleLook(style);
   const size = (look.size / 100) * height;
@@ -505,6 +566,7 @@ function SubtitleLine({
       : undefined;
   return (
     <div
+      data-subtitle-line=""
       style={{
         marginTop: fontSize * SUBTITLE_GAP,
         fontFamily: look.fontFamily,
@@ -536,6 +598,7 @@ function SubtitleLine({
         </span>
       )}
       <span style={{ textShadow: stroke > 0 ? "none" : shadow }}>{text}</span>
+      {children}
     </div>
   );
 }
