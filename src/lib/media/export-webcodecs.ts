@@ -354,7 +354,7 @@ async function recordMix(
     return null;
   } finally {
     void ctx.close().catch(() => undefined);
-    restoreAudioSession();
+    restoreAudioSession({ force: true });
   }
 }
 
