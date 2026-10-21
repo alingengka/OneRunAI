@@ -32,6 +32,9 @@ import {
   type LineStyle,
   type TextEmphasis,
   withAlpha,
+  subtitleLook,
+  SUBTITLE_GAP,
+  wrapPieces,
 } from "../captions";
 
 export type ExportResolution = "source" | "4k" | "1080" | "720";
@@ -92,6 +95,7 @@ export async function ensureCaptionFonts(style: CaptionStyle): Promise<void> {
   const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
   if (!fonts) return;
   const families = new Set<string>([style.fontFamily]);
+  if (style.subFontFamily) families.add(style.subFontFamily);
   for (const ls of Object.values(style.lineStyles ?? {})) {
     if (ls?.fontFamily) families.add(ls.fontFamily);
   }
@@ -284,7 +288,13 @@ export function createBurnRenderer(
       /** font string สำหรับ canvas (รวม italic จริงถ้ามีไฟล์) */
       font: string;
     };
-    type GroupLayout = { lines: StaticLine[]; metrics: LineMetric[]; blockHeight: number };
+    type GroupLayout = {
+      lines: StaticLine[];
+      metrics: LineMetric[];
+      blockHeight: number;
+      /** translation line(s) under the caption, already wrapped */
+      sub: { text: string; width: number }[];
+    };
     const layoutCache = new Map<CaptionGroup, GroupLayout>();
     const fontSize = (style.size / 100) * height;
     const baseGap = (style.lineGap ?? 0.08) * fontSize;
@@ -295,6 +305,10 @@ export function createBurnRenderer(
       (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = letterSpacing;
     };
     const baseAlpha = Math.max(0.05, Math.min(1, style.opacity ?? 1));
+    const subLook = subtitleLook(style);
+    const subFontSize = (subLook.size / 100) * height;
+    const subLineHeight = subFontSize * 1.18;
+    const subFont = `${emphasizedWeight(style.fontWeight, false)} ${subFontSize}px ${subLook.fontFamily}`;
 
     /** ความกว้างสูงสุดของข้อความ (ให้ตรงกับพรีวิวที่กว้าง 88% ของเฟรม) */
     const maxTextWidth = width * 0.88;
@@ -352,11 +366,29 @@ export function createBurnRenderer(
         flush();
       });
 
-      const blockHeight = metrics.reduce(
+      let blockHeight = metrics.reduce(
         (n, m, i) => n + lineHeight * m.scale + (i ? baseGap + m.gap : 0),
         0,
       );
-      const layout: GroupLayout = { lines, metrics, blockHeight };
+      // The translation wraps on its own within the same width, as in the preview.
+      const sub: GroupLayout["sub"] = [];
+      if (group.sub?.trim()) {
+        ctx.font = subFont;
+        (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
+        let text = "";
+        for (const piece of wrapPieces(group.sub.trim())) {
+          const next = text + piece;
+          if (text && ctx.measureText(next.trimEnd()).width > maxTextWidth) {
+            sub.push({ text: text.trimEnd(), width: ctx.measureText(text.trimEnd()).width });
+            text = piece.trimStart();
+          } else {
+            text = next;
+          }
+        }
+        if (text.trim()) sub.push({ text: text.trimEnd(), width: ctx.measureText(text.trimEnd()).width });
+        if (sub.length) blockHeight += SUBTITLE_GAP * fontSize + sub.length * subLineHeight;
+      }
+      const layout: GroupLayout = { lines, metrics, blockHeight, sub };
       // Measuring set the caption spacing; other overlays draw without it.
       (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
       layoutCache.set(group, layout);
@@ -367,7 +399,7 @@ export function createBurnRenderer(
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
     const drawGroup = (group: CaptionGroup, time: number) => {
-      const { lines, metrics, blockHeight } = layoutFor(group);
+      const { lines, metrics, blockHeight, sub } = layoutFor(group);
       if (!lines.length) return;
 
       const anim = style.animation;
@@ -600,6 +632,50 @@ export function createBurnRenderer(
         ctx.restore();
         top += lineHeight * m.scale;
       });
+
+      // Translation line(s): same outline and shadow as the caption, smaller,
+      // no per-word highlight (word order differs between languages).
+      if (sub.length) {
+        top += SUBTITLE_GAP * fontSize;
+        ctx.font = subFont;
+        (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = "0px";
+        const blur = shadowBlur[style.shadow] * (subFontSize / 64);
+        const strokePx = strokePxFor(style, subFontSize);
+        for (const row of sub) {
+          const y = top + subLineHeight / 2;
+          const x =
+            style.textAlign === "left"
+              ? centerX - maxTextWidth / 2
+              : style.textAlign === "right"
+                ? centerX + maxTextWidth / 2 - row.width
+                : centerX - row.width / 2;
+          if (style.glowColor) {
+            ctx.shadowBlur = subFontSize * 0.45;
+            ctx.shadowColor = style.glowColor;
+            ctx.shadowOffsetY = 0;
+          } else {
+            ctx.shadowBlur = blur;
+            ctx.shadowColor = blur ? style.shadowColor : "transparent";
+            ctx.shadowOffsetY = blur ? blur * 0.25 : 0;
+          }
+          if (strokePx > 0) {
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+            ctx.lineWidth = strokePx * 2;
+            ctx.strokeStyle = style.strokeColor;
+            ctx.strokeText(row.text, x, y);
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+            ctx.shadowColor = "transparent";
+          }
+          ctx.fillStyle = subLook.color;
+          ctx.fillText(row.text, x, y);
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetY = 0;
+          ctx.shadowColor = "transparent";
+          top += subLineHeight;
+        }
+      }
 
       ctx.restore();
     };

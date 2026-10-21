@@ -70,7 +70,7 @@ import {
 } from "@/lib/sounds";
 import { computePeaks, makeThumbnails } from "@/lib/media/timeline-assets";
 import { CaptionList } from "@/components/editor/CaptionList";
-import { StyleControls } from "@/components/editor/StyleControls";
+import { StyleControls, SubtitleControls } from "@/components/editor/StyleControls";
 import { StylePicker } from "@/components/editor/StylePicker";
 import {
   alignWordsToSegments,
@@ -370,6 +370,15 @@ function Studio() {
   const [textSheet, setTextSheet] = useState<string | null>(null);
   /** Caption lines' own looks, by clip id, on top of the shared caption style. */
   const [clipStyles, setClipStyles] = useState<Record<string, Partial<CaptionStyle>>>({});
+  /**
+   * Bilingual subtitles: one translation line per caption clip, shown under
+   * it with the same timing. `source` is the caption text it was made from,
+   * so lines whose caption changed since can be translated again.
+   */
+  const [subtitles, setSubtitles] = useState<{
+    lang: LangCode;
+    lines: Record<string, { text: string; source: string }>;
+  } | null>(null);
   /** The selected caption line (clip id). */
   const [selectedCaption, setSelectedCaption] = useState<string | null>(null);
   // sound effects from the sound library, and the one selected on the timeline
@@ -500,8 +509,14 @@ function Studio() {
       groupCaptions(visibleWords, {
         captionMode: style.captionMode,
         wordsPerGroup: style.wordsPerGroup,
-      }).map((g) => (g.id && clipStyles[g.id] ? { ...g, style: clipStyles[g.id] } : g)),
-    [visibleWords, style.captionMode, style.wordsPerGroup, clipStyles],
+      }).map((g) => {
+        const sub = g.id ? subtitles?.lines[g.id]?.text : undefined;
+        const look = g.id ? clipStyles[g.id] : undefined;
+        return look || sub
+          ? { ...g, ...(look ? { style: look } : {}), ...(sub ? { sub } : {}) }
+          : g;
+      }),
+    [visibleWords, style.captionMode, style.wordsPerGroup, clipStyles, subtitles],
   );
   /** Free text clips, drawn by the caption engine like captions. */
   const textGroups = useMemo(
@@ -889,6 +904,7 @@ function Studio() {
       projectName,
       sounds,
       clipStyles,
+      subtitles,
     }),
     [
       file,
@@ -909,6 +925,7 @@ function Studio() {
       projectName,
       sounds,
       clipStyles,
+      subtitles,
     ],
   );
 
@@ -949,46 +966,76 @@ function Studio() {
     restoredProjectRef.current = true;
     setSounds(p.sounds ?? []);
     setClipStyles(p.clipStyles ?? {});
+    setSubtitles(
+      p.subtitles && LANGUAGES.some((l) => l.code === p.subtitles?.lang)
+        ? { lang: p.subtitles.lang as LangCode, lines: p.subtitles.lines ?? {} }
+        : null,
+    );
     setDuration((d) => d || p.duration);
     setCaptionsOn(true);
     toast.success(`โหลดงานที่บันทึกไว้ (${p.fileName}) แล้ว — อัปโหลดคลิปเดิมเพื่อดูพรีวิว`);
   };
 
-  // ── แปลซับเป็นภาษาอื่น (คงเวลาเดิม) ─────────────────────────────────────
+  // ── ซับแปล: เพิ่มบรรทัดคำแปลใต้ซับเดิม (จังหวะเดียวกับซับต้นฉบับ) ──────
+  /** The caption text a translation is made from (and checked against). */
+  const subtitleSource = (group: CaptionGroup) =>
+    joinCaptionWords(group.words, true).replace(/\n/g, " ");
   const translateCaptions = async (target: LangCode) => {
-    if (!words.length) {
+    const captionGroups = groups.filter((g) => !g.free && g.id);
+    if (!captionGroups.length) {
       toast.error("ยังไม่มีซับให้แปล");
+      return;
+    }
+    // Same language again: only lines that are new or whose caption changed.
+    const keep = subtitles?.lang === target ? subtitles.lines : {};
+    const todo = captionGroups.filter((g) => keep[g.id!]?.source !== subtitleSource(g));
+    const lang = LANGUAGES.find((l) => l.code === target);
+    if (!todo.length) {
+      toast.info(`ซับแปลภาษา${lang?.label ?? target} ครบทุกบรรทัดแล้ว`);
       return;
     }
     setTranslating(true);
     const id = toast.loading("กำลังแปลซับ…");
     try {
-      const src = groupCaptions(words, style);
-      const lines = src.map((g) => g.words.map((w) => w.text).join(" "));
-      const out: Word[] = [];
-      const size = 40;
+      const sources = todo.map(subtitleSource);
       const translated: string[] = [];
-      for (let i = 0; i < lines.length; i += size) {
-        const res = await translate({ data: { lines: lines.slice(i, i + size), target } });
+      const size = 40;
+      for (let i = 0; i < sources.length; i += size) {
+        const res = await translate({ data: { lines: sources.slice(i, i + size), target } });
         translated.push(...res.lines);
       }
-      src.forEach((g, i) => {
-        const segsForGroup = [{ start: g.start, end: g.end }];
-        out.push(...alignWordsToSegments(translated[i] ?? "", segsForGroup, g.end - g.start));
+      const lines = { ...keep };
+      todo.forEach((g, i) => {
+        lines[g.id!] = { text: (translated[i] ?? "").trim(), source: sources[i]! };
       });
-      if (!out.length) throw new Error("แปลไม่สำเร็จ");
-      setWords(out);
-      setTranscript(translated.join(" "));
-      const lang = LANGUAGES.find((l) => l.code === target);
-      if (lang) setStyle((s) => ({ ...s, fontFamily: lang.font }));
-      setLanguages([target]);
-      toast.success(`แปลซับเป็น ${lang?.label ?? target} แล้ว`, { id });
+      setSubtitles({ lang: target, lines });
+      // the translation line uses its language's font unless one was chosen
+      setStyle((s) => ({
+        ...s,
+        subFontFamily: subtitles?.lang === target && s.subFontFamily ? s.subFontFamily : lang?.font,
+      }));
+      toast.success(`เพิ่มซับแปลภาษา${lang?.label ?? target}แล้ว`, { id });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "แปลไม่สำเร็จ", { id });
     } finally {
       setTranslating(false);
     }
   };
+  const editSubtitle = (groupId: string, text: string) =>
+    setSubtitles((current) => {
+      if (!current) return current;
+      const group = groups.find((g) => g.id === groupId);
+      return {
+        ...current,
+        lines: {
+          ...current.lines,
+          [groupId]: {
+            text,
+            source: group ? subtitleSource(group) : (current.lines[groupId]?.source ?? ""),
+          },
+        },
+      };
+    });
 
   const runTranscribe = async () => {
     if (!file) {
@@ -2978,7 +3025,9 @@ function Studio() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold">แปลซับด้วย AI</p>
                       <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                        แปลข้อความโดยคงจังหวะเวลาเดิม
+                        {subtitles
+                          ? `มีซับแปล${LANGUAGES.find((l) => l.code === subtitles.lang)?.label ?? ""}อยู่ใต้ซับ ตรงจังหวะเดิม`
+                          : "เพิ่มบรรทัดคำแปลใต้ซับ ตรงจังหวะเดิม"}
                       </p>
                     </div>
                   </div>
@@ -2987,14 +3036,14 @@ function Studio() {
                       LANGUAGES.map((language) => (
                         <Button
                           key={language.code}
-                          aria-label={`แปลเป็น ${language.label}`}
+                          aria-label={`เพิ่มซับแปล ${language.label}`}
                           size="sm"
-                          variant="outline"
+                          variant={subtitles?.lang === language.code ? "default" : "outline"}
                           disabled={translating || !words.length}
                           onClick={() => void translateCaptions(language.code)}
                         >
-                          {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{" "}
-                          แปลเป็น {language.label}
+                          {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : null} ซับแปล{" "}
+                          {language.label}
                         </Button>
                       ))
                     ) : (
@@ -3002,6 +3051,16 @@ function Studio() {
                         สร้างซับก่อนเลือกภาษาแปล
                       </span>
                     )}
+                    {subtitles ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={translating}
+                        onClick={() => setSubtitles(null)}
+                      >
+                        ลบซับแปล
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               </section>
@@ -3318,6 +3377,15 @@ function Studio() {
               <p className="mt-2 text-[11px] text-muted-foreground">
                 อยากให้บางคำเป็นสีอื่น: ไปที่ ซับไตเติล → แตะคำ → เลือก “สีของคำนี้”
               </p>
+              {subtitles ? (
+                <div className="mt-4">
+                  <SubtitleControls
+                    style={style}
+                    onChange={changeGlobalStyle}
+                    script={subtitles.lang === "en" ? "latin" : subtitles.lang}
+                  />
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -3409,6 +3477,8 @@ function Studio() {
                 onRetranscribe={(start, end) => void retranscribeRange(start, end)}
                 busy={retryingSync}
                 popoverEdit={false}
+                showSub={!!subtitles}
+                onSubChange={editSubtitle}
               />
 
               {words.some((w) => w.confidenceLabel === "low" || w.confidenceLabel === "review") && (

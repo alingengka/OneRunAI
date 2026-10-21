@@ -1,6 +1,6 @@
 import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Pencil, RotateCw, X } from "lucide-react";
-import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokePxFor, withAlpha, needsSpace, balancedSplitIndex } from "@/lib/captions";
+import { ACCENT_PRIMARY_HEX, ACCENT_SECONDARY_HEX, type CaptionGroup, type CaptionStyle, LINE_BREAK, SUBTITLE_GAP, emphasizedWeight, fontRealFaces, isKeyword, shadowBlur, strokePxFor, subtitleLook, withAlpha, needsSpace, balancedSplitIndex } from "@/lib/captions";
 
 
 type Props = {
@@ -405,6 +405,9 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
         </div>
         );
       })}
+      {group.sub?.trim() ? (
+        <SubtitleLine text={group.sub.trim()} style={style} height={height} fontSize={fontSize} />
+      ) : null}
       {visibleWords.length === 0 && null}
       {onTransform && (showHandles || gesture) && (
         <>
@@ -471,6 +474,68 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
           />
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The translation under a caption (bilingual subtitles): smaller, in its own
+ * font and color, with the caption's outline and shadow. The export draws it
+ * the same way (burn-render.ts).
+ */
+function SubtitleLine({
+  text,
+  style,
+  height,
+  fontSize,
+}: {
+  text: string;
+  style: CaptionStyle;
+  height: number;
+  fontSize: number;
+}) {
+  const look = subtitleLook(style);
+  const size = (look.size / 100) * height;
+  const stroke = strokePxFor(style, size);
+  const blur = shadowBlur[style.shadow] * (size / 60);
+  const shadow = style.glowColor
+    ? `0 0 ${size * 0.2}px ${style.glowColor}, 0 0 ${size * 0.45}px ${style.glowColor}`
+    : blur > 0
+      ? `0 ${blur / 3}px ${blur}px ${style.shadowColor}`
+      : undefined;
+  return (
+    <div
+      style={{
+        marginTop: fontSize * SUBTITLE_GAP,
+        fontFamily: look.fontFamily,
+        fontWeight: emphasizedWeight(style.fontWeight, false),
+        fontStyle: "normal",
+        fontSize: size,
+        lineHeight: 1.18,
+        color: look.color,
+        letterSpacing: "normal",
+        textTransform: "none",
+        position: "relative",
+        isolation: "isolate",
+      }}
+    >
+      {stroke > 0 && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: -1,
+            color: style.strokeColor,
+            WebkitTextFillColor: style.strokeColor,
+            WebkitTextStroke: `${stroke * 2}px ${style.strokeColor}`,
+            textShadow: shadow,
+          }}
+        >
+          {text}
+        </span>
+      )}
+      <span style={{ textShadow: stroke > 0 ? "none" : shadow }}>{text}</span>
     </div>
   );
 }

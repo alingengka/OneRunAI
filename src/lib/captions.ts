@@ -28,6 +28,8 @@ export type CaptionGroup = {
   style?: Partial<CaptionStyle> | undefined;
   /** a free text clip (may overlap other text in time), not a caption line */
   free?: boolean | undefined;
+  /** translation shown as a smaller line under this caption (bilingual subtitles) */
+  sub?: string | undefined;
 };
 
 let clipCounter = 0;
@@ -304,7 +306,48 @@ export type CaptionStyle = {
   plateRadius?: number | undefined;
   /** สไตล์เฉพาะบรรทัดที่ 1,2,3… (index เริ่มที่ 0) */
   lineStyles?: Record<number, LineStyle>;
+  /** Translation line under each caption: font (default: the caption font) */
+  subFontFamily?: string | undefined;
+  /** translation line size, % of video height (default: 60% of `size`) */
+  subSize?: number | undefined;
+  /** translation line color (default: the caption color) */
+  subColor?: string | undefined;
 };
+
+/** The translation line's look, with its defaults filled in. */
+export function subtitleLook(style: CaptionStyle): { fontFamily: string; size: number; color: string } {
+  return {
+    fontFamily: style.subFontFamily || style.fontFamily,
+    size: style.subSize ?? Math.round(style.size * 0.6 * 10) / 10,
+    color: style.subColor ?? style.color,
+  };
+}
+
+/** Gap between the caption and its translation line, in caption font sizes. */
+export const SUBTITLE_GAP = 0.25;
+
+const SEGMENTERS = new Map<string, Intl.Segmenter | null>();
+/**
+ * Pieces a translation line may wrap between: words, keeping the spaces with
+ * them. Thai and Lao have no spaces, so they are split by dictionary words.
+ */
+export function wrapPieces(text: string): string[] {
+  const thaiLao = /[\u0E00-\u0EFF]/.test(text);
+  const locale = /[\u0E80-\u0EFF]/.test(text) ? "lo" : "th";
+  if (thaiLao && typeof Intl !== "undefined" && "Segmenter" in Intl) {
+    let seg = SEGMENTERS.get(locale);
+    if (seg === undefined) {
+      try {
+        seg = new Intl.Segmenter(locale, { granularity: "word" });
+      } catch {
+        seg = null;
+      }
+      SEGMENTERS.set(locale, seg);
+    }
+    if (seg) return Array.from(seg.segment(text), (part) => part.segment);
+  }
+  return text.split(/(?<=\s)/);
+}
 
 export const baseStyle: CaptionStyle = {
   id: "kelly",
