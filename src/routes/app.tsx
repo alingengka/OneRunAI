@@ -1248,7 +1248,7 @@ function Studio() {
     if (!video) return;
     video.currentTime = Math.max(0, start - 0.18);
     markUserPlay(video);
-    unlockAudio();
+    if (sounds.length) unlockAudio();
     void video.play();
     setPlaying(true);
     window.setTimeout(
@@ -1810,17 +1810,17 @@ function Studio() {
   };
   useSoundPlayback(videoRef, sounds, muted, videoUrl);
 
-  // Play watchdog: iPhones can accept play() yet never move (typically right
-  // after a seek), leaving the button on "playing" with a frozen picture.
-  // Nudge the video twice; if it still does not move, show it as paused so
-  // the next tap starts it cleanly.
+  // Play watchdog: iPhones can accept play() yet never move, leaving the
+  // button on "playing" with a frozen picture. A big phone clip can also take
+  // a moment to start after a pause (the preview shows a loading spinner
+  // then). If nothing moves for 6 s, show it as paused so the next tap
+  // starts it cleanly. It never seeks: a seek while starting stalls longer.
   useEffect(() => {
     if (!playing) return;
     const v = videoRef.current;
     if (!v) return;
     let last = v.currentTime;
     let still = 0;
-    let nudges = 0;
     const id = window.setInterval(() => {
       if (v.paused || v.ended || skippingRef.current || isPriming(v)) {
         last = v.currentTime;
@@ -1830,24 +1830,19 @@ function Studio() {
       if (Math.abs(v.currentTime - last) > 0.01) {
         last = v.currentTime;
         still = 0;
-        nudges = 0;
         return;
       }
       still += 0.5;
-      if (still < 1.5) return;
-      still = 0;
-      if (nudges < 2) {
-        nudges++;
-        v.currentTime = v.currentTime + 0.001;
-        void v.play()?.catch(() => undefined);
-      } else {
-        playIntentRef.current = false;
-        v.pause();
-        setPlaying(false);
-      }
+      if (still < 6) return;
+      playIntentRef.current = false;
+      v.pause();
+      setPlaying(false);
     }, 500);
     return () => window.clearInterval(id);
   }, [playing]);
+
+  /** The playing preview is waiting for data (shown as a spinner). */
+  const [buffering, setBuffering] = useState(false);
 
   /** Where to put the video back after Safari resets it (it then restarts at 0). */
   const restoreAtRef = useRef<number | null>(null);
@@ -2110,7 +2105,10 @@ function Studio() {
     // The muted warm-up counts as paused: the person wants to start playing.
     if (v.paused || isPriming(v)) {
       markUserPlay(v);
-      unlockAudio(); // the cleaned audio and sound effects play through Web Audio
+      // Sound effects play through Web Audio, which iPhone keeps locked until
+      // a tap; waking it on every play could stall the video starting, so
+      // only when there are effects to hear.
+      if (sounds.length) unlockAudio();
       seeker.flush();
       v.muted = mutedRef.current; // the warm-up plays muted
       playIntentRef.current = true;
@@ -3576,44 +3574,58 @@ function Studio() {
                 )}
               >
                 {videoUrl ? (
-                  <video
-                    ref={videoRef}
-                    src={videoUrl}
-                    preload="auto"
-                    // iOS Safari shows a blank box until a video has played once
-                    onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
-                    className="h-full w-full object-cover will-change-transform"
-                    playsInline
-                    onLoadedMetadata={(e) => {
-                      setDuration(e.currentTarget.duration);
-                      const at = restoreAtRef.current;
-                      restoreAtRef.current = null;
-                      if (at != null) e.currentTarget.currentTime = at;
-                    }}
-                    // iPhone Safari can drop the decoded video under memory
-                    // pressure or a failed seek: the element empties and starts
-                    // over at 0. Reload it and return to where the person was.
-                    onEmptied={() => {
-                      if (lastClockRef.current > 0.2) restoreAtRef.current = lastClockRef.current;
-                    }}
-                    onError={(e) => {
-                      const v = e.currentTarget;
-                      if (lastClockRef.current > 0.2) restoreAtRef.current = lastClockRef.current;
-                      playIntentRef.current = false;
-                      setPlaying(false);
-                      window.setTimeout(() => v.load(), 300);
-                    }}
-                    onEnded={() => setPlaying(false)}
-                    // Follow the real state: iOS can pause on its own (calls,
-                    // other audio), and a play can start late.
-                    onPause={(e) => {
-                      if (!isPriming(e.currentTarget)) setPlaying(false);
-                    }}
-                    onPlaying={(e) => {
-                      if (!isPriming(e.currentTarget)) setPlaying(true);
-                    }}
-                    onClick={togglePlay}
-                  />
+                  <>
+                    <video
+                      ref={videoRef}
+                      src={videoUrl}
+                      preload="auto"
+                      // iOS Safari shows a blank box until a video has played once
+                      onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
+                      className="h-full w-full object-cover will-change-transform"
+                      playsInline
+                      onLoadedMetadata={(e) => {
+                        setDuration(e.currentTarget.duration);
+                        const at = restoreAtRef.current;
+                        restoreAtRef.current = null;
+                        if (at != null) e.currentTarget.currentTime = at;
+                      }}
+                      // iPhone Safari can drop the decoded video under memory
+                      // pressure or a failed seek: the element empties and starts
+                      // over at 0. Reload it and return to where the person was.
+                      onEmptied={() => {
+                        if (lastClockRef.current > 0.2) restoreAtRef.current = lastClockRef.current;
+                      }}
+                      onError={(e) => {
+                        const v = e.currentTarget;
+                        if (lastClockRef.current > 0.2) restoreAtRef.current = lastClockRef.current;
+                        playIntentRef.current = false;
+                        setPlaying(false);
+                        window.setTimeout(() => v.load(), 300);
+                      }}
+                      onEnded={() => setPlaying(false)}
+                      // Follow the real state: iOS can pause on its own (calls,
+                      // other audio), and a play can start late.
+                      onPause={(e) => {
+                        setBuffering(false);
+                        if (!isPriming(e.currentTarget)) setPlaying(false);
+                      }}
+                      onPlaying={(e) => {
+                        setBuffering(false);
+                        if (!isPriming(e.currentTarget)) setPlaying(true);
+                      }}
+                      // a big phone clip can take a moment to start: say so
+                      onWaiting={(e) => {
+                        if (!isPriming(e.currentTarget)) setBuffering(true);
+                      }}
+                      onCanPlay={() => setBuffering(false)}
+                      onClick={togglePlay}
+                    />
+                    {buffering && playing ? (
+                      <div className="pointer-events-none absolute inset-0 z-[35] grid place-items-center">
+                        <Loader2 className="h-9 w-9 animate-spin text-white drop-shadow-lg" />
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
                   <button
                     onClick={() => openFilePicker()}

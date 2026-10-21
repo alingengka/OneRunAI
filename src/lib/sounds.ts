@@ -295,11 +295,14 @@ export function soundContext(): AudioContext | null {
  * leave the page in a record mode that sends sound to the quiet earpiece or
  * mutes it, so the preview went silent after an export, cancelled or not.
  */
-export function restoreAudioSession(): void {
+export function restoreAudioSession({ force = false } = {}): void {
   const session = (navigator as { audioSession?: { type: string } }).audioSession;
   if (!session) return;
-  // switching away and back makes the browser apply the type again
-  session.type = "auto";
+  // Changing the session reconfigures iPhone audio and can stall a video that
+  // is starting, so leave it alone when it is already right. After a
+  // recording, switch away and back so the browser applies it again.
+  if (session.type === "playback" && !force) return;
+  if (force) session.type = "auto";
   session.type = "playback";
 }
 
