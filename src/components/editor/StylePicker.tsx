@@ -299,7 +299,8 @@ export function StylePicker({ activeId, activeStyle, onSelect, onChange, languag
         </div>
       )}
 
-      <div className="sticky bottom-0 grid grid-cols-2 gap-4 border-t border-border bg-card/95 pb-1 pt-4 backdrop-blur">
+      {/* opaque and stretched over the panel padding so scrolled cards never show around it */}
+      <div className="sticky -bottom-3 -mx-3 -mb-3 grid grid-cols-2 gap-4 border-t border-border bg-card px-3 pb-3 pt-4 shadow-[0_-10px_16px_-12px_rgba(0,0,0,0.55)] sm:-bottom-5 sm:-mx-5 sm:-mb-5 sm:px-5 sm:pb-5">
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2 text-xs">
             <span className="font-medium">ตำแหน่ง</span>
