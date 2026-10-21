@@ -460,7 +460,8 @@ export function CaptionOverlay({ group, time, style, height, safeArea, onPositio
                 onPointerMove={moveGesture}
                 onPointerUp={endGesture}
                 onPointerCancel={endGesture}
-                className="absolute -bottom-3.5 -right-3.5 h-7 w-7 before:absolute before:-inset-3 before:content-[''] cursor-nwse-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
+                // just below the line, centered: a full-width line reaches the video's edge, where a corner handle would hang off it
+                className="absolute -bottom-9 left-1/2 h-7 w-7 -translate-x-1/2 before:absolute before:-inset-3 before:content-[''] cursor-ns-resize touch-none rounded-full border-2 border-primary bg-white shadow-md"
               />
             </>
           ) : null}
