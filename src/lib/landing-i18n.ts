@@ -80,7 +80,12 @@ export type LandingCopy = {
     proPoints: (minutes: string) => string[];
   };
   faqTitle: string;
-  faq: { q: string; a: string }[];
+  /** numbers come from the live plan settings, so the answers match the pricing cards */
+  faq: (plans: {
+    trialDays: number;
+    trialMinutes: string;
+    paidMinutes: string;
+  }) => { q: string; a: string }[];
   cta: { title: string; text: string };
   footer: {
     tagline: string;
@@ -123,25 +128,25 @@ const th: LandingCopy = {
         text: "AI หลายตัวช่วยกันถอดเสียงลาวเป็นอักษรลาวทีละคำ คำอังกฤษที่พูดปนก็ไม่หลุด",
       },
       {
-        title: "ลดเสียงรบกวน",
-        text: "กรองเสียงลม เสียงฮัม และปรับเสียงพูดให้ชัดขึ้นตอนส่งออกวิดีโอ",
+        title: "คลังเสียงเอฟเฟกต์",
+        text: "เสียงวูบ เสียงป๊อป เสียงฮา วางบนไทม์ไลน์ได้ตรงจังหวะ ติดไปกับวิดีโอตอนส่งออก",
       },
       { title: "สไตล์ซับพร้อมใช้", text: "Podcast สองบรรทัด ไฮไลต์คำ แถบสี และเปลี่ยนสีทีละคำได้" },
       {
         title: "อิโมจิและ Motion Graphic",
-        text: "อิโมจิเคลื่อนไหว ลูกศร ปุ่ม Follow และสติกเกอร์ของคุณเอง",
+        text: "อิโมจิเคลื่อนไหว สติกเกอร์ GIF ลูกศร ปุ่ม Follow และสติกเกอร์ของคุณเอง",
       },
       {
         title: "B-roll ฟรีในคลิกเดียว",
         text: "AI แนะนำคำค้น แล้วเลือกวิดีโอและรูปฟรีใส่ในซีนได้ทันที",
       },
       {
-        title: "แปลซับหลายภาษา",
-        text: "แปลเป็นไทย ลาว หรืออังกฤษในคลิกเดียว เข้าถึงคนดูได้กว้างขึ้น",
+        title: "ซับสองภาษา",
+        text: "เพิ่มบรรทัดแปลไทย ลาว หรืออังกฤษใต้ซับเดิม ตรงจังหวะพูด ปรับขนาด ฟอนต์ และสีแยกได้",
       },
       {
         title: "ส่งออกถึง 4K",
-        text: "เลือกความละเอียดและ FPS พร้อมซับหรือไม่มีซับ หรือส่งต่อเข้า CapCut",
+        text: "เลือกความละเอียด FPS และ Fade in/out พร้อมซับหรือไม่มีซับ หรือเอาไฟล์ซับ .srt ไปใช้ต่อใน CapCut",
       },
     ],
   },
@@ -151,7 +156,10 @@ const th: LandingCopy = {
     steps: [
       { title: "อัปโหลดคลิป", text: "เลือกไฟล์จากมือถือหรือคอม รองรับ MP4 และ MOV" },
       { title: "AI ใส่ซับให้", text: "ถอดเสียงลาวและจัดจังหวะคำให้อัตโนมัติ" },
-      { title: "แต่งแล้วส่งออก", text: "เลือกสไตล์ ใส่สติกเกอร์และ B-roll แล้วโพสต์ได้เลย" },
+      {
+        title: "แต่งแล้วส่งออก",
+        text: "เลือกสไตล์ ใส่สติกเกอร์ B-roll และเสียงเอฟเฟกต์ แล้วโพสต์ได้เลย",
+      },
     ],
   },
   pricing: {
@@ -183,10 +191,10 @@ const th: LandingCopy = {
     ],
   },
   faqTitle: "คำถามที่พบบ่อย",
-  faq: [
+  faq: ({ trialDays, trialMinutes, paidMinutes }) => [
     {
       q: "ทดลองใช้ฟรีต้องผูกบัตรไหม?",
-      a: "ไม่ต้องครับ สมัครด้วยอีเมลแล้วใช้ได้ทุกฟีเจอร์ 5 วัน หมดแล้วเลือกได้ว่าจะสมัครต่อหรือไม่",
+      a: `ไม่ต้องครับ สมัครด้วยอีเมลแล้วใช้ได้ทุกฟีเจอร์ ${trialDays} วัน หมดแล้วเลือกได้ว่าจะสมัครต่อหรือไม่`,
     },
     {
       q: "ชำระเงินยังไง?",
@@ -194,7 +202,7 @@ const th: LandingCopy = {
     },
     {
       q: "รองรับภาษาอะไรบ้าง?",
-      a: "ถอดเสียงภาษาลาวเป็นหลัก รองรับไทยและอังกฤษ และแปลซับเป็นภาษาอื่นได้ในคลิกเดียว",
+      a: "ถอดเสียงภาษาลาวเป็นหลัก รองรับไทยและอังกฤษ และเพิ่มซับแปลไทย ลาว หรืออังกฤษเป็นบรรทัดที่สองใต้ซับได้",
     },
     {
       q: "ใช้บนมือถือได้ไหม?",
@@ -202,7 +210,7 @@ const th: LandingCopy = {
     },
     {
       q: "นาทีถอดเสียงคืออะไร?",
-      a: "คือความยาวเสียงที่ให้ AI ถอดเป็นซับ ทดลองใช้ได้ 30 นาที แพ็กเกจรายเดือนและรายปีได้ 300 นาทีต่อเดือน",
+      a: `คือความยาวเสียงที่ให้ AI ถอดเป็นซับ ทดลองใช้ได้ ${trialMinutes} แพ็กเกจรายเดือนและรายปีได้ ${paidMinutes}ต่อเดือน`,
     },
   ],
   cta: {
@@ -210,7 +218,7 @@ const th: LandingCopy = {
     text: "อัปโหลดคลิปแรกวันนี้ ใช้เวลาไม่ถึง 5 นาที แล้วโพสต์ได้เลย",
   },
   footer: {
-    tagline: "เครื่องมือ AI ใส่ซับลาวและตัดคลิปสั้น สำหรับครีเอเตอร์ ร้านค้า และแบรนด์ในลาว",
+    tagline: "เครื่องมือ AI ใส่ซับลาวและตัดต่อคลิปสั้น สำหรับครีเอเตอร์ ร้านค้า และแบรนด์ในลาว",
     menu: "เมนู",
     account: "บัญชี",
     emojiCredit: "อิโมจิเคลื่อนไหว: Google Noto Emoji (CC BY 4.0)",
@@ -250,8 +258,8 @@ const lo: LandingCopy = {
         text: "AI ຫຼາຍໂຕຊ່ວຍກັນຖອດສຽງລາວເປັນອັກສອນລາວເທື່ອລະຄຳ ຄຳອັງກິດທີ່ເວົ້າປົນກໍບໍ່ຫຼຸດ",
       },
       {
-        title: "ຫຼຸດສຽງລົບກວນ",
-        text: "ກອງສຽງລົມ ສຽງຮຳ ແລະປັບສຽງເວົ້າໃຫ້ຊັດຂຶ້ນຕອນສົ່ງອອກວິດີໂອ",
+        title: "ຄັງສຽງເອັບເຟັກ",
+        text: "ສຽງວູບ ສຽງປັອບ ສຽງຫົວ ວາງໃນໄທມ໌ໄລນ໌ໄດ້ກົງຈັງຫວະ ຕິດໄປກັບວິດີໂອຕອນສົ່ງອອກ",
       },
       {
         title: "ສະໄຕລ໌ຊັບພ້ອມໃຊ້",
@@ -259,19 +267,19 @@ const lo: LandingCopy = {
       },
       {
         title: "ອີໂມຈິ ແລະ Motion Graphic",
-        text: "ອີໂມຈິເຄື່ອນໄຫວ ລູກສອນ ປຸ່ມ Follow ແລະສະຕິກເກີຂອງທ່ານເອງ",
+        text: "ອີໂມຈິເຄື່ອນໄຫວ ສະຕິກເກີ GIF ລູກສອນ ປຸ່ມ Follow ແລະສະຕິກເກີຂອງທ່ານເອງ",
       },
       {
         title: "B-roll ຟຣີໃນຄລິກດຽວ",
         text: "AI ແນະນຳຄຳຄົ້ນຫາ ແລ້ວເລືອກວິດີໂອແລະຮູບຟຣີໃສ່ໃນຊີນໄດ້ທັນທີ",
       },
       {
-        title: "ແປຊັບຫຼາຍພາສາ",
-        text: "ແປເປັນໄທ ລາວ ຫຼືອັງກິດໃນຄລິກດຽວ ເຂົ້າເຖິງຄົນເບິ່ງໄດ້ກວ້າງຂຶ້ນ",
+        title: "ຊັບສອງພາສາ",
+        text: "ເພີ່ມແຖວແປໄທ ລາວ ຫຼືອັງກິດໃຕ້ຊັບເດີມ ກົງຈັງຫວະເວົ້າ ປັບຂະໜາດ ຟອນ ແລະສີແຍກໄດ້",
       },
       {
         title: "ສົ່ງອອກເຖິງ 4K",
-        text: "ເລືອກຄວາມລະອຽດແລະ FPS ພ້ອມຊັບຫຼືບໍ່ມີຊັບ ຫຼືສົ່ງຕໍ່ເຂົ້າ CapCut",
+        text: "ເລືອກຄວາມລະອຽດ FPS ແລະ Fade in/out ພ້ອມຊັບຫຼືບໍ່ມີຊັບ ຫຼືເອົາໄຟລ໌ຊັບ .srt ໄປໃຊ້ຕໍ່ໃນ CapCut",
       },
     ],
   },
@@ -281,7 +289,10 @@ const lo: LandingCopy = {
     steps: [
       { title: "ອັບໂຫຼດຄລິບ", text: "ເລືອກໄຟລ໌ຈາກມືຖືຫຼືຄອມ ຮອງຮັບ MP4 ແລະ MOV" },
       { title: "AI ໃສ່ຊັບໃຫ້", text: "ຖອດສຽງລາວ ແລະຈັດຈັງຫວະຄຳໃຫ້ອັດຕະໂນມັດ" },
-      { title: "ແຕ່ງແລ້ວສົ່ງອອກ", text: "ເລືອກສະໄຕລ໌ ໃສ່ສະຕິກເກີແລະ B-roll ແລ້ວໂພສໄດ້ເລີຍ" },
+      {
+        title: "ແຕ່ງແລ້ວສົ່ງອອກ",
+        text: "ເລືອກສະໄຕລ໌ ໃສ່ສະຕິກເກີ B-roll ແລະສຽງເອັບເຟັກ ແລ້ວໂພສໄດ້ເລີຍ",
+      },
     ],
   },
   pricing: {
@@ -313,10 +324,10 @@ const lo: LandingCopy = {
     ],
   },
   faqTitle: "ຄຳຖາມທີ່ພົບເລື້ອຍ",
-  faq: [
+  faq: ({ trialDays, trialMinutes, paidMinutes }) => [
     {
       q: "ທົດລອງໃຊ້ຟຣີຕ້ອງຜູກບັດບໍ?",
-      a: "ບໍ່ຕ້ອງ ສະໝັກດ້ວຍອີເມວແລ້ວໃຊ້ໄດ້ທຸກຄຸນສົມບັດ 5 ມື້ ໝົດແລ້ວເລືອກໄດ້ວ່າຈະສະໝັກຕໍ່ຫຼືບໍ່",
+      a: `ບໍ່ຕ້ອງ ສະໝັກດ້ວຍອີເມວແລ້ວໃຊ້ໄດ້ທຸກຄຸນສົມບັດ ${trialDays} ມື້ ໝົດແລ້ວເລືອກໄດ້ວ່າຈະສະໝັກຕໍ່ຫຼືບໍ່`,
     },
     {
       q: "ຊຳລະເງິນແນວໃດ?",
@@ -324,7 +335,7 @@ const lo: LandingCopy = {
     },
     {
       q: "ຮອງຮັບພາສາຫຍັງແດ່?",
-      a: "ຖອດສຽງພາສາລາວເປັນຫຼັກ ຮອງຮັບໄທແລະອັງກິດ ແລະແປຊັບເປັນພາສາອື່ນໄດ້ໃນຄລິກດຽວ",
+      a: "ຖອດສຽງພາສາລາວເປັນຫຼັກ ຮອງຮັບໄທແລະອັງກິດ ແລະເພີ່ມຊັບແປໄທ ລາວ ຫຼືອັງກິດເປັນແຖວທີສອງໃຕ້ຊັບໄດ້",
     },
     {
       q: "ໃຊ້ໃນມືຖືໄດ້ບໍ?",
@@ -332,7 +343,7 @@ const lo: LandingCopy = {
     },
     {
       q: "ນາທີຖອດສຽງແມ່ນຫຍັງ?",
-      a: "ແມ່ນຄວາມຍາວສຽງທີ່ໃຫ້ AI ຖອດເປັນຊັບ ທົດລອງໃຊ້ໄດ້ 30 ນາທີ ແພັກເກດລາຍເດືອນແລະລາຍປີໄດ້ 300 ນາທີຕໍ່ເດືອນ",
+      a: `ແມ່ນຄວາມຍາວສຽງທີ່ໃຫ້ AI ຖອດເປັນຊັບ ທົດລອງໃຊ້ໄດ້ ${trialMinutes} ແພັກເກດລາຍເດືອນແລະລາຍປີໄດ້ ${paidMinutes}ຕໍ່ເດືອນ`,
     },
   ],
   cta: {
@@ -340,7 +351,7 @@ const lo: LandingCopy = {
     text: "ອັບໂຫຼດຄລິບທຳອິດມື້ນີ້ ໃຊ້ເວລາບໍ່ເຖິງ 5 ນາທີ ແລ້ວໂພສໄດ້ເລີຍ",
   },
   footer: {
-    tagline: "ເຄື່ອງມື AI ໃສ່ຊັບລາວແລະຕັດຄລິບສັ້ນ ສຳລັບຄຣີເອເຕີ ຮ້ານຄ້າ ແລະແບຣນໃນລາວ",
+    tagline: "ເຄື່ອງມື AI ໃສ່ຊັບລາວແລະຕັດຕໍ່ຄລິບສັ້ນ ສຳລັບຄຣີເອເຕີ ຮ້ານຄ້າ ແລະແບຣນໃນລາວ",
     menu: "ເມນູ",
     account: "ບັນຊີ",
     emojiCredit: "ອີໂມຈິເຄື່ອນໄຫວ: Google Noto Emoji (CC BY 4.0)",
@@ -380,8 +391,8 @@ const en: LandingCopy = {
         text: "Several AI models work together to transcribe Lao into Lao script word by word, English words mixed in included.",
       },
       {
-        title: "Noise reduction",
-        text: "Filters out wind and hum and makes the voice clearer when you export.",
+        title: "Sound effects library",
+        text: "Whooshes, pops and funny sounds placed on the timeline right on cue, mixed into your export.",
       },
       {
         title: "Ready-made caption styles",
@@ -389,19 +400,19 @@ const en: LandingCopy = {
       },
       {
         title: "Emoji and motion graphics",
-        text: "Animated emoji, arrows, Follow buttons and your own stickers.",
+        text: "Animated emoji, GIF stickers, arrows, Follow buttons and your own stickers.",
       },
       {
         title: "Free B-roll in one click",
         text: "AI suggests search terms, then drop free videos and photos into any scene.",
       },
       {
-        title: "Translate subtitles",
-        text: "Translate to Thai, Lao or English in one click and reach a wider audience.",
+        title: "Bilingual subtitles",
+        text: "Add a Thai, Lao or English translation line under each caption, timed to the speech, with its own size, font and color.",
       },
       {
         title: "Export up to 4K",
-        text: "Choose resolution and FPS, with or without subtitles, or send it on to CapCut.",
+        text: "Choose resolution, FPS and fade in/out, with or without subtitles, or take the .srt subtitle file into CapCut.",
       },
     ],
   },
@@ -419,7 +430,7 @@ const en: LandingCopy = {
       },
       {
         title: "Style and export",
-        text: "Pick a style, add stickers and B-roll, and post.",
+        text: "Pick a style, add stickers, B-roll and sound effects, and post.",
       },
     ],
   },
@@ -452,10 +463,10 @@ const en: LandingCopy = {
     ],
   },
   faqTitle: "Frequently asked questions",
-  faq: [
+  faq: ({ trialDays, trialMinutes, paidMinutes }) => [
     {
       q: "Do I need a card for the free trial?",
-      a: "No. Sign up with your email and use every feature for 5 days. When it ends, you decide whether to subscribe.",
+      a: `No. Sign up with your email and use every feature for ${trialDays} days. When it ends, you decide whether to subscribe.`,
     },
     {
       q: "How do I pay?",
@@ -463,7 +474,7 @@ const en: LandingCopy = {
     },
     {
       q: "Which languages are supported?",
-      a: "Lao transcription comes first, Thai and English are supported, and subtitles translate to other languages in one click.",
+      a: "Lao transcription comes first, Thai and English are supported, and you can add a Thai, Lao or English translation as a second line under the subtitles.",
     },
     {
       q: "Does it work on my phone?",
@@ -471,7 +482,7 @@ const en: LandingCopy = {
     },
     {
       q: "What are transcription minutes?",
-      a: "The length of audio AI turns into subtitles. The trial includes 30 minutes; monthly and yearly plans include 300 minutes per month.",
+      a: `The length of audio AI turns into subtitles. The trial includes ${trialMinutes}; monthly and yearly plans include ${paidMinutes} per month.`,
     },
   ],
   cta: {
