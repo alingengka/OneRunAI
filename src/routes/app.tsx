@@ -3048,7 +3048,7 @@ function Studio() {
                       <p className="text-sm font-semibold">แปลซับด้วย AI</p>
                       <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
                         {subtitles
-                          ? `มีซับแปล${LANGUAGES.find((l) => l.code === subtitles.lang)?.label ?? ""}อยู่ใต้ซับ ตรงจังหวะเดิม`
+                          ? `มีซับแปล ${LANGUAGES.find((l) => l.code === subtitles.lang)?.label ?? ""} อยู่ใต้ซับ ตรงจังหวะเดิม`
                           : "เพิ่มบรรทัดคำแปลใต้ซับ ตรงจังหวะเดิม"}
                       </p>
                     </div>
@@ -3774,6 +3774,11 @@ function Studio() {
                               onPositionChange={({ posX, posY }) => styleClip(ref, { posX, posY })}
                               onEditText={(text) => editClipText(ref, text)}
                               onTransform={(patch) => styleClip(ref, patch)}
+                              onSubResize={
+                                ref.kind === "caption"
+                                  ? (subSize) => changeGlobalStyle({ subSize })
+                                  : undefined
+                              }
                               onDelete={() => deleteClip(ref)}
                               onEdit={() =>
                                 ref.kind === "text"
