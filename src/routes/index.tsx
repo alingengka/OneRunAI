@@ -200,6 +200,11 @@ function Landing() {
   const promoPrice = billing === "monthly" ? PROMO.monthlyKip : PROMO.yearlyKip;
   const minutesOf = (seconds: number) => t.minutes(Math.max(0, Math.floor(seconds / 60)));
   const quota = minutesOf(paid?.quotaSeconds ?? 18_000);
+  const faq = t.faq({
+    trialDays,
+    trialMinutes: minutesOf(trial?.quotaSeconds ?? 1800),
+    paidMinutes: minutesOf(monthly?.quotaSeconds ?? 18_000),
+  });
 
   return (
     <div className="dark">
@@ -521,7 +526,7 @@ function Landing() {
               collapsible
               className="rounded-3xl border border-white/10 bg-white/[0.03] px-6"
             >
-              {t.faq.map((item, i) => (
+              {faq.map((item, i) => (
                 <AccordionItem key={i} value={`q${i}`} className="border-white/10 last:border-b-0">
                   <AccordionTrigger className="text-left text-base font-semibold hover:no-underline">
                     {item.q}
