@@ -28,6 +28,9 @@ type Props = {
    * toolbar at the bottom edits the selected word instead.
    */
   popoverEdit?: boolean;
+  /** Bilingual subtitles are on: each line shows its translation, editable. */
+  showSub?: boolean;
+  onSubChange?: (groupId: string, text: string) => void;
 };
 
 function fmtTime(t: number) {
@@ -48,6 +51,8 @@ function CaptionListView({
   onRetranscribe,
   busy,
   popoverEdit = true,
+  showSub = false,
+  onSubChange,
 }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const selectedWord = selected != null ? words[selected] : undefined;
@@ -292,6 +297,15 @@ function CaptionListView({
                 );
               })}
             </div>
+            {showSub && group.id && onSubChange ? (
+              <Input
+                aria-label="คำแปลของบรรทัดนี้"
+                placeholder="ยังไม่มีคำแปล"
+                value={group.sub ?? ""}
+                onChange={(event) => onSubChange(group.id!, event.target.value)}
+                className="mt-1.5 h-8 border-dashed bg-transparent text-sm text-muted-foreground focus-visible:text-foreground"
+              />
+            ) : null}
           </div>
         );
       })}

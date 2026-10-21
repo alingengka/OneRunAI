@@ -16,6 +16,7 @@ import {
   fontOptions,
   sampleTextForLanguage,
   strokeThicknessOf,
+  subtitleLook,
   strokeThicknessPatch,
   type CaptionStyle,
   type LineStyle,
@@ -619,5 +620,61 @@ export function StyleControls({ style, onChange, scripts, lineCount = 3, languag
         </AccordionItem>
       </Accordion>
     </div>
+  );
+}
+
+/** font, size and color of the translation line under each caption */
+export function SubtitleControls({
+  style,
+  onChange,
+  script,
+}: {
+  style: CaptionStyle;
+  onChange: (patch: Partial<CaptionStyle>) => void;
+  script: "latin" | "th" | "lo";
+}) {
+  const look = subtitleLook(style);
+  const fonts = fontOptions.filter((font) => font.scripts.includes(script));
+  return (
+    <section className="space-y-4 rounded-lg border border-border p-3" aria-label="ซับแปล">
+      <p className="text-sm font-semibold">ซับแปล</p>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+        <Control label="ฟอนต์">
+          <select
+            value={look.fontFamily}
+            onChange={(event) => onChange({ subFontFamily: event.target.value })}
+            className="h-10 w-full rounded-md border border-border bg-secondary px-3 text-sm text-foreground"
+          >
+            {fonts.some((font) => font.value === look.fontFamily) ? null : (
+              <option value={look.fontFamily}>{look.fontFamily.split(",")[0]}</option>
+            )}
+            {fonts.map((font) => (
+              <option key={font.value} value={font.value}>
+                {font.label}
+              </option>
+            ))}
+          </select>
+        </Control>
+        <Control label="สี">
+          <Input
+            type="color"
+            aria-label="สีซับแปล"
+            value={look.color}
+            onChange={(event) => onChange({ subColor: event.target.value })}
+            className="h-10 w-14 cursor-pointer p-1"
+          />
+        </Control>
+      </div>
+      <Control label="ขนาด" value={`${look.size.toFixed(1)}%`}>
+        <Slider
+          aria-label="ขนาดซับแปล"
+          value={[look.size]}
+          min={2}
+          max={10}
+          step={0.1}
+          onValueChange={([value]) => onChange({ subSize: value ?? look.size })}
+        />
+      </Control>
+    </section>
   );
 }

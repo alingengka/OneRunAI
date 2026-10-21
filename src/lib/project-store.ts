@@ -29,6 +29,11 @@ export type SavedProject = {
   sounds?: SoundClip[];
   /** caption lines' own looks, by clip id */
   clipStyles?: Record<string, Partial<CaptionStyle>>;
+  /** bilingual subtitles: translation per caption clip id */
+  subtitles?: {
+    lang: string;
+    lines: Record<string, { text: string; source: string }>;
+  } | null;
 };
 
 export function saveProject(p: Omit<SavedProject, "savedAt">): void {
