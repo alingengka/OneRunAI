@@ -40,7 +40,9 @@ export function buildSrt(groups: CaptionGroup[], remap?: (t: number) => number):
   const f = remap ?? ((t: number) => t);
   return groups
     .map((g, i) => {
-      const text = joinCaptionWords(g.words);
+      // the translation line (bilingual subtitles) follows as the cue's second line
+      const sub = g.sub?.replace(/\s+/g, " ").trim();
+      const text = joinCaptionWords(g.words) + (sub ? `\n${sub}` : "");
       return `${i + 1}\n${ts(f(g.start))} --> ${ts(Math.max(f(g.end), f(g.start) + 0.3))}\n${text}\n`;
     })
     .join("\n");
