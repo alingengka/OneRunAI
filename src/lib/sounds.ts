@@ -275,9 +275,37 @@ export function loadSound(id: string): Promise<AudioBuffer | null> {
 }
 
 let shared: AudioContext | null = null;
+const resetListeners = new Set<() => void>();
+let watchingDevices = false;
+
+/**
+ * An AudioContext keeps playing to the speaker or headphones it started on
+ * (Chrome on Mac), so after AirPods connect or disconnect the sound effects
+ * went silent while the video, which follows the new device, kept playing.
+ * A change of audio devices drops the context; the next use makes a new one.
+ */
+function watchAudioDevices() {
+  if (watchingDevices) return;
+  watchingDevices = true;
+  navigator.mediaDevices?.addEventListener?.("devicechange", () => {
+    const old = shared;
+    if (!old) return;
+    shared = null;
+    void old.close().catch(() => undefined);
+    for (const listener of resetListeners) listener();
+  });
+}
+
+/** Called after the page's AudioContext was replaced (audio device changed). */
+export function onSoundContextReset(listener: () => void): () => void {
+  resetListeners.add(listener);
+  return () => resetListeners.delete(listener);
+}
+
 /** The page's AudioContext for previews and playback (created on first use). */
 export function soundContext(): AudioContext | null {
   if (shared) return shared;
+  watchAudioDevices();
   const Ctx =
     window.AudioContext ??
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -320,33 +348,49 @@ export function unlockAudio(): void {
   silent.start();
 }
 
-let previewing: AudioBufferSourceNode | null = null;
+let previewing: { stop: () => void } | null = null;
 /** Stops the library preview that is playing, if any. */
 export function stopPreview(): void {
-  try {
-    previewing?.stop();
-  } catch {
-    /* already ended */
-  }
+  previewing?.stop();
   previewing = null;
 }
-/** Plays a library sound once (the ▶ in the library); a new preview stops the last. */
+/**
+ * Plays a library sound once (the ▶ in the library); a new preview stops the
+ * last. An audio element, like the video, always plays on the current
+ * speaker or headphones and needs no AudioContext to be unlocked; only a
+ * clip turned up past 100% goes through Web Audio for the extra gain.
+ */
 export async function previewSound(id: string, volume = 1): Promise<void> {
+  stopPreview();
+  if (volume <= 1) {
+    const audio = new Audio(soundUrl(id));
+    audio.volume = Math.max(0, volume);
+    const handle = { stop: () => audio.pause() };
+    previewing = handle;
+    await audio.play().catch(() => {
+      if (previewing === handle) previewing = null;
+    });
+    return;
+  }
   const ctx = soundContext();
   if (!ctx) return;
   if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
   const buffer = await loadSound(id);
   if (!buffer) return;
-  try {
-    previewing?.stop();
-  } catch {
-    /* already ended */
-  }
   const source = ctx.createBufferSource();
   source.buffer = buffer;
   const gain = ctx.createGain();
   gain.gain.value = volume;
   source.connect(gain).connect(ctx.destination);
+  stopPreview();
   source.start();
-  previewing = source;
+  previewing = {
+    stop: () => {
+      try {
+        source.stop();
+      } catch {
+        /* already ended */
+      }
+    },
+  };
 }

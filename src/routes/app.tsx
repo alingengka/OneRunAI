@@ -31,6 +31,7 @@ import {
   Pencil,
   Scissors,
   Copy,
+  ListChecks,
   Trash2,
   ChevronDown,
   type LucideIcon,
@@ -189,6 +190,7 @@ import {
 } from "@/lib/media/stickers";
 import { MobileTextSheet } from "@/components/editor/MobileTextSheet";
 import { mergedStyle, retimeWords, textClipGroup, textClipStyle } from "@/lib/text-clips";
+import { groupMoveLimits } from "@/lib/clip-selection";
 import { AccountMenu } from "@/components/account/AccountMenu";
 
 export const Route = createFileRoute("/app")({
@@ -366,6 +368,10 @@ function Studio() {
   }, [expanded]);
   const [stickers, setStickers] = useState<Sticker[]>([]);
   const [selectedSticker, setSelectedSticker] = useState<string | null>(null);
+  /** several text clips selected at once (moved or deleted together) */
+  const [multiClips, setMultiClips] = useState<{ kind: "caption" | "text"; id: string }[]>([]);
+  /** phone: taps add or remove clips instead of opening one */
+  const [multiMode, setMultiMode] = useState(false);
   /** Phone: the text clip (free text or caption line) open in the bottom edit sheet. */
   const [textSheet, setTextSheet] = useState<string | null>(null);
   /** Caption lines' own looks, by clip id, on top of the shared caption style. */
@@ -1587,6 +1593,93 @@ function Studio() {
     setSelectedWord(null);
     setSelectedCaption(ref?.kind === "caption" ? ref.id : null);
     setSelectedSticker(ref?.kind === "text" ? ref.id : null);
+    setMultiClips([]);
+  };
+  // clips deleted or regrouped since they were picked drop out
+  const liveMulti = multiClips.filter((ref) =>
+    ref.kind === "caption"
+      ? groups.some((g) => g.id === ref.id)
+      : stickers.some((s) => s.id === ref.id && s.kind === "text"),
+  );
+  /** Several clips picked (box, Shift/⌘-click, phone select mode); one alone is a plain selection. */
+  const selectClips = (refs: ClipRef[]) => {
+    if (refs.length <= 1 && !multiMode) {
+      selectClip(refs[0] ?? null);
+      return;
+    }
+    selectClip(null);
+    setMultiClips(refs);
+  };
+  const timelineSelection: ClipRef[] =
+    liveMulti.length || multiMode ? liveMulti : selectedClip ? [selectedClip] : [];
+  /** where the clips were when a group drag began, and how far they may go */
+  const groupMoveRef = useRef<{
+    words: Word[];
+    stickers: Sticker[];
+    captions: Set<string>;
+    texts: Set<string>;
+    min: number;
+    max: number;
+  } | null>(null);
+  /** Moves the picked clips together; caption lines stop at the lines that are not picked. */
+  const moveClips = (refs: ClipRef[], dt: number, first: boolean) => {
+    if (first || !groupMoveRef.current) {
+      const captions = new Set(refs.filter((r) => r.kind === "caption").map((r) => r.id));
+      const texts = new Set(refs.filter((r) => r.kind === "text").map((r) => r.id));
+      const limits = groupMoveLimits(
+        groups.filter((g) => g.id).map((g) => ({ id: g.id!, start: g.start, end: g.end })),
+        stickers
+          .filter((s) => s.kind === "text")
+          .map((s) => ({ id: s.id, start: s.start, end: s.end })),
+        captions,
+        texts,
+        duration,
+      );
+      groupMoveRef.current = { words, stickers, captions, texts, ...limits };
+    }
+    const m = groupMoveRef.current;
+    const d = Math.max(m.min, Math.min(m.max, dt));
+    const shift = <T extends { start: number; end: number }>(item: T): T => ({
+      ...item,
+      start: item.start + d,
+      end: item.end + d,
+    });
+    if (m.captions.size) {
+      setWords(m.words.map((w) => (w.clip && m.captions.has(w.clip) ? shift(w) : w)));
+    }
+    if (m.texts.size) {
+      setStickers(
+        m.stickers.map((s) =>
+          m.texts.has(s.id) ? { ...shift(s), words: s.words?.map(shift) } : s,
+        ),
+      );
+    }
+  };
+  /** Deletes every picked clip in one step. */
+  const deleteClips = (refs: ClipRef[]) => {
+    const captions = new Set(refs.filter((r) => r.kind === "caption").map((r) => r.id));
+    const texts = new Set(refs.filter((r) => r.kind === "text").map((r) => r.id));
+    if (captions.size) updateWords(words.filter((w) => !(w.clip && captions.has(w.clip))));
+    if (texts.size) setStickers((current) => current.filter((s) => !texts.has(s.id)));
+    setClipStyles((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => !captions.has(id))),
+    );
+    selectClip(null);
+    setMultiMode(false);
+    setTextSheet(null);
+  };
+  /** ⌘A: every caption line and text clip. */
+  const selectAllClips = () => {
+    const all: ClipRef[] = [
+      ...groups.filter((g) => g.id).map((g) => ({ kind: "caption" as const, id: g.id! })),
+      ...stickers
+        .filter((s) => s.kind === "text")
+        .map((s) => ({ kind: "text" as const, id: s.id })),
+    ];
+    if (!all.length) return false;
+    selectClip(null);
+    setMultiClips(all);
+    return true;
   };
   const clipGroup = (ref: ClipRef): CaptionGroup | undefined =>
     ref.kind === "caption"
@@ -2195,6 +2288,10 @@ function Studio() {
   // Delete / Backspace removes the selected word or sticker (desktop, like CapCut).
   const deleteSelectionRef = useRef<() => boolean>(() => false);
   deleteSelectionRef.current = () => {
+    if (liveMulti.length) {
+      deleteClips(liveMulti);
+      return true;
+    }
     if (selectedSound) {
       deleteSound(selectedSound);
       return true;
@@ -2410,6 +2507,8 @@ function Studio() {
     setSelectedSticker(copy.id);
     return true;
   };
+  const selectAllRef = useRef<() => boolean>(() => false);
+  selectAllRef.current = selectAllClips;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
@@ -2424,6 +2523,7 @@ function Studio() {
       let handled = false;
       if (key === "z") handled = historyStepRef.current(event.shiftKey ? "redo" : "undo");
       else if (key === "y") handled = historyStepRef.current("redo");
+      else if (key === "a") handled = selectAllRef.current();
       else if (key === "c" || key === "v" || key === "x" || key === "d") {
         handled = clipboardKeyRef.current(key);
       }
@@ -2450,6 +2550,8 @@ function Studio() {
         setSelectedCaption(null);
         setSelectedSticker(null);
         setSelectedSound(null);
+        setMultiClips([]);
+        setMultiMode(false);
         return;
       }
       if (deleteSelectionRef.current()) event.preventDefault();
@@ -3950,6 +4052,10 @@ function Studio() {
                 if (!isDesktop && textSheet) setTextSheet(ref.id);
               }}
               onTextTime={retimeClip}
+              selectedTexts={timelineSelection}
+              onSelectTexts={selectClips}
+              onMoveTexts={moveClips}
+              multiSelect={multiMode}
               selectedSound={selectedSound}
               onSelectSound={selectSound}
               onSoundTime={retimeSound}
@@ -3962,6 +4068,7 @@ function Studio() {
                 setSelectedWord(null);
                 setSelectedSticker(null);
                 setSelectedSound(null);
+                if (!multiMode) setMultiClips([]);
               }}
               onScrubStart={() => {
                 if (playing) {
@@ -3977,8 +4084,34 @@ function Studio() {
             runs the full height beside it, like CapCut */}
         {duration > 0 && (
           <div className="hidden min-w-0 lg:col-start-1 lg:col-end-[-2] lg:row-start-2 lg:block">
-            <div className="studio-panel overflow-hidden rounded-xl border border-border bg-card">
+            <div className="studio-panel relative overflow-hidden rounded-xl border border-border bg-card">
+              {liveMulti.length > 1 && (
+                <div
+                  role="toolbar"
+                  aria-label="ข้อความที่เลือกไว้"
+                  className="absolute right-24 top-2 z-20 flex items-center gap-2 rounded-full border border-border bg-background/95 py-1 pl-3 pr-1 text-xs shadow-md"
+                >
+                  <span>เลือก {liveMulti.length} ข้อความ · ลากเพื่อย้ายพร้อมกัน</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-destructive"
+                    onClick={() => deleteClips(liveMulti)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> ลบ
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    onClick={() => setMultiClips([])}
+                  >
+                    ยกเลิก
+                  </Button>
+                </div>
+              )}
               <WordTrack
+                onDeselect={() => setMultiClips([])}
                 words={words}
                 duration={duration}
                 time={time}
@@ -4001,6 +4134,9 @@ function Studio() {
                   if (!isDesktop && textSheet) setTextSheet(ref.id);
                 }}
                 onTextTime={retimeClip}
+                selectedTexts={timelineSelection}
+                onSelectTexts={selectClips}
+                onMoveTexts={moveClips}
                 selectedSound={selectedSound}
                 onSelectSound={selectSound}
                 onSoundTime={retimeSound}
@@ -4078,10 +4214,10 @@ function Studio() {
         })()}
 
       {/* Phone: tools for the selected text clip replace the bottom menu */}
-      {!isDesktop && selectedClip && !textSheet && selectedWordValid == null && (
+      {!isDesktop && selectedClip && !textSheet && selectedWordValid == null && !multiMode && (
         <nav
           aria-label="เครื่องมือข้อความ"
-          className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+          className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-7 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
         >
           {(
             [
@@ -4089,8 +4225,61 @@ function Studio() {
               { label: "ตัด", icon: Scissors, run: () => splitClip(selectedClip) },
               { label: "ทำซ้ำ", icon: Copy, run: () => duplicateClip(selectedClip) },
               { label: "ลบ", icon: Trash2, run: () => deleteClip(selectedClip) },
+              {
+                label: "เลือกหลายอัน",
+                icon: ListChecks,
+                run: () => {
+                  const first = selectedClip;
+                  selectClip(null);
+                  setMultiMode(true);
+                  setMultiClips([first]);
+                },
+              },
               { label: "เพิ่มข้อความ", icon: Type, run: addTextLayer },
               { label: "กลับ", icon: ChevronDown, run: () => selectClip(null) },
+            ] satisfies { label: string; icon: LucideIcon; run: () => void }[]
+          ).map(({ label, icon: Icon, run }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={run}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 text-[11px] text-muted-foreground",
+                label === "ลบ" && "text-destructive",
+              )}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="truncate">{label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {/* Phone: select-several mode */}
+      {!isDesktop && multiMode && (
+        <nav
+          aria-label="เลือกหลายข้อความ"
+          className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-4 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        >
+          <span className="flex items-center justify-center text-[11px] font-semibold">
+            เลือก {liveMulti.length}
+          </span>
+          {(
+            [
+              { label: "เลือกทั้งหมด", icon: ListChecks, run: () => void selectAllClips() },
+              {
+                label: "ลบ",
+                icon: Trash2,
+                run: () => (liveMulti.length ? deleteClips(liveMulti) : undefined),
+              },
+              {
+                label: "เสร็จ",
+                icon: ChevronDown,
+                run: () => {
+                  setMultiMode(false);
+                  setMultiClips([]);
+                },
+              },
             ] satisfies { label: string; icon: LucideIcon; run: () => void }[]
           ).map(({ label, icon: Icon, run }) => (
             <button
@@ -4127,7 +4316,8 @@ function Studio() {
       {/* Phone: bottom toolbar */}
       <nav
         hidden={
-          !isDesktop && (selectedWordValid != null || selectedClip != null || selectedSound != null)
+          !isDesktop &&
+          (selectedWordValid != null || selectedClip != null || selectedSound != null || multiMode)
         }
         aria-label="เมนูเครื่องมือ"
         className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"

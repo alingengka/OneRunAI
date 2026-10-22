@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { loadSound, soundContext, type SoundClip } from "@/lib/sounds";
+import { loadSound, onSoundContextReset, soundContext, type SoundClip } from "@/lib/sounds";
 
 /**
  * Plays the timeline's sound effects with the video: whenever the video
@@ -48,7 +48,8 @@ export function useSoundPlayback(
       const ctx = soundContext();
       if (!ctx) return;
       if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
-      if (!master) {
+      // a new context after an audio device change needs its own output
+      if (!master || master.context !== ctx) {
         master = ctx.createGain();
         master.connect(ctx.destination);
         masterRef.current = master;
@@ -83,6 +84,8 @@ export function useSoundPlayback(
 
     const restart = () => void schedule();
     rescheduleRef.current = restart;
+    // the old context closed with the old speaker; play on in the new one
+    const stopWatching = onSoundContextReset(restart);
     video.addEventListener("playing", restart);
     video.addEventListener("seeked", restart);
     video.addEventListener("ratechange", restart);
@@ -92,6 +95,7 @@ export function useSoundPlayback(
     video.addEventListener("ended", stopAll);
     return () => {
       stopAll();
+      stopWatching();
       rescheduleRef.current = () => {};
       video.removeEventListener("playing", restart);
       video.removeEventListener("seeked", restart);

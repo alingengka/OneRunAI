@@ -6,12 +6,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { LINE_BREAK, type Word } from "@/lib/captions";
+import { clipsInBox } from "@/lib/clip-selection";
 import type { Segment } from "@/lib/media/audio";
 
 /** Extra rows drawn around the caption row (CapCut-style multi-track). */
@@ -74,6 +76,16 @@ type Props = {
   onSelectText?: (ref: TextClipRef) => void;
   /** A selected text clip dragged (move) or trimmed at an edge. */
   onTextTime?: (ref: TextClipRef, start: number, end: number) => void;
+  /** Several selected text clips (Shift/⌘-click, a box drawn on the lane, or multiSelect taps). */
+  selectedTexts?: TextClipRef[];
+  onSelectTexts?: (refs: TextClipRef[]) => void;
+  /**
+   * The selected text clips dragged together by `dt` seconds from where they
+   * were when the drag began (`first` on the drag's first move).
+   */
+  onMoveTexts?: (refs: TextClipRef[], dt: number, first: boolean) => void;
+  /** Phone "select several" mode: a tap adds or removes a text clip. */
+  multiSelect?: boolean;
   selectedSound?: string | null;
   onSelectSound?: (id: string) => void;
   /** A selected sound dragged (move) or trimmed at an edge. */
@@ -136,6 +148,10 @@ export function WordTrack({
   selectedText = null,
   onSelectText,
   onTextTime,
+  selectedTexts,
+  onSelectTexts,
+  onMoveTexts,
+  multiSelect = false,
   selectedSound = null,
   onSelectSound,
   onSoundTime,
@@ -312,7 +328,23 @@ export function WordTrack({
     start: number;
     end: number;
     moved: boolean;
+    /** moving every selected text clip together */
+    group?: TextClipRef[];
   } | null>(null);
+  /** the click that ends a drag must not change the selection */
+  const draggedRef = useRef(false);
+  /** a box being drawn on the text lane to select the clips under it */
+  const [marquee, setMarquee] = useState<{
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+    additive: boolean;
+  } | null>(null);
+  const marqueeDoneRef = useRef(false);
+  const textSelection = selectedTexts ?? (selectedText ? [selectedText] : []);
+  const isTextSelected = (kind: TextClipRef["kind"], id: string) =>
+    textSelection.some((ref) => ref.kind === kind && ref.id === id);
   const dragRef = useRef(drag);
   dragRef.current = drag;
   useEffect(() => {
@@ -601,8 +633,10 @@ export function WordTrack({
     height: number;
     selected: boolean;
     palette: "purple" | "amber" | "sky";
-    onSelect: () => void;
+    onSelect: (event: ReactMouseEvent<HTMLElement>) => void;
     onTime?: ((start: number, end: number) => void) | undefined;
+    /** dragging moves these clips together (several selected) */
+    group?: TextClipRef[] | undefined;
   }) => {
     const begin = (event: ReactPointerEvent<HTMLElement>, mode: "move" | "start" | "end") => {
       event.stopPropagation();
@@ -616,6 +650,7 @@ export function WordTrack({
         start: item.start,
         end: item.end,
         moved: false,
+        ...(mode === "move" && item.group ? { group: item.group } : {}),
       };
     };
     const move = (event: ReactPointerEvent<HTMLElement>) => {
@@ -623,9 +658,13 @@ export function WordTrack({
       if (!d || d.key !== item.key || !item.onTime) return;
       event.stopPropagation();
       const dt = (event.clientX - d.x) / ppsRef.current;
+      const first = !d.moved;
       if (Math.abs(event.clientX - d.x) > 3) d.moved = true;
+      else if (first) return;
       const len = d.end - d.start;
-      if (d.mode === "move") {
+      if (d.group && onMoveTexts) {
+        onMoveTexts(d.group, dt, first);
+      } else if (d.mode === "move") {
         const start = Math.max(0, Math.min(duration - len, d.start + dt));
         item.onTime(start, start + len);
       } else if (d.mode === "start") {
@@ -636,6 +675,7 @@ export function WordTrack({
     };
     const end = (event: ReactPointerEvent<HTMLElement>) => {
       event.stopPropagation();
+      draggedRef.current = !!laneDragRef.current?.moved;
       laneDragRef.current = null;
     };
     const purple = item.palette === "purple";
@@ -653,7 +693,11 @@ export function WordTrack({
         onPointerCancel={end}
         onClick={(event) => {
           event.stopPropagation();
-          item.onSelect();
+          if (draggedRef.current) {
+            draggedRef.current = false;
+            return;
+          }
+          item.onSelect(event);
         }}
         className={cn(
           "absolute overflow-hidden whitespace-nowrap rounded-md border px-2 text-left font-medium",
@@ -679,7 +723,7 @@ export function WordTrack({
         }}
       >
         {item.label}
-        {item.selected && item.onTime && (
+        {item.selected && item.onTime && !item.group && (
           <>
             <span
               aria-hidden="true"
@@ -855,8 +899,66 @@ export function WordTrack({
             <div
               className="absolute"
               style={{ left: origin, width, top: textTop, height: textH }}
-              onPointerDown={seekFromEvent}
+              onPointerDown={(event) => {
+                // desktop: a press on empty lane space starts a selection box
+                if (!centered && onSelectTexts && event.target === event.currentTarget) {
+                  event.preventDefault();
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const x = event.clientX - rect.left;
+                  const y = event.clientY - rect.top;
+                  setMarquee({
+                    x0: x,
+                    y0: y,
+                    x1: x,
+                    y1: y,
+                    additive: event.shiftKey || event.metaKey || event.ctrlKey,
+                  });
+                  return;
+                }
+                seekFromEvent(event);
+              }}
+              onPointerMove={(event) => {
+                if (!marquee) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                setMarquee({
+                  ...marquee,
+                  x1: event.clientX - rect.left,
+                  y1: event.clientY - rect.top,
+                });
+              }}
+              onPointerUp={(event) => {
+                if (!marquee) return;
+                const box = marquee;
+                setMarquee(null);
+                if (Math.abs(box.x1 - box.x0) < 4 && Math.abs(box.y1 - box.y0) < 4) {
+                  // a plain click: move the playhead there, as before
+                  seekFromEvent(event);
+                  return;
+                }
+                marqueeDoneRef.current = true;
+                const row = (y: number) => Math.floor(y / (textRowH + 2));
+                const picked = clipsInBox(
+                  textItems.map((item) => ({
+                    ...item,
+                    row: textRows.rowOf.get(`${item.kind}:${item.id}`) ?? 0,
+                  })),
+                  box.x0 / pps,
+                  box.x1 / pps,
+                  row(box.y0),
+                  row(box.y1),
+                ).map((item) => ({ kind: item.kind, id: item.id }));
+                const next = box.additive
+                  ? [...textSelection, ...picked.filter((ref) => !isTextSelected(ref.kind, ref.id))]
+                  : picked;
+                onSelectTexts?.(next);
+              }}
+              onPointerCancel={() => setMarquee(null)}
               onClick={(event) => {
+                if (marqueeDoneRef.current) {
+                  marqueeDoneRef.current = false;
+                  return;
+                }
                 if (event.target === event.currentTarget) onDeselect?.();
               }}
             >
@@ -873,21 +975,47 @@ export function WordTrack({
                   }}
                 />
               ))}
-              {textItems.map((item) =>
-                laneBlock({
+              {textItems.map((item) => {
+                const ref = { kind: item.kind, id: item.id };
+                const selected = isTextSelected(item.kind, item.id);
+                return laneBlock({
                   key: `${item.kind}:${item.id}`,
                   label: item.label,
                   start: item.start,
                   end: item.end,
                   top: (textRows.rowOf.get(`${item.kind}:${item.id}`) ?? 0) * (textRowH + 2),
                   height: textRowH,
-                  selected: selectedText?.kind === item.kind && selectedText.id === item.id,
+                  selected,
                   palette: "purple",
-                  onSelect: () => onSelectText?.({ kind: item.kind, id: item.id }),
-                  onTime: onTextTime
-                    ? (start, end) => onTextTime({ kind: item.kind, id: item.id }, start, end)
-                    : undefined,
-                }),
+                  onSelect: (event) => {
+                    // Shift/⌘/Ctrl-click (or the phone's select mode) adds or removes one
+                    const toggle = multiSelect || event.shiftKey || event.metaKey || event.ctrlKey;
+                    if (toggle && onSelectTexts) {
+                      onSelectTexts(
+                        selected
+                          ? textSelection.filter((r) => !(r.kind === ref.kind && r.id === ref.id))
+                          : [...textSelection, ref],
+                      );
+                      return;
+                    }
+                    onSelectText?.(ref);
+                  },
+                  onTime: onTextTime ? (start, end) => onTextTime(ref, start, end) : undefined,
+                  group:
+                    selected && textSelection.length > 1 && onMoveTexts ? textSelection : undefined,
+                });
+              })}
+              {marquee && (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute z-10 rounded-sm border border-white/80 bg-white/15"
+                  style={{
+                    left: Math.min(marquee.x0, marquee.x1),
+                    top: Math.min(marquee.y0, marquee.y1),
+                    width: Math.abs(marquee.x1 - marquee.x0),
+                    height: Math.abs(marquee.y1 - marquee.y0),
+                  }}
+                />
               )}
             </div>
           )}
