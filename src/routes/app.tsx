@@ -265,6 +265,25 @@ const FAST_SKIP_MAX = 1.2;
 
 /** How many subtitle chunks are transcribed at the same time. */
 const TRANSCRIBE_CONCURRENCY = 3;
+/** Longest wait for one chunk's transcription before asking again. */
+const TRANSCRIBE_TIMEOUT_MS = 170_000;
+
+/** Rejects when the promise has not settled within `ms`. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("ระบบถอดเสียงตอบช้าผิดปกติ")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 function fmt(t: number) {
   const m = Math.floor(t / 60);
@@ -1111,14 +1130,19 @@ function Studio() {
         let lastError: unknown = null;
         for (let attempt = 0; attempt < attempts; attempt++) {
           try {
-            const res = await transcribe({
-              data: {
-                audioBase64: b64,
-                language: lang,
-                context: texts.join(" ").slice(-600),
-                glossary: terms,
-              },
-            });
+            // The server gives up on a slow AI provider well before this; a
+            // request still open now is lost, so try again instead of waiting.
+            const res = await withTimeout(
+              transcribe({
+                data: {
+                  audioBase64: b64,
+                  language: lang,
+                  context: texts.join(" ").slice(-600),
+                  glossary: terms,
+                },
+              }),
+              TRANSCRIBE_TIMEOUT_MS,
+            );
             const text = (res.text ?? "").trim();
             if (!text) {
               lastError = new Error("empty");
