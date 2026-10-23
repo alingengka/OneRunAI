@@ -128,11 +128,12 @@ async function transcribeWithScribe(
   form.append("tag_audio_events", "false");
   if (glossary.length) form.append("biased_keywords", JSON.stringify(glossary.slice(0, 40)));
 
-  const response = await fetchWithRetry("https://api.elevenlabs.io/v1/speech-to-text", {
-    method: "POST",
-    headers: { "xi-api-key": apiKey },
-    body: form,
-  });
+  const response = await fetchWithRetry(
+    "https://api.elevenlabs.io/v1/speech-to-text",
+    { method: "POST", headers: { "xi-api-key": apiKey }, body: form },
+    2,
+    60_000,
+  );
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(`ElevenLabs transcription failed [${response.status}]: ${body.slice(0, 300)}`);
@@ -208,7 +209,7 @@ async function transcribeWithGemini(
    * guessed — the same role the strict OpenAI pass plays.
    */
   variant: "main" | "independent" = "main",
-  options: { temperature?: number; retries?: number; fallback?: boolean } = {},
+  options: { temperature?: number; retries?: number; fallback?: boolean; timeoutMs?: number } = {},
 ): Promise<string> {
   const instructions = language === "lo"
     ? [
@@ -336,11 +337,15 @@ export async function transcribeAudioServer(input: {
             temperature: 0,
             retries: 0,
             fallback: false,
+            // best-effort extra opinion: never worth a long wait
+            timeoutMs: 30_000,
           }),
           transcribeWithGemini(input.audioBase64, "lo", input.context ?? "", input.glossary ?? [], "main", {
             temperature: 0.4,
             retries: 0,
             fallback: false,
+            // best-effort extra opinion: never worth a long wait
+            timeoutMs: 30_000,
           }),
         ]
       : [],

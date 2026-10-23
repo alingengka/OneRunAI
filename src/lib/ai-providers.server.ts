@@ -22,13 +22,37 @@ export const OPENAI_TRANSCRIBE_MODEL =
  * short backoff. Parallel chunk transcription can briefly exceed free-tier
  * request limits; a retry is cheaper than dropping an engine.
  */
+/** A provider that did not answer in time; callers move on to their fallback. */
+export class ProviderTimeoutError extends Error {
+  constructor(url: string, ms: number) {
+    super(`No answer within ${Math.round(ms / 1000)}s from ${new URL(url).host}`);
+    this.name = "ProviderTimeoutError";
+  }
+}
+
 export async function fetchWithRetry(
   url: string,
   init: RequestInit,
   retries = 2,
+  // A provider that hangs must not hold the whole request until the platform
+  // cuts it off minutes later (the editor sat at "0/6" meanwhile): give up
+  // and let the caller fall back. A timeout is not retried, it would only
+  // double the wait.
+  timeoutMs = 45_000,
 ): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
-    const response = await fetch(url, init);
+    let response: Response;
+    try {
+      response = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError")
+      ) {
+        throw new ProviderTimeoutError(url, timeoutMs);
+      }
+      throw error;
+    }
     if (attempt >= retries || ![429, 502, 503].includes(response.status)) return response;
     const retryAfter = Number(response.headers.get("retry-after"));
     const delay =
@@ -127,7 +151,7 @@ export async function geminiChat(
   model: string,
   messages: { role: "system" | "user"; content: ChatContent }[],
   label: string,
-  options: { temperature?: number; retries?: number; fallback?: boolean } = {},
+  options: { temperature?: number; retries?: number; fallback?: boolean; timeoutMs?: number } = {},
 ): Promise<string> {
   const apiKey = geminiKey();
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
@@ -153,20 +177,31 @@ export async function geminiChat(
     }
     const candidate = models[index]!;
     const hasNext = index < models.length - 1 || !searched;
-    const response = await fetchWithRetry(
-      `${GEMINI_BASE}/chat/completions`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: candidate,
-          messages,
-          ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
-        }),
-      },
-      // A model with a fallback behind it only gets one quick retry.
-      hasNext ? Math.min(options.retries ?? 2, 1) : options.retries,
-    );
+    let response: Response;
+    try {
+      response = await fetchWithRetry(
+        `${GEMINI_BASE}/chat/completions`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: candidate,
+            messages,
+            ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+          }),
+        },
+        // A model with a fallback behind it only gets one quick retry.
+        hasNext ? Math.min(options.retries ?? 2, 1) : options.retries,
+        options.timeoutMs,
+      );
+    } catch (error) {
+      if (!(error instanceof ProviderTimeoutError)) throw error;
+      // too slow right now: rest it briefly and ask the next model
+      lastError = new Error(`${label} failed (${candidate}): ${error.message}`);
+      cooledDown.set(candidate, Date.now() + BUSY_MS);
+      console.error(`[gemini] ${candidate} timed out, trying next model`);
+      continue;
+    }
     if (response.ok) {
       const payload = (await response.json()) as {
         choices?: { message?: { content?: string } }[];
