@@ -116,7 +116,7 @@ export function SoundLibrary({ onAdd, usage = {}, className }: Props) {
           (section) => (
             <Fragment key={section.id}>
               {section.label && (
-                <li className="sticky top-0 z-10 bg-muted/90 px-3 py-1.5 text-xs font-semibold text-muted-foreground backdrop-blur">
+                <li className="sticky -top-3 z-10 bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground shadow-[0_1px_0_var(--border)] sm:-top-5">
                   {section.label}
                 </li>
               )}
