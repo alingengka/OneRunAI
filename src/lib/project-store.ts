@@ -24,6 +24,8 @@ export type SavedProject = {
   sceneElements?: SceneElement[];
   stickers?: Sticker[];
   splitPoints?: number[];
+  /** CapCut-style video cuts and deleted pieces */
+  videoEdit?: { cuts: number[]; removed: { start: number; end: number }[] } | null;
   projectName?: string;
   /** sound effects placed from the sound library */
   sounds?: SoundClip[];
