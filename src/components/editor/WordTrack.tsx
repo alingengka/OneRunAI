@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { LINE_BREAK, type Word } from "@/lib/captions";
 import { clipsInBox } from "@/lib/clip-selection";
+import type { VideoPart } from "@/lib/video-parts";
 import type { Segment } from "@/lib/media/audio";
 
 /** Extra rows drawn around the caption row (CapCut-style multi-track). */
@@ -86,6 +87,10 @@ type Props = {
   onMoveTexts?: (refs: TextClipRef[], dt: number, first: boolean) => void;
   /** Phone "select several" mode: a tap adds or removes a text clip. */
   multiSelect?: boolean;
+  /** Pieces of the video between the person's cuts (CapCut-style); a tap selects one. */
+  videoParts?: VideoPart[];
+  selectedPart?: number | null;
+  onSelectPart?: (index: number) => void;
   selectedSound?: string | null;
   onSelectSound?: (id: string) => void;
   /** A selected sound dragged (move) or trimmed at an edge. */
@@ -152,6 +157,9 @@ export function WordTrack({
   onSelectTexts,
   onMoveTexts,
   multiSelect = false,
+  videoParts = [],
+  selectedPart = null,
+  onSelectPart,
   selectedSound = null,
   onSelectSound,
   onSoundTime,
@@ -853,7 +861,11 @@ export function WordTrack({
           {videoH > 0 && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute overflow-hidden rounded-md border-2 border-white/80 bg-black/40"
+              className={cn(
+                "pointer-events-none absolute overflow-hidden rounded-md bg-black/40",
+                // with pieces, each piece draws its own frame
+                videoParts.length > 1 || onSelectPart ? "" : "border-2 border-white/80",
+              )}
               style={{ left: origin, width, top: videoTop, height: videoH }}
             >
               {thumbs.map((src, i) => (
@@ -868,6 +880,42 @@ export function WordTrack({
               ))}
             </div>
           )}
+          {videoH > 0 &&
+            onSelectPart &&
+            videoParts.map((part, i) => (
+              <button
+                key={`part-${part.start}`}
+                type="button"
+                aria-label={`ช่วงวิดีโอ ${i + 1}${part.removed ? " (ลบแล้ว)" : ""}`}
+                aria-pressed={selectedPart === i}
+                // a tap selects; a drag still scrubs the timeline underneath
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectPart(i);
+                }}
+                className={cn(
+                  "absolute rounded-md border-2",
+                  selectedPart === i
+                    ? "z-[1] border-white shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+                    : "border-white/50",
+                )}
+                style={{
+                  left: origin + part.start * pps + 1,
+                  width: Math.max(4, (part.end - part.start) * pps - 2),
+                  top: videoTop,
+                  height: videoH,
+                  background: part.removed
+                    ? "repeating-linear-gradient(135deg, rgba(0,0,0,0.72) 0 6px, rgba(0,0,0,0.5) 6px 12px)"
+                    : undefined,
+                }}
+              >
+                {part.removed && (
+                  <span className="pointer-events-none text-[10px] font-semibold text-white/80">
+                    ลบแล้ว
+                  </span>
+                )}
+              </button>
+            ))}
 
           {!textMode && (
             <div

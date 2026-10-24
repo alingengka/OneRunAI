@@ -191,6 +191,16 @@ import {
 import { MobileTextSheet } from "@/components/editor/MobileTextSheet";
 import { mergedStyle, retimeWords, textClipGroup, textClipStyle } from "@/lib/text-clips";
 import { groupMoveLimits } from "@/lib/clip-selection";
+import {
+  emptyVideoEdit,
+  mergeRanges,
+  partAt,
+  removePart,
+  restorePart,
+  splitVideo,
+  videoParts as cutVideoParts,
+  type VideoEdit,
+} from "@/lib/video-parts";
 import { AccountMenu } from "@/components/account/AccountMenu";
 
 export const Route = createFileRoute("/app")({
@@ -497,6 +507,9 @@ function Studio() {
   const [minSilence, setMinSilence] = useState(defaultSilenceOptions.minSilence);
 
   const [splitPoints, setSplitPoints] = useState<number[]>([]);
+  /** CapCut-style cuts of the video and the pieces deleted from it */
+  const [videoEdit, setVideoEdit] = useState<VideoEdit>(emptyVideoEdit);
+  const [selectedPart, setSelectedPart] = useState<number | null>(null);
   const scenes = useMemo(
     () =>
       [...splitPoints]
@@ -504,9 +517,16 @@ function Studio() {
         .reduce((acc, t) => splitSceneAt(acc, t), buildScenes(segments, words)),
     [segments, words, splitPoints],
   );
+  // turned-off scenes and deleted video pieces both stay out of preview and export
   const droppedRanges = useMemo(
-    () => scenes.filter((s) => dropped.includes(s.id)).map((s) => ({ start: s.start, end: s.end })),
-    [scenes, dropped],
+    () =>
+      mergeRanges([
+        ...scenes
+          .filter((s) => dropped.includes(s.id))
+          .map((s) => ({ start: s.start, end: s.end })),
+        ...videoEdit.removed,
+      ]),
+    [scenes, dropped, videoEdit.removed],
   );
   const isDropped = useCallback(
     (t: number) => droppedRanges.some((r) => t >= r.start - 0.001 && t <= r.end + 0.001),
@@ -662,8 +682,21 @@ function Studio() {
       segmentCount: segments.length,
       segments,
       speechSegments: analysisSegmentsRef.current,
+      outputSegments,
+      stickers,
     };
-  }, [visibleWords, groups, textGroups, style, duration, transcribing, analyzing, segments]);
+  }, [
+    visibleWords,
+    groups,
+    textGroups,
+    style,
+    duration,
+    transcribing,
+    analyzing,
+    segments,
+    outputSegments,
+    stickers,
+  ]);
 
   // measure preview frame for font scaling
   useEffect(() => {
@@ -891,6 +924,8 @@ function Studio() {
       setSceneElements([]);
       setStickers([]);
       setSplitPoints([]);
+      setVideoEdit(emptyVideoEdit());
+      setSelectedPart(null);
       setProjectName(f.name.replace(/\.[^.]+$/, ""));
     }
     setTime(0);
@@ -926,6 +961,7 @@ function Studio() {
       sceneElements,
       stickers,
       splitPoints,
+      videoEdit,
       projectName,
       sounds,
       clipStyles,
@@ -947,6 +983,7 @@ function Studio() {
       sceneElements,
       stickers,
       splitPoints,
+      videoEdit,
       projectName,
       sounds,
       clipStyles,
@@ -987,6 +1024,8 @@ function Studio() {
     setSceneElements(p.sceneElements ?? []);
     setStickers(p.stickers ?? []);
     setSplitPoints(p.splitPoints ?? []);
+    setVideoEdit(p.videoEdit ?? emptyVideoEdit());
+    setSelectedPart(null);
     setProjectName(p.projectName ?? p.fileName.replace(/\.[^.]+$/, ""));
     restoredProjectRef.current = true;
     setSounds(p.sounds ?? []);
@@ -1618,6 +1657,7 @@ function Studio() {
     setSelectedCaption(ref?.kind === "caption" ? ref.id : null);
     setSelectedSticker(ref?.kind === "text" ? ref.id : null);
     setMultiClips([]);
+    setSelectedPart(null);
   };
   // clips deleted or regrouped since they were picked drop out
   const liveMulti = multiClips.filter((ref) =>
@@ -1943,8 +1983,64 @@ function Studio() {
     setSelectedWord(null);
     setSelectedCaption(null);
     setSelectedSticker(null);
+    setSelectedPart(null);
     setSelectedSound(id);
   };
+  // ── Video pieces (CapCut-style): split the video at the playhead, delete
+  // pieces (left out of preview and export with a hard cut), bring them back.
+  const parts = useMemo(() => cutVideoParts(duration, videoEdit), [duration, videoEdit]);
+  const selectPart = (index: number | null) => {
+    setSelectedWord(null);
+    setSelectedCaption(null);
+    setSelectedSticker(null);
+    setSelectedSound(null);
+    setMultiClips([]);
+    setSelectedPart(index);
+  };
+  const splitVideoAtPlayhead = () => {
+    const at = videoRef.current?.currentTime ?? time;
+    const next = splitVideo(videoEdit, at, duration);
+    if (!next) {
+      toast.error("เลื่อนเส้นเวลาไปตรงจุดที่จะตัดก่อน (ห่างจากรอยตัดเดิมเล็กน้อย)");
+      return;
+    }
+    setVideoEdit(next);
+    // the piece before the cut stays selected, like CapCut
+    setSelectedPart(partAt(cutVideoParts(duration, next), at - 0.01));
+  };
+  const deleteVideoPart = (index: number) => {
+    const part = parts[index];
+    if (!part) return;
+    if (parts.every((p, i) => i === index || p.removed)) {
+      toast.error("ต้องเหลือวิดีโออย่างน้อย 1 ช่วง");
+      return;
+    }
+    setVideoEdit(removePart(videoEdit, part));
+    toast.success("ลบช่วงวิดีโอแล้ว — แตะช่วงนั้นแล้วกด กู้คืน เพื่อเอากลับ");
+  };
+  const restoreVideoPart = (index: number) => {
+    const part = parts[index];
+    if (part) setVideoEdit(restorePart(videoEdit, part));
+  };
+  const selectedPartValid =
+    selectedPart != null && selectedPart < parts.length ? selectedPart : null;
+  // ── Sticker tools, like the text clip ones
+  const splitSticker = (id: string) => {
+    const sticker = stickers.find((s) => s.id === id);
+    const at = videoRef.current?.currentTime ?? time;
+    if (!sticker || at <= sticker.start + 0.1 || at >= sticker.end - 0.1) {
+      toast.error("เลื่อนเส้นเวลาไปไว้กลางสติกเกอร์ก่อน แล้วค่อยกดตัด");
+      return;
+    }
+    const second: Sticker = { ...sticker, id: newStickerId(), start: at };
+    setStickers((current) =>
+      current.flatMap((s) => (s.id === id ? [{ ...s, end: at }, second] : [s])),
+    );
+  };
+  const selectedPlainSticker =
+    selectedSticker && stickers.some((s) => s.id === selectedSticker && s.kind !== "text")
+      ? selectedSticker
+      : null;
   const addSound = (soundId: string) => {
     const at = videoRef.current?.currentTime ?? time;
     const clip = makeSoundClip(soundId, at);
@@ -2312,6 +2408,11 @@ function Studio() {
   // Delete / Backspace removes the selected word or sticker (desktop, like CapCut).
   const deleteSelectionRef = useRef<() => boolean>(() => false);
   deleteSelectionRef.current = () => {
+    if (selectedPartValid != null) {
+      if (parts[selectedPartValid]?.removed) restoreVideoPart(selectedPartValid);
+      else deleteVideoPart(selectedPartValid);
+      return true;
+    }
     if (liveMulti.length) {
       deleteClips(liveMulti);
       return true;
@@ -2344,6 +2445,7 @@ function Studio() {
     style: CaptionStyle;
     clipStyles: Record<string, Partial<CaptionStyle>>;
     sounds: SoundClip[];
+    videoEdit: VideoEdit;
   };
   const historyRef = useRef<{
     past: EditSnapshot[];
@@ -2355,7 +2457,7 @@ function Studio() {
   }>({ past: [], future: [], committed: null, pendingBase: null, restoring: false, timer: 0 });
   useEffect(() => {
     const h = historyRef.current;
-    const now = { words, stickers, style, clipStyles, sounds };
+    const now = { words, stickers, style, clipStyles, sounds, videoEdit };
     if (h.restoring || !h.committed) {
       h.restoring = false;
       h.committed = now;
@@ -2370,9 +2472,9 @@ function Studio() {
         h.future = [];
       }
       h.pendingBase = null;
-      h.committed = { words, stickers, style, clipStyles, sounds };
+      h.committed = { words, stickers, style, clipStyles, sounds, videoEdit };
     }, 400);
-  }, [words, stickers, style, clipStyles, sounds]);
+  }, [words, stickers, style, clipStyles, sounds, videoEdit]);
   // AI captions (and words added later) become caption clips right away, like
   // CapCut's auto captions. Not an edit of its own, so it is not an undo step.
   useEffect(() => {
@@ -2429,7 +2531,7 @@ function Studio() {
   const historyStepRef = useRef<(direction: "undo" | "redo") => boolean>(() => false);
   historyStepRef.current = (direction) => {
     const h = historyRef.current;
-    const current = { words, stickers, style, clipStyles, sounds };
+    const current = { words, stickers, style, clipStyles, sounds, videoEdit };
     // A change still settling counts as its own step first.
     if (h.pendingBase) {
       window.clearTimeout(h.timer);
@@ -2450,6 +2552,8 @@ function Studio() {
     setStyle(snap.style);
     setClipStyles(snap.clipStyles);
     setSounds(snap.sounds);
+    setVideoEdit(snap.videoEdit);
+    setSelectedPart(null);
     setSelectedSound((id) => (id && snap.sounds.some((c) => c.id === id) ? id : null));
     setSelectedWord(null);
     setSelectedCaption(null);
@@ -2533,6 +2637,15 @@ function Studio() {
   };
   const selectAllRef = useRef<() => boolean>(() => false);
   selectAllRef.current = selectAllClips;
+  /** ⌘B (CapCut's split): the selected text or sticker, otherwise the video */
+  const splitRef = useRef<() => boolean>(() => false);
+  splitRef.current = () => {
+    if (!duration) return false;
+    if (selectedClip) splitClip(selectedClip);
+    else if (selectedPlainSticker) splitSticker(selectedPlainSticker);
+    else splitVideoAtPlayhead();
+    return true;
+  };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
@@ -2548,6 +2661,7 @@ function Studio() {
       if (key === "z") handled = historyStepRef.current(event.shiftKey ? "redo" : "undo");
       else if (key === "y") handled = historyStepRef.current("redo");
       else if (key === "a") handled = selectAllRef.current();
+      else if (key === "b") handled = splitRef.current();
       else if (key === "c" || key === "v" || key === "x" || key === "d") {
         handled = clipboardKeyRef.current(key);
       }
@@ -2576,6 +2690,7 @@ function Studio() {
         setSelectedSound(null);
         setMultiClips([]);
         setMultiMode(false);
+        setSelectedPart(null);
         return;
       }
       if (deleteSelectionRef.current()) event.preventDefault();
@@ -3745,16 +3860,44 @@ function Studio() {
             {expanded && (
               <>
                 <div className="fixed inset-0 z-[65] bg-black" aria-hidden="true" />
-                <div className="fixed inset-x-0 top-0 z-[80] flex items-center justify-between gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+                {/* Full screen is for watching: a tap anywhere plays or pauses (CapCut) */}
+                <button
+                  type="button"
+                  aria-label={playing ? "หยุด" : "เล่น"}
+                  onClick={togglePlay}
+                  className="fixed inset-0 z-[75] flex items-center justify-center"
+                >
+                  {!playing && (
+                    <span className="grid h-20 w-20 place-items-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm">
+                      <Play className="ml-1 h-9 w-9" />
+                    </span>
+                  )}
+                </button>
+                <div className="fixed inset-x-0 bottom-0 z-[80] flex items-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-8">
                   <Button
                     size="icon"
                     variant="secondary"
-                    className="h-11 w-11 rounded-full bg-black/60 text-white hover:bg-black/80"
+                    className="h-11 w-11 shrink-0 rounded-full bg-white/15 text-white hover:bg-white/25"
                     onClick={togglePlay}
                     aria-label={playing ? "หยุด" : "เล่น"}
                   >
                     {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
                   </Button>
+                  <Clocked clock={clock}>
+                    {(t) => (
+                      <Slider
+                        className="min-w-0 flex-1"
+                        value={[t]}
+                        min={0}
+                        max={Math.max(duration, 0.1)}
+                        step={0.01}
+                        aria-label="ตำแหน่งวิดีโอ (เต็มจอ)"
+                        onValueChange={([v]) => seekTo(v ?? 0)}
+                      />
+                    )}
+                  </Clocked>
+                </div>
+                <div className="fixed inset-x-0 top-0 z-[80] flex items-center justify-between gap-2 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
                   <span className="rounded-full bg-black/60 px-3 py-1 font-mono text-xs text-white">
                     <Clocked clock={clock}>{(t) => fmt(t)}</Clocked> / {fmt(duration)}
                   </span>
@@ -4080,11 +4223,15 @@ function Studio() {
               onSelectTexts={selectClips}
               onMoveTexts={moveClips}
               multiSelect={multiMode}
+              videoParts={parts}
+              selectedPart={selectedPartValid}
+              onSelectPart={selectPart}
               selectedSound={selectedSound}
               onSelectSound={selectSound}
               onSoundTime={retimeSound}
               onSelectSticker={(id) => {
                 setSelectedWord(null);
+                setSelectedPart(null);
                 setSelectedSticker(id);
                 setTab("stickers");
               }}
@@ -4092,6 +4239,7 @@ function Studio() {
                 setSelectedWord(null);
                 setSelectedSticker(null);
                 setSelectedSound(null);
+                setSelectedPart(null);
                 if (!multiMode) setMultiClips([]);
               }}
               onScrubStart={() => {
@@ -4109,6 +4257,78 @@ function Studio() {
         {duration > 0 && (
           <div className="hidden min-w-0 lg:col-start-1 lg:col-end-[-2] lg:row-start-2 lg:block">
             <div className="studio-panel relative overflow-hidden rounded-xl border border-border bg-card">
+              {liveMulti.length <= 1 && (selectedPartValid != null || selectedPlainSticker) && (
+                <div
+                  role="toolbar"
+                  aria-label={
+                    selectedPartValid != null ? "ช่วงวิดีโอที่เลือก" : "สติกเกอร์ที่เลือก"
+                  }
+                  className="absolute right-24 top-2 z-20 flex items-center gap-1 rounded-full border border-border bg-background/95 py-1 pl-3 pr-1 text-xs shadow-md"
+                >
+                  <span className="mr-1">
+                    {selectedPartValid != null
+                      ? `ช่วงวิดีโอ ${selectedPartValid + 1}${parts[selectedPartValid]?.removed ? " (ลบแล้ว)" : ""}`
+                      : "สติกเกอร์"}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    title="ตัดตรงเส้นเวลา (⌘/Ctrl+B)"
+                    onClick={() =>
+                      selectedPlainSticker && selectedPartValid == null
+                        ? splitSticker(selectedPlainSticker)
+                        : splitVideoAtPlayhead()
+                    }
+                  >
+                    <Scissors className="h-3.5 w-3.5" /> ตัด
+                  </Button>
+                  {selectedPartValid == null && selectedPlainSticker && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7"
+                      onClick={() => duplicateSticker(selectedPlainSticker)}
+                    >
+                      <Copy className="h-3.5 w-3.5" /> ทำซ้ำ
+                    </Button>
+                  )}
+                  {selectedPartValid != null && parts[selectedPartValid]?.removed ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7"
+                      onClick={() => restoreVideoPart(selectedPartValid)}
+                    >
+                      <Undo2 className="h-3.5 w-3.5" /> กู้คืน
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-destructive"
+                      onClick={() =>
+                        selectedPartValid != null
+                          ? deleteVideoPart(selectedPartValid)
+                          : selectedPlainSticker && removeSticker(selectedPlainSticker)
+                      }
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> ลบ
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    onClick={() => {
+                      setSelectedPart(null);
+                      setSelectedSticker(null);
+                    }}
+                  >
+                    ยกเลิก
+                  </Button>
+                </div>
+              )}
               {liveMulti.length > 1 && (
                 <div
                   role="toolbar"
@@ -4135,7 +4355,10 @@ function Studio() {
                 </div>
               )}
               <WordTrack
-                onDeselect={() => setMultiClips([])}
+                onDeselect={() => {
+                  setMultiClips([]);
+                  setSelectedPart(null);
+                }}
                 words={words}
                 duration={duration}
                 time={time}
@@ -4161,11 +4384,15 @@ function Studio() {
                 selectedTexts={timelineSelection}
                 onSelectTexts={selectClips}
                 onMoveTexts={moveClips}
+                videoParts={parts}
+                selectedPart={selectedPartValid}
+                onSelectPart={selectPart}
                 selectedSound={selectedSound}
                 onSelectSound={selectSound}
                 onSoundTime={retimeSound}
                 onSelectSticker={(id) => {
                   setSelectedWord(null);
+                  setSelectedPart(null);
                   setSelectedSticker(id);
                 }}
               />
@@ -4279,6 +4506,57 @@ function Studio() {
         </nav>
       )}
 
+      {/* Phone: tools for a selected video piece or sticker replace the bottom menu */}
+      {!isDesktop &&
+        !multiMode &&
+        (selectedPartValid != null || selectedPlainSticker) &&
+        (() => {
+          const part = selectedPartValid != null ? parts[selectedPartValid] : null;
+          const sticker = part ? null : selectedPlainSticker;
+          const items: { label: string; icon: LucideIcon; run: () => void }[] = part
+            ? [
+                { label: "ตัด", icon: Scissors, run: splitVideoAtPlayhead },
+                part.removed
+                  ? {
+                      label: "กู้คืน",
+                      icon: Undo2,
+                      run: () => restoreVideoPart(selectedPartValid!),
+                    }
+                  : { label: "ลบ", icon: Trash2, run: () => deleteVideoPart(selectedPartValid!) },
+                { label: "กลับ", icon: ChevronDown, run: () => setSelectedPart(null) },
+              ]
+            : [
+                { label: "ตัด", icon: Scissors, run: () => splitSticker(sticker!) },
+                { label: "ทำซ้ำ", icon: Copy, run: () => duplicateSticker(sticker!) },
+                { label: "ลบ", icon: Trash2, run: () => removeSticker(sticker!) },
+                { label: "กลับ", icon: ChevronDown, run: () => setSelectedSticker(null) },
+              ];
+          return (
+            <nav
+              aria-label={part ? "เครื่องมือช่วงวิดีโอ" : "เครื่องมือสติกเกอร์"}
+              className={cn(
+                "fixed inset-x-0 bottom-0 z-40 grid h-14 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden",
+                items.length === 3 ? "grid-cols-3" : "grid-cols-4",
+              )}
+            >
+              {items.map(({ label, icon: Icon, run }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={run}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1 text-[11px] text-muted-foreground",
+                    label === "ลบ" && "text-destructive",
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span className="truncate">{label}</span>
+                </button>
+              ))}
+            </nav>
+          );
+        })()}
+
       {/* Phone: select-several mode */}
       {!isDesktop && multiMode && (
         <nav
@@ -4341,7 +4619,12 @@ function Studio() {
       <nav
         hidden={
           !isDesktop &&
-          (selectedWordValid != null || selectedClip != null || selectedSound != null || multiMode)
+          (selectedWordValid != null ||
+            selectedClip != null ||
+            selectedSound != null ||
+            multiMode ||
+            selectedPartValid != null ||
+            selectedPlainSticker != null)
         }
         aria-label="เมนูเครื่องมือ"
         className="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-6 border-t border-border bg-background/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
