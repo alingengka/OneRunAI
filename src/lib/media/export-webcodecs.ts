@@ -88,11 +88,18 @@ function presentedFrame(video: HTMLVideoElement): Promise<void> {
   });
 }
 
+class SeekTimeoutError extends Error {
+  constructor() {
+    super("เลื่อนไปยังช่วงวิดีโอไม่สำเร็จ");
+    this.name = "SeekTimeoutError";
+  }
+}
+
 async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error("เลื่อนไปยังช่วงวิดีโอไม่สำเร็จ"));
+      reject(new SeekTimeoutError());
     }, 10000);
     const cleanup = () => {
       window.clearTimeout(timeout);
@@ -769,9 +776,26 @@ export async function exportWebCodecsVideo(
       if ((frameIndex & 7) === 0)
         onProgress?.(Math.min(0.97, 0.16 + (frameIndex / plan.length) * 0.81));
     };
+    let slowSeeks = 0;
     const seekImage = async (sample: number): Promise<CanvasImageSource> => {
       await ensureVideoReady();
-      await seekTo(video, sample);
+      try {
+        await seekTo(video, sample);
+        slowSeeks = 0;
+      } catch (error) {
+        // A phone that is busy or in low power mode can stall one seek out
+        // of the ~30 a second this does; that used to end the whole export.
+        // Ask once more, then let this frame show the nearest picture the
+        // video has and carry on. Only a video that keeps stalling stops it.
+        if (!(error instanceof SeekTimeoutError)) throw error;
+        try {
+          await seekTo(video, sample + 0.001);
+          slowSeeks = 0;
+        } catch (again) {
+          if (!(again instanceof SeekTimeoutError) || ++slowSeeks >= 5) throw again;
+          dbg(`seek to ${sample.toFixed(3)} stalled; using the current picture`);
+        }
+      }
       if (!videoPresented) {
         // Safari draws a <video> as black until it has shown its first frame.
         await presentedFrame(video);
