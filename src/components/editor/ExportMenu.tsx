@@ -15,6 +15,7 @@ import {
   type ExportResolution,
   type VideoTransitions,
 } from "@/lib/media/burn-render";
+import { safeLocalStorage } from "@/lib/safe-storage";
 
 export type ExportType = "captions" | "clean" | "srt";
 
@@ -44,7 +45,7 @@ const PRESET_KEY = "onerun-export-preset";
 
 export function loadExportPreset(): ExportSettings | null {
   try {
-    const raw = localStorage.getItem(PRESET_KEY);
+    const raw = safeLocalStorage().getItem(PRESET_KEY);
     if (!raw) return null;
     const preset = JSON.parse(raw) as Partial<ExportSettings>;
     // presets saved before transitions existed keep the old look
@@ -59,8 +60,8 @@ export function loadExportPreset(): ExportSettings | null {
 
 function savePreset(settings: ExportSettings | null) {
   try {
-    if (settings) localStorage.setItem(PRESET_KEY, JSON.stringify(settings));
-    else localStorage.removeItem(PRESET_KEY);
+    if (settings) safeLocalStorage().setItem(PRESET_KEY, JSON.stringify(settings));
+    else safeLocalStorage().removeItem(PRESET_KEY);
   } catch {
     // storage blocked: the preset just is not remembered
   }

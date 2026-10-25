@@ -1,3 +1,4 @@
+import { safeLocalStorage } from "@/lib/safe-storage";
 /**
  * The user's own stickers (uploaded pictures and Lottie animations), kept in
  * this browser so they can be reused in any project.
@@ -18,7 +19,7 @@ const MAX_LOTTIE_BYTES = 400_000;
 
 export function loadStickerLibrary(): LibrarySticker[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = safeLocalStorage().getItem(KEY);
     return raw ? (JSON.parse(raw) as LibrarySticker[]) : [];
   } catch {
     return [];
@@ -28,7 +29,7 @@ export function loadStickerLibrary(): LibrarySticker[] {
 /** Saves the library; returns false when the browser storage is full. */
 export function saveStickerLibrary(items: LibrarySticker[]): boolean {
   try {
-    localStorage.setItem(KEY, JSON.stringify(items.slice(0, MAX_ITEMS)));
+    safeLocalStorage().setItem(KEY, JSON.stringify(items.slice(0, MAX_ITEMS)));
     return true;
   } catch {
     return false;

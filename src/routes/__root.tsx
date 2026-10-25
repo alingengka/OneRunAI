@@ -52,6 +52,17 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        {/* in-app browsers (Facebook, LINE, TikTok…) cause most of these */}
+        {typeof navigator !== "undefined" &&
+          /FBAN|FBAV|Instagram|Line\/|TikTok|musical_ly|Messenger/i.test(navigator.userAgent) && (
+            <p className="mt-3 text-sm text-foreground">
+              เปิดจากในแอปอยู่ ลองกด ••• แล้วเลือก “เปิดใน Safari / Chrome”
+            </p>
+          )}
+        {/* the reason, small, so a screenshot tells us what broke */}
+        <p className="mt-3 break-words font-mono text-[11px] text-muted-foreground/70">
+          {String((error as Error | undefined)?.message ?? error).slice(0, 180)}
+        </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {

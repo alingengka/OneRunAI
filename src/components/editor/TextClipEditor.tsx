@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, Scissors, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Check,
+  Copy,
+  Scissors,
+  Trash2,
+} from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import {
@@ -213,6 +222,8 @@ export function TextClipEditor({
           <Check className="h-5 w-5" />
         </button>
       </div>
+
+      <PositionRow look={look} onStyle={onStyle} />
 
       <div role="tablist" aria-label="ตั้งค่าข้อความ" className="flex border-b border-border">
         {(
@@ -544,5 +555,69 @@ function ActionButton({
       <Icon className="h-4 w-4" />
       {label}
     </button>
+  );
+}
+
+/**
+ * Where the text sits on the video, without dragging it on a small phone
+ * preview: top / middle / bottom in one tap, arrows to nudge.
+ */
+function PositionRow({
+  look,
+  onStyle,
+}: {
+  look: CaptionStyle;
+  onStyle: (patch: Partial<CaptionStyle>) => void;
+}) {
+  const clamp = (v: number) => Math.max(5, Math.min(95, Math.round(v)));
+  const y = look.posY;
+  const x = look.posX;
+  const presets: [string, number][] = [
+    ["บน", 18],
+    ["กลาง", 50],
+    ["ล่าง", 78],
+  ];
+  const nudges: [string, typeof ArrowUp, Partial<CaptionStyle>][] = [
+    ["เลื่อนขึ้น", ArrowUp, { posY: clamp(y - 3) }],
+    ["เลื่อนลง", ArrowDown, { posY: clamp(y + 3) }],
+    ["เลื่อนซ้าย", ArrowLeft, { posX: clamp(x - 3) }],
+    ["เลื่อนขวา", ArrowRight, { posX: clamp(x + 3) }],
+  ];
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-muted-foreground">
+        ตำแหน่ง <span className="font-mono">{Math.round(y)}%</span>
+      </p>
+      <div className="flex items-center gap-1">
+        {presets.map(([label, value]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => onStyle({ posY: value, posX: 50 })}
+            className={cn(
+              "h-8 flex-1 rounded-md border px-1 text-xs font-medium",
+              Math.abs(y - value) < 2 && Math.abs(x - 50) < 2
+                ? "border-primary bg-primary/15 text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="mx-1 h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+        {nudges.map(([label, Icon, patch]) => (
+          <button
+            key={label}
+            type="button"
+            aria-label={label}
+            title={label}
+            onClick={() => onStyle(patch)}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-border text-muted-foreground hover:text-foreground"
+          >
+            <Icon className="h-4 w-4" />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

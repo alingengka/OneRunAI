@@ -1,3 +1,4 @@
+import { safeLocalStorage } from "@/lib/safe-storage";
 /** Landing page copy in Lao, Thai and English. */
 
 export type Lang = "lo" | "th" | "en";
@@ -13,7 +14,7 @@ const STORAGE_KEY = "onerun-landing-lang";
 /** The saved choice, else the device language (Lao, Thai, otherwise English). */
 export function initialLang(): Lang {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = safeLocalStorage().getItem(STORAGE_KEY);
     if (saved === "lo" || saved === "th" || saved === "en") return saved;
   } catch {
     // storage blocked: fall back to the device language
@@ -29,7 +30,7 @@ export function initialLang(): Lang {
 
 export function saveLang(lang: Lang) {
   try {
-    localStorage.setItem(STORAGE_KEY, lang);
+    safeLocalStorage().setItem(STORAGE_KEY, lang);
   } catch {
     // not remembered this time
   }
