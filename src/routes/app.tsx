@@ -202,6 +202,7 @@ import {
   type VideoEdit,
 } from "@/lib/video-parts";
 import { AccountMenu } from "@/components/account/AccountMenu";
+import { safeLocalStorage } from "@/lib/safe-storage";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
@@ -269,9 +270,6 @@ const LANGUAGES: { code: LangCode; label: string; font: string }[] = [
   { code: "lo", label: "ລາວ", font: "'Noto Sans Lao Looped', 'Noto Sans Lao', sans-serif" },
   { code: "en", label: "English", font: "'Inter', system-ui, sans-serif" },
 ];
-
-/** Cuts up to this long are fast-forwarded in the preview; longer ones are seeked. */
-const FAST_SKIP_MAX = 1.2;
 
 /** How many subtitle chunks are transcribed at the same time. */
 const TRANSCRIBE_CONCURRENCY = 3;
@@ -483,7 +481,7 @@ function Studio() {
   const restoredProjectRef = useRef(false);
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem("onerunai-theme");
+    const storedTheme = safeLocalStorage().getItem("onerunai-theme");
     const useDark = storedTheme !== "light";
     setDarkMode(useDark);
     document.documentElement.classList.toggle("dark", useDark);
@@ -493,7 +491,7 @@ function Studio() {
     const next = !darkMode;
     setDarkMode(next);
     document.documentElement.classList.toggle("dark", next);
-    window.localStorage.setItem("onerunai-theme", next ? "dark" : "light");
+    safeLocalStorage().setItem("onerunai-theme", next ? "dark" : "light");
   };
 
   const [dropped, setDropped] = useState<string[]>([]);
@@ -742,15 +740,59 @@ function Studio() {
   }, [boundaries]);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
-  /** Fast-forwarding through a cut right now (muted, high playbackRate). */
-  const skippingRef = useRef(false);
+  /** Jumping over a cut right now: the last picture is held on top meanwhile. */
+  const jumpingRef = useRef(false);
+  const holdRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     let raf = 0;
-    const endSkip = (v: HTMLVideoElement) => {
-      if (!skippingRef.current) return;
-      skippingRef.current = false;
-      v.playbackRate = 1;
-      v.muted = mutedRef.current;
+    /**
+     * A hard cut over a deleted part, like CapCut. Fast-forwarding through it
+     * showed the deleted frames flashing past; a bare seek flashed black or
+     * froze on phones. So the last picture is drawn on a canvas over the
+     * video, the video jumps, and the canvas goes once the new picture is up.
+     */
+    const jumpTo = (v: HTMLVideoElement, target: number) => {
+      jumpingRef.current = true;
+      const hold = holdRef.current;
+      if (hold && v.videoWidth) {
+        const w = v.clientWidth;
+        const h = v.clientHeight;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        hold.width = Math.round(w * dpr);
+        hold.height = Math.round(h * dpr);
+        const ctx = hold.getContext("2d");
+        if (ctx) {
+          // object-fit: cover, like the video
+          const scale = Math.max(hold.width / v.videoWidth, hold.height / v.videoHeight);
+          const dw = v.videoWidth * scale;
+          const dh = v.videoHeight * scale;
+          try {
+            ctx.drawImage(v, (hold.width - dw) / 2, (hold.height - dh) / 2, dw, dh);
+            hold.style.transform = v.style.transform;
+            hold.style.visibility = "visible";
+          } catch {
+            /* not drawable yet: just jump */
+          }
+        }
+      }
+      let done = false;
+      const release = () => {
+        if (done) return;
+        done = true;
+        jumpingRef.current = false;
+        if (holdRef.current) holdRef.current.style.visibility = "hidden";
+      };
+      const onSeeked = () => {
+        const withFrame = (
+          v as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }
+        ).requestVideoFrameCallback;
+        if (withFrame && !v.paused) withFrame.call(v, release);
+        else window.setTimeout(release, 30);
+      };
+      v.addEventListener("seeked", onSeeked, { once: true });
+      // never leave the picture frozen if the seek gets lost
+      window.setTimeout(release, 1500);
+      v.currentTime = target;
     };
     const tick = () => {
       const v = videoRef.current;
@@ -761,30 +803,9 @@ function Studio() {
           silences.length && !v.paused
             ? silences.find((g) => t >= g.start && t < g.end - 0.03)
             : undefined;
-        if (gap) {
-          const remaining = gap.end - t;
-          let fastForward = remaining <= FAST_SKIP_MAX;
-          if (fastForward) {
-            // A seek stalls the picture and sound on phones; racing through a
-            // short cut muted at up to 16x does not. The rate eases off near
-            // the end so playback lands on the next spoken part.
-            try {
-              v.playbackRate = Math.min(16, Math.max(1, remaining / 0.03));
-              if (!skippingRef.current) {
-                skippingRef.current = true;
-                v.muted = true;
-              }
-            } catch {
-              fastForward = false; // browser refuses high rates: seek instead
-            }
-          }
-          if (!fastForward) {
-            endSkip(v);
-            const next = outputSegments.find((s) => s.start >= gap.end - 0.001);
-            v.currentTime = next ? next.start : v.duration;
-          }
-        } else {
-          endSkip(v);
+        if (gap && !jumpingRef.current) {
+          const next = outputSegments.find((s) => s.start >= gap.end - 0.001);
+          jumpTo(v, next ? next.start : v.duration);
         }
         // ~30 updates a second is smooth for captions; phones run requestAnimationFrame
         // at 120Hz, and re-rendering that often made playback stutter.
@@ -1595,7 +1616,6 @@ function Studio() {
       restoreAudioSession();
       const v = videoRef.current;
       if (v) {
-        skippingRef.current = false;
         v.playbackRate = 1;
         v.muted = mutedRef.current;
       }
@@ -2102,7 +2122,7 @@ function Studio() {
     let last = v.currentTime;
     let still = 0;
     const id = window.setInterval(() => {
-      if (v.paused || v.ended || skippingRef.current || isPriming(v)) {
+      if (v.paused || v.ended || jumpingRef.current || isPriming(v)) {
         last = v.currentTime;
         still = 0;
         return;
@@ -3860,19 +3880,16 @@ function Studio() {
             {expanded && (
               <>
                 <div className="fixed inset-0 z-[65] bg-black" aria-hidden="true" />
-                {/* Full screen is for watching: a tap anywhere plays or pauses (CapCut) */}
-                <button
-                  type="button"
-                  aria-label={playing ? "หยุด" : "เล่น"}
-                  onClick={togglePlay}
-                  className="fixed inset-0 z-[75] flex items-center justify-center"
-                >
-                  {!playing && (
+                {/* A tap on the video plays or pauses (the video's own click); text and
+                    stickers above it stay draggable while paused. The big ▶ only shows
+                    the state and lets taps through. */}
+                {!playing && (
+                  <div className="pointer-events-none fixed inset-0 z-[75] flex items-center justify-center">
                     <span className="grid h-20 w-20 place-items-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm">
                       <Play className="ml-1 h-9 w-9" />
                     </span>
-                  )}
-                </button>
+                  </div>
+                )}
                 <div className="fixed inset-x-0 bottom-0 z-[80] flex items-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-8">
                   <Button
                     size="icon"
@@ -3980,6 +3997,13 @@ function Studio() {
                       }}
                       onCanPlay={() => setBuffering(false)}
                       onClick={togglePlay}
+                    />
+                    {/* the last picture, held over the video while it jumps a cut */}
+                    <canvas
+                      ref={holdRef}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 h-full w-full"
+                      style={{ visibility: "hidden" }}
                     />
                     {buffering && playing ? (
                       <div className="pointer-events-none absolute inset-0 z-[35] grid place-items-center">

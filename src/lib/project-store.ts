@@ -4,6 +4,7 @@ import type { SoundClip } from "./sounds";
 import type { SceneElement } from "./scenes";
 import type { LexRule } from "./lao-glossary";
 import type { Sticker } from "./media/stickers";
+import { safeLocalStorage } from "@/lib/safe-storage";
 
 const KEY = "shortcut-studio-project-v1";
 
@@ -40,7 +41,7 @@ export type SavedProject = {
 
 export function saveProject(p: Omit<SavedProject, "savedAt">): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ ...p, savedAt: Date.now() }));
+    safeLocalStorage().setItem(KEY, JSON.stringify({ ...p, savedAt: Date.now() }));
   } catch {
     /* quota or private mode — ignore */
   }
@@ -48,7 +49,7 @@ export function saveProject(p: Omit<SavedProject, "savedAt">): void {
 
 export function loadProject(): SavedProject | null {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = safeLocalStorage().getItem(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SavedProject;
     if (!parsed || !Array.isArray(parsed.segments)) return null;
@@ -60,7 +61,7 @@ export function loadProject(): SavedProject | null {
 
 export function clearProject(): void {
   try {
-    localStorage.removeItem(KEY);
+    safeLocalStorage().removeItem(KEY);
   } catch {
     /* ignore */
   }

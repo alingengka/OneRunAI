@@ -27,10 +27,31 @@ export function mimeExtension(mime: string): "mp4" | "webm" {
   return mime.startsWith("video/mp4") ? "mp4" : "webm";
 }
 
+const SEEK_TIMEOUT = "เลื่อนไปยังช่วงวิดีโอไม่สำเร็จ";
+
+/**
+ * Seeks to the next kept part. A busy phone can stall one seek; ask once
+ * more, then carry on from wherever the video is rather than lose the whole
+ * export (a few frames off beats no video).
+ */
 async function seek(video: HTMLVideoElement, time: number): Promise<void> {
+  try {
+    await seekOnce(video, time);
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== SEEK_TIMEOUT) throw error;
+    try {
+      await seekOnce(video, time + 0.001);
+    } catch (again) {
+      if (!(again instanceof Error) || again.message !== SEEK_TIMEOUT) throw again;
+      console.warn("[export-burned] seek stalled twice; continuing", time);
+    }
+  }
+}
+
+async function seekOnce(video: HTMLVideoElement, time: number): Promise<void> {
   if (Math.abs(video.currentTime - time) < 0.015) return;
   await new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => { cleanup(); reject(new Error("เลื่อนไปยังช่วงวิดีโอไม่สำเร็จ")); }, 6000);
+    const timeout = window.setTimeout(() => { cleanup(); reject(new Error(SEEK_TIMEOUT)); }, 8000);
     const cleanup = () => {
       window.clearTimeout(timeout);
       video.removeEventListener("seeked", done);

@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { formatKip, PLAN_LABELS } from "@/lib/account-shared";
 import { adminUsageSummary, type UsageSummary as Summary } from "@/lib/usage.functions";
+import { safeLocalStorage } from "@/lib/safe-storage";
 
 type Days = 7 | 30 | 90;
 
@@ -22,7 +23,7 @@ const STATUS_LABELS: Record<Summary["users"][number]["status"], string> = {
 
 function readCost(): number {
   try {
-    const value = Number(window.localStorage.getItem(COST_KEY));
+    const value = Number(safeLocalStorage().getItem(COST_KEY));
     return Number.isFinite(value) && value > 0 ? value : DEFAULT_COST_PER_MINUTE;
   } catch {
     return DEFAULT_COST_PER_MINUTE;
@@ -152,7 +153,7 @@ export function UsageSummary() {
     if (!Number.isFinite(parsed) || parsed <= 0) return;
     setCost(parsed);
     try {
-      window.localStorage.setItem(COST_KEY, String(parsed));
+      safeLocalStorage().setItem(COST_KEY, String(parsed));
     } catch {
       /* preference only */
     }
