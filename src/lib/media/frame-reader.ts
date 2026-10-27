@@ -66,7 +66,7 @@ export async function openFrameReader(
  */
 export async function probeVideo(
   blob: Blob,
-): Promise<{ duration: number; width: number; height: number } | null> {
+): Promise<{ duration: number; width: number; height: number; frameRate: number | null } | null> {
   try {
     const { ALL_FORMATS, BlobSource, Input } = await import("mediabunny");
     const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
@@ -75,7 +75,15 @@ export async function probeVideo(
       if (!track) return null;
       const duration = await input.computeDuration();
       if (!(duration > 0) || !track.displayWidth || !track.displayHeight) return null;
-      return { duration, width: track.displayWidth, height: track.displayHeight };
+      // the source's frame rate (phones record 60 fps too), from its first packets
+      const stats = await track.computePacketStats(120).catch(() => null);
+      const rate = stats?.averagePacketRate ?? 0;
+      return {
+        duration,
+        width: track.displayWidth,
+        height: track.displayHeight,
+        frameRate: rate > 1 && rate < 480 ? rate : null,
+      };
     } finally {
       input.dispose();
     }

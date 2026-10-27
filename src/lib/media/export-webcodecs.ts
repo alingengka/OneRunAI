@@ -580,13 +580,16 @@ export async function exportWebCodecsVideo(
     // whenever the clip's timestamps are rounded a little late (WebM keeps
     // milliseconds, phones write slightly uneven times), so the output repeats
     // a frame and then skips one: visible stutter. Half a frame later always
-    // lands inside the right frame.
+    // lands inside the right frame. Half a frame of whichever runs faster: a
+    // 60 fps phone clip read half a 30 fps frame later lands exactly on its
+    // next frame boundary and picks either side at random, which stuttered.
+    const nudge = 0.5 / Math.max(fps, probe?.frameRate ?? 0);
     const plan: { time: number; sample: number; seg: Segment }[] = [];
     for (const seg of normalized) {
       const count = Math.max(1, Math.round((seg.end - seg.start) * fps));
       for (let k = 0; k < count; k++) {
         const time = Math.min(seg.end - 0.001, seg.start + k / fps);
-        plan.push({ time, sample: Math.min(seg.end - 0.001, time + 0.5 / fps), seg });
+        plan.push({ time, sample: Math.min(seg.end - 0.001, time + nudge), seg });
       }
     }
     const planTimes = plan.map((frame) => frame.time);
