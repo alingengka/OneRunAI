@@ -271,8 +271,12 @@ const LANGUAGES: { code: LangCode; label: string; font: string }[] = [
   { code: "en", label: "English", font: "'Inter', system-ui, sans-serif" },
 ];
 
-/** How many subtitle chunks are transcribed at the same time. */
-const TRANSCRIBE_CONCURRENCY = 3;
+/**
+ * How many subtitle chunks are transcribed at the same time. Lao chunks are
+ * short and each calls Gemini, so 3 at once trips its free per-minute limit
+ * on 2–3 minute clips; 2 keeps the main model answering.
+ */
+const transcribeConcurrency = (lang: LangCode) => (lang === "lo" ? 2 : 3);
 /** Longest wait for one chunk's transcription before asking again. */
 const TRANSCRIBE_TIMEOUT_MS = 170_000;
 
@@ -1256,7 +1260,7 @@ function Studio() {
           // already been committed as spelling context.
           await runInOrderPool(
             chunks.length,
-            TRANSCRIBE_CONCURRENCY,
+            transcribeConcurrency(lang),
             async (i) => {
               const out = await transcribeChunk(chunks[i]!, 2);
               done++;
@@ -1284,7 +1288,7 @@ function Studio() {
         const stillMissing: Segment[][] = [];
         await runInOrderPool(
           missing.length,
-          TRANSCRIBE_CONCURRENCY,
+          transcribeConcurrency(lang),
           (i) => transcribeChunk(missing[i]!, 1),
           (i, out) => {
             if ("skipped" in out && out.skipped) return;
@@ -1306,7 +1310,7 @@ function Studio() {
           const pad = 0.2;
           await runInOrderPool(
             skipped.length,
-            TRANSCRIBE_CONCURRENCY,
+            transcribeConcurrency(lang),
             (i) =>
               transcribeChunk(
                 [
