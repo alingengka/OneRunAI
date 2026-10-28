@@ -9,8 +9,6 @@
  * shapes stay the same as the chat-completions API.
  */
 
-import { readRateLimit } from "./gemini-limits";
-
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
 const OPENAI_BASE = "https://api.openai.com/v1";
 
@@ -100,16 +98,6 @@ const COOLDOWN_MS = 10 * 60 * 1000;
 const RETIRED_MS = 24 * 60 * 60 * 1000;
 /** Google's "model is overloaded right now" (503 and friends) passes quickly. */
 const BUSY_MS = 60 * 1000;
-/** A per-minute limit clears within a minute; only a daily one needs COOLDOWN_MS. */
-const MINUTE_LIMIT_MS = 60 * 1000;
-/** Longest wait for a per-minute limit before retrying the same model once. */
-const MAX_LIMIT_WAIT_MS = 20 * 1000;
-
-let lastRateLimitAt = 0;
-/** True when any Gemini call hit a rate limit within the last `withinMs`. */
-export function geminiRecentlyLimited(withinMs = 60 * 1000): boolean {
-  return Date.now() - lastRateLimitAt < withinMs;
-}
 
 /**
  * Flash models this key can use right now, newest first (full models before
@@ -163,31 +151,19 @@ export async function geminiChat(
   model: string,
   messages: { role: "system" | "user"; content: ChatContent }[],
   label: string,
-  options: {
-    temperature?: number;
-    retries?: number;
-    fallback?: boolean;
-    timeoutMs?: number;
-    /** Skip "lite" models: for Lao they answer, but with wrong words. */
-    noLite?: boolean;
-    /** On a short per-minute limit, wait and ask the same model once more. */
-    waitOnLimit?: boolean;
-  } = {},
+  options: { temperature?: number; retries?: number; fallback?: boolean; timeoutMs?: number } = {},
 ): Promise<string> {
   const apiKey = geminiKey();
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
   const chain =
     options.fallback === false
       ? [model]
-      : [model, ...GEMINI_FALLBACK_MODELS.filter((name) => name !== model)].filter(
-          (name) => name === model || !(options.noLite && name.includes("lite")),
-        );
+      : [model, ...GEMINI_FALLBACK_MODELS.filter((name) => name !== model)];
   // When every model is resting, try them anyway rather than fail without asking.
   const resting = chain.filter((name) => !isCoolingDown(name));
   const models = resting.length ? resting : [...chain];
   let lastError: Error | null = null;
   let searched = options.fallback === false;
-  let waited = false;
   for (let index = 0; ; index++) {
     if (index >= models.length) {
       // Everything configured is retired or out of quota: ask Google which
@@ -195,7 +171,6 @@ export async function geminiChat(
       if (searched) break;
       searched = true;
       for (const name of await discoverFlashModels(apiKey)) {
-        if (options.noLite && name.includes("lite")) continue;
         if (!models.includes(name) && !isCoolingDown(name)) models.push(name);
       }
       if (index >= models.length) break;
@@ -241,23 +216,8 @@ export async function geminiChat(
       response.status === 404 || (response.status === 400 && /model/i.test(body));
     const limited = response.status === 429;
     const busy = [500, 502, 503, 504].includes(response.status);
-    if (limited) {
-      lastRateLimitAt = Date.now();
-      const limit = readRateLimit(body, response.headers.get("retry-after"));
-      // Free-tier limits are mostly per minute: waiting a few seconds keeps the
-      // main model, where moving on would hand the clip to a weaker one.
-      const wait = limit.waitMs ?? 5000;
-      if (!limit.daily && options.waitOnLimit && !waited && wait <= MAX_LIMIT_WAIT_MS) {
-        waited = true;
-        console.error(
-          `[gemini] ${candidate} rate limited, retrying in ${Math.round(wait / 1000)}s`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, wait));
-        index--;
-        continue;
-      }
-      cooledDown.set(candidate, Date.now() + (limit.daily ? COOLDOWN_MS : MINUTE_LIMIT_MS));
-    } else if (unknownModel) cooledDown.set(candidate, Date.now() + RETIRED_MS);
+    if (limited) cooledDown.set(candidate, Date.now() + COOLDOWN_MS);
+    else if (unknownModel) cooledDown.set(candidate, Date.now() + RETIRED_MS);
     else if (busy) cooledDown.set(candidate, Date.now() + BUSY_MS);
     if (!unknownModel && !limited && !busy) break;
     console.error(
