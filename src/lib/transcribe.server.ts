@@ -1,6 +1,6 @@
 import { thaiToLaoScript } from "./lao-script";
 import { tokenizeWords } from "./captions";
-import { GEMINI_TRANSCRIBE_MODEL, fetchWithRetry, geminiChat, geminiKey, geminiRecentlyLimited, openaiKey, openaiTranscribe } from "./ai-providers.server";
+import { GEMINI_TRANSCRIBE_MODEL, fetchWithRetry, geminiChat, geminiKey, openaiKey, openaiTranscribe } from "./ai-providers.server";
 
 const HALLUCINATIONS = new Set([
   "thank you", "thanks for watching", "you", "bye", "subtitles by",
@@ -209,7 +209,7 @@ async function transcribeWithGemini(
    * guessed — the same role the strict OpenAI pass plays.
    */
   variant: "main" | "independent" = "main",
-  options: Parameters<typeof geminiChat>[3] = {},
+  options: { temperature?: number; retries?: number; fallback?: boolean; timeoutMs?: number } = {},
 ): Promise<string> {
   const instructions = language === "lo"
     ? [
@@ -329,10 +329,9 @@ export async function transcribeAudioServer(input: {
   // pass disagree (see below), which keeps the cost of a typical chunk at
   // two engine calls. They are best-effort: no retries and no user-facing
   // warning, and they never use the fallback models, whose quota is kept for
-  // the main pass. While Gemini is rate limited they are skipped too: they
-  // would spend the per-minute quota the next chunks' main passes need.
+  // the main pass.
   const runGeminiExtras = () => Promise.allSettled(
-    !hasOpenAI && hasGemini && input.language === "lo" && !geminiRecentlyLimited()
+    !hasOpenAI && hasGemini && input.language === "lo"
       ? [
           transcribeWithGemini(input.audioBase64, "lo", "", input.glossary ?? [], "independent", {
             temperature: 0,
@@ -356,11 +355,7 @@ export async function transcribeAudioServer(input: {
     const [scribeResult, geminiResult] = await Promise.allSettled([
       transcribeWithScribe(binary, input.glossary ?? []),
       hasGemini
-        ? transcribeWithGemini(input.audioBase64, "lo", input.context ?? "", input.glossary ?? [], "main", {
-            // lite models write plausible but wrong Lao; Scribe covers a miss
-            noLite: true,
-            waitOnLimit: true,
-          })
+        ? transcribeWithGemini(input.audioBase64, "lo", input.context ?? "", input.glossary ?? [])
         : Promise.reject(new Error("Missing GEMINI_API_KEY")),
     ]);
 
