@@ -115,7 +115,11 @@ import type { TimedWord } from "@/lib/media/forced-align";
 import { exportTrimmedWebm } from "@/lib/media/export-video";
 import { exportBurnedVideo, targetSize, type ExportResolution } from "@/lib/media/export-burned";
 import { DEFAULT_TRANSITIONS, type VideoTransitions } from "@/lib/media/burn-render";
-import { exportWebCodecsVideo, supportsWebCodecsExport } from "@/lib/media/export-webcodecs";
+import {
+  SourceFileUnreadableError,
+  exportWebCodecsVideo,
+  supportsWebCodecsExport,
+} from "@/lib/media/export-webcodecs";
 
 import {
   buildCutListJson,
@@ -922,7 +926,29 @@ function Studio() {
     void onPickFile(f);
   };
 
-  const onPickFile = async (f: File) => {
+  /** Pick the same clip again after the browser lost access to it, keeping the work. */
+  const relinkSourceFile = () => {
+    restoredProjectRef.current = true;
+    openFilePicker();
+  };
+
+  const onPickFile = async (picked: File) => {
+    // On a computer the browser reads the picked file from disk again at
+    // export time, which fails ("Failed to fetch") once it is moved, re-saved
+    // or is a cloud-drive placeholder. A copy in memory cannot go missing.
+    // Phones already hand the page its own copy, and need the memory.
+    const f = window.matchMedia("(pointer: fine)").matches
+      ? await picked
+          .arrayBuffer()
+          .then(
+            (data) =>
+              new File([data], picked.name, {
+                type: picked.type,
+                lastModified: picked.lastModified,
+              }),
+          )
+          .catch(() => picked)
+      : picked;
     audioBufferRef.current = null;
     lastClockRef.current = 0; // a new clip must not be "restored" to the old one's spot
     setPeaks([]);
@@ -1604,6 +1630,11 @@ function Studio() {
         (error instanceof DOMException && error.name === "AbortError")
       ) {
         toast.message("ยกเลิกงานแล้ว");
+      } else if (error instanceof SourceFileUnreadableError) {
+        toast.error(error.message, {
+          duration: 20_000,
+          action: { label: "เลือกไฟล์เดิม", onClick: relinkSourceFile },
+        });
       } else {
         toast.error(error instanceof Error ? error.message : "ทำงานไม่สำเร็จ");
       }

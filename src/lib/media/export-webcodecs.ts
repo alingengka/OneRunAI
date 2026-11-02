@@ -26,6 +26,20 @@ import { copyAudioPackets, type CopiedAudio } from "./audio-passthrough";
 import { loadSound, outputTimeOf, restoreAudioSession, type SoundClip } from "../sounds";
 import type { CaptionGroup, CaptionStyle } from "../captions";
 
+/**
+ * The browser can no longer read the picked video: on a computer it reads the
+ * file from disk again, which fails once the file was moved, renamed, re-saved
+ * or is a OneDrive/Google Drive placeholder ("Failed to fetch").
+ */
+export class SourceFileUnreadableError extends Error {
+  constructor() {
+    super(
+      "อ่านไฟล์วิดีโอต้นฉบับไม่ได้แล้ว (ไฟล์อาจถูกย้าย เปลี่ยนชื่อ หรือแก้ไขหลังอัปโหลด) — กด “เลือกไฟล์เดิม” แล้วส่งออกใหม่ งานที่ทำไว้ไม่หาย",
+    );
+    this.name = "SourceFileUnreadableError";
+  }
+}
+
 type Progress = (ratio: number) => void;
 
 export function supportsWebCodecsExport(): boolean {
@@ -541,7 +555,11 @@ export async function exportWebCodecsVideo(
   const pending: { index: number; frame: VideoFrame }[] = [];
 
   try {
-    const sourceBlob = await fetch(url).then((response) => response.blob());
+    const sourceBlob = await fetch(url)
+      .then((response) => response.blob())
+      .catch(() => {
+        throw new SourceFileUnreadableError();
+      });
     onProgress?.(0.01);
     // Read size and duration from the file; fall back to the <video> element.
     const probe = await probeVideo(sourceBlob);
