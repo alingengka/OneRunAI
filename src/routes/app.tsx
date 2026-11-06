@@ -936,21 +936,19 @@ function Studio() {
     // On a computer the browser reads the picked file from disk again at
     // export time, which fails ("Failed to fetch") once it is moved, re-saved
     // or is a cloud-drive placeholder. A copy in memory cannot go missing.
-    // Phones already hand the page its own copy, and need the memory; a
-    // clip over 1 GB would not fit in it either.
-    const f =
-      window.matchMedia("(pointer: fine)").matches && picked.size <= 1024 * 1024 * 1024
-        ? await picked
-            .arrayBuffer()
-            .then(
-              (data) =>
-                new File([data], picked.name, {
-                  type: picked.type,
-                  lastModified: picked.lastModified,
-                }),
-            )
-            .catch(() => picked)
-        : picked;
+    // Phones already hand the page its own copy, and need the memory.
+    const f = window.matchMedia("(pointer: fine)").matches
+      ? await picked
+          .arrayBuffer()
+          .then(
+            (data) =>
+              new File([data], picked.name, {
+                type: picked.type,
+                lastModified: picked.lastModified,
+              }),
+          )
+          .catch(() => picked)
+      : picked;
     audioBufferRef.current = null;
     lastClockRef.current = 0; // a new clip must not be "restored" to the old one's spot
     setPeaks([]);
@@ -2225,7 +2223,7 @@ function Studio() {
             [...groups, ...textGroups],
             style,
             onProgress,
-            { ...options, source: file },
+            options,
           );
         let result: Awaited<ReturnType<typeof run>>;
         try {
