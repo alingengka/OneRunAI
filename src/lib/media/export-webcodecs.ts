@@ -34,7 +34,7 @@ import type { CaptionGroup, CaptionStyle } from "../captions";
 export class SourceFileUnreadableError extends Error {
   constructor() {
     super(
-      "อ่านไฟล์วิดีโอต้นฉบับไม่ได้แล้ว (ไฟล์อาจถูกย้าย เปลี่ยนชื่อ หรือแก้ไขหลังอัปโหลด) — กด “เลือกไฟล์เดิม” แล้วส่งออกใหม่ งานที่ทำไว้ไม่หาย",
+      "อ่านไฟล์วิดีโอต้นฉบับไม่ได้ (ไฟล์อาจถูกย้าย เปลี่ยนชื่อ หรือแก้ไขหลังอัปโหลด) — กด “เลือกไฟล์เดิม” แล้วส่งออกใหม่ งานที่ทำไว้ไม่หาย",
     );
     this.name = "SourceFileUnreadableError";
   }
@@ -490,6 +490,12 @@ export async function exportWebCodecsVideo(
     fps?: number;
     /** Sound effects from the sound library. */
     sounds?: SoundClip[];
+    /**
+     * The picked file itself. Read in slices, it is never loaded whole:
+     * fetching `url` copies the whole clip into memory first, which iPhone
+     * Safari refuses for a large one ("Load failed").
+     */
+    source?: Blob | null;
   } = {},
 ): Promise<WebCodecsExportResult> {
   if (!segments.length) throw new Error("ยังไม่ได้วิเคราะห์ช่วงเงียบ");
@@ -555,13 +561,22 @@ export async function exportWebCodecsVideo(
   const pending: { index: number; frame: VideoFrame }[] = [];
 
   try {
-    const sourceBlob = await fetch(url)
-      .then((response) => response.blob())
+    const sourceBlob =
+      options.source ??
+      (await fetch(url)
+        .then((response) => response.blob())
+        .catch(() => {
+          throw new SourceFileUnreadableError();
+        }));
+    onProgress?.(0.01);
+    // Read size and duration from the file; fall back to the <video> element.
+    // A file the browser lost access to fails here, not halfway through.
+    await sourceBlob
+      .slice(0, 1)
+      .arrayBuffer()
       .catch(() => {
         throw new SourceFileUnreadableError();
       });
-    onProgress?.(0.01);
-    // Read size and duration from the file; fall back to the <video> element.
     const probe = await probeVideo(sourceBlob);
     if (!probe) await ensureVideoReady();
     const duration = probe?.duration ?? video.duration;
