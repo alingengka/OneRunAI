@@ -774,6 +774,10 @@ export async function exportWebCodecsVideo(
     };
     // Keep the encoder's queue short: WebKit fails more often when flooded.
     const queueLimit = 4;
+    // Each kept copy is a full output frame (8 MB at 1080x1920, 33 MB at 4K).
+    // 24 of them at 4K was close to a gigabyte, and iPhone Safari closes a
+    // page that uses that much ("A problem repeatedly occurred").
+    const pendingLimit = Math.max(4, Math.min(24, Math.floor(96_000_000 / (width * height * 4))));
 
     onProgress?.(0.16); // audio and setup done; the frames take the rest
 
@@ -800,7 +804,7 @@ export async function exportWebCodecsVideo(
       }
       if (encoderError) await recover();
       frameIndex++;
-      while (activeEncoder.encodeQueueSize >= queueLimit || pending.length > 24) {
+      while (activeEncoder.encodeQueueSize >= queueLimit || pending.length > pendingLimit) {
         if (encoderError) await recover();
         await new Promise<void>((r) => window.setTimeout(r, 4));
       }
