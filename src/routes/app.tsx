@@ -2223,7 +2223,7 @@ function Studio() {
             [...groups, ...textGroups],
             style,
             onProgress,
-            options,
+            { ...options, source: file },
           );
         let result: Awaited<ReturnType<typeof run>>;
         try {
