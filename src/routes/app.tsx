@@ -144,6 +144,7 @@ import { motionAt, type MotionKind } from "@/lib/media/motion";
 import { Clocked, createPlaybackClock, nextBoundaryAfter } from "@/lib/playback-clock";
 import { PlaybackDebug } from "@/components/editor/PlaybackDebug";
 import { isPriming, markUserPlay, primeFirstFrame } from "@/lib/media/first-frame";
+import { probeVideo } from "@/lib/media/frame-reader";
 import { createSeeker } from "@/lib/media/seeker";
 import {
   addSceneElement,
@@ -962,6 +963,16 @@ function Studio() {
     setVideoUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(f);
+    });
+    // A 4K phone clip is heavy for the browser: the preview can stutter and an
+    // iPhone may close the page while exporting. Say so up front.
+    void probeVideo(f).then((probe) => {
+      if (probe && Math.min(probe.width, probe.height) >= 2000) {
+        toast.warning(
+          "คลิปนี้เป็น 4K ไฟล์หนักมาก พรีวิวอาจกระตุก และ iPhone อาจปิดหน้าเว็บตอนส่งออก — แนะนำตั้งกล้องเป็น 1080p 30fps (ตั้งค่า › กล้อง › บันทึกวิดีโอ) หรือส่งออกที่ 1080",
+          { duration: 12_000 },
+        );
+      }
     });
     const preserveRestored = restoredProjectRef.current;
     restoredProjectRef.current = false;
