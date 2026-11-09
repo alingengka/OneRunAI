@@ -5,7 +5,7 @@
 
 type ThumbOptions = {
   max?: number;
-  /** While this returns true, decoding waits (e.g. the preview is playing). */
+  /** While this returns true, decoding stops and its decoder is released (e.g. the preview is playing). */
   hold?: () => boolean;
   /** Stop early, e.g. a different clip was opened. */
   cancelled?: () => boolean;
@@ -23,33 +23,45 @@ export async function makeThumbnails(
   const step = Math.max(1, Math.ceil(duration / max));
   const times: number[] = [];
   for (let t = 0; t < duration; t += step) times.push(Math.min(duration - 0.05, t + step / 2));
+  const thumbs: string[] = [];
   try {
     const { ALL_FORMATS, BlobSource, CanvasSink, Input } = await import("mediabunny");
-    const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
-    try {
-      const track = await input.getPrimaryVideoTrack();
-      if (!track || !(await track.canDecode())) return null;
-      const sink = new CanvasSink(track, { height: 72, poolSize: 1 });
-      const out = document.createElement("canvas");
-      const thumbs: string[] = [];
-      for await (const wrapped of sink.canvasesAtTimestamps(times)) {
-        while (hold?.() && !cancelled?.()) await sleep(300);
-        if (cancelled?.()) return null;
-        if (!wrapped) {
-          thumbs.push(thumbs[thumbs.length - 1] ?? "");
-          continue;
+    const out = document.createElement("canvas");
+    // While the clip plays the decoder is closed, not just paused: an iPhone
+    // has few hardware decoders, and holding one kept a 4K preview from
+    // playing at all (the clock stayed put). Pick up where it stopped after.
+    while (thumbs.length < times.length) {
+      while (hold?.() && !cancelled?.()) await sleep(300);
+      if (cancelled?.()) return null;
+      const before = thumbs.length;
+      const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+      try {
+        const track = await input.getPrimaryVideoTrack();
+        if (!track || !(await track.canDecode())) return null;
+        const sink = new CanvasSink(track, { height: 72, poolSize: 1 });
+        for await (const wrapped of sink.canvasesAtTimestamps(times.slice(thumbs.length))) {
+          if (cancelled?.()) return null;
+          if (!wrapped) {
+            thumbs.push(thumbs[thumbs.length - 1] ?? "");
+          } else {
+            out.width = wrapped.canvas.width;
+            out.height = wrapped.canvas.height;
+            out.getContext("2d")?.drawImage(wrapped.canvas, 0, 0);
+            thumbs.push(out.toDataURL("image/jpeg", 0.6));
+          }
+          if (hold?.()) break;
+          // Give the page a breath between frames so taps stay responsive.
+          await sleep(0);
         }
-        out.width = wrapped.canvas.width;
-        out.height = wrapped.canvas.height;
-        out.getContext("2d")?.drawImage(wrapped.canvas, 0, 0);
-        thumbs.push(out.toDataURL("image/jpeg", 0.6));
-        // Give the page a breath between frames so taps stay responsive.
-        await sleep(0);
+      } finally {
+        input.dispose();
       }
-      return { thumbs, step };
-    } finally {
-      input.dispose();
+      // a pass that made nothing would only repeat itself
+      if (thumbs.length === before && !hold?.()) break;
     }
+    if (!thumbs.length) return null;
+    while (thumbs.length < times.length) thumbs.push(thumbs[thumbs.length - 1]!);
+    return { thumbs, step };
   } catch {
     return null;
   }
