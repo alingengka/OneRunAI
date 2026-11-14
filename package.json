@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "guard:lao": "bun run scripts/lao-subtitle-guard.ts"
+    "guard:lao": "bun run scripts/lao-subtitle-guard.ts",
+    "guard:media": "bun run scripts/media-guard.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
