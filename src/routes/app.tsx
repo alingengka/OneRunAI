@@ -144,7 +144,7 @@ import { motionAt, type MotionKind } from "@/lib/media/motion";
 import { Clocked, createPlaybackClock, nextBoundaryAfter } from "@/lib/playback-clock";
 import { PlaybackDebug } from "@/components/editor/PlaybackDebug";
 import { isPriming, markUserPlay, primeFirstFrame } from "@/lib/media/first-frame";
-import { probeVideo } from "@/lib/media/frame-reader";
+import { makePreviewProxy, needsPreviewProxy } from "@/lib/media/preview-proxy";
 import { createSeeker } from "@/lib/media/seeker";
 import {
   addSceneElement,
@@ -356,6 +356,26 @@ function Studio() {
 
   const [file, setFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string>("");
+  /**
+   * The light 720p copy a heavy clip (4K, Cinematic) plays from in the editor.
+   * "checking" / "making" while it is decided or built; exports always read
+   * the original file.
+   */
+  const [preview, setPreview] = useState<
+    | { state: "checking" | "none" }
+    | { state: "making"; ratio: number }
+    | { state: "ready"; url: string; blob: Blob }
+  >({ state: "none" });
+  // Nothing plays while the copy is being made: on an iPhone a loaded 4K
+  // <video> holds one of its few hardware decoders, which the copy needs.
+  /** The person chose to play the original instead of waiting for the copy. */
+  const previewSkipRef = useRef(false);
+  const skipPreviewCopy = () => {
+    previewSkipRef.current = true;
+    setPreview({ state: "none" });
+  };
+  const previewSrc =
+    preview.state === "ready" ? preview.url : preview.state === "none" ? videoUrl : undefined;
   const [duration, setDuration] = useState(0);
   /**
    * `clock` ticks with the video; `time` (React state) follows it only when
@@ -638,15 +658,18 @@ function Studio() {
   );
 
   // Video thumbnails for the timeline, made in the background after a clip loads.
+  // A heavy clip waits for its preview copy, which decodes many times faster.
+  const thumbSource =
+    preview.state === "ready" ? preview.blob : preview.state === "none" ? file : null;
   useEffect(() => {
     setTimelineThumbs(null);
-    if (!file || !(duration > 0)) return;
+    if (!thumbSource || !(duration > 0)) return;
     let alive = true;
     const timer = window.setTimeout(() => {
       // Phones decode thumbnails with the same hardware as the preview, so
       // make fewer and hold off while the clip plays (it stuttered).
       const phone = window.matchMedia("(pointer: coarse)").matches;
-      void makeThumbnails(file, duration, {
+      void makeThumbnails(thumbSource, duration, {
         max: phone ? 36 : 80,
         hold: () => alive && !!videoRef.current && !videoRef.current.paused,
         cancelled: () => !alive,
@@ -658,7 +681,49 @@ function Studio() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [file, duration]);
+  }, [thumbSource, duration]);
+
+  // Build the preview copy of a heavy clip in the background. Meanwhile the
+  // person can already make subtitles; playing waits for it.
+  useEffect(() => {
+    setPreview({ state: file ? "checking" : "none" });
+    previewSkipRef.current = false;
+    if (!file) return;
+    let alive = true;
+    let url = "";
+    void (async () => {
+      if (!(await needsPreviewProxy(file))) {
+        if (alive) setPreview({ state: "none" });
+        return;
+      }
+      if (!alive) return;
+      setPreview({ state: "making", ratio: 0 });
+      let shown = 0;
+      const blob = await makePreviewProxy(file, {
+        cancelled: () => !alive || previewSkipRef.current,
+        onProgress: (ratio) => {
+          // whole percents only: every update re-renders the editor
+          if (!alive || previewSkipRef.current || Math.floor(ratio * 100) === shown) return;
+          shown = Math.floor(ratio * 100);
+          setPreview({ state: "making", ratio });
+        },
+      });
+      if (!alive || previewSkipRef.current) return;
+      if (!blob) {
+        setPreview({ state: "none" }); // keep playing the original
+        return;
+      }
+      const v = videoRef.current;
+      if (v && v.currentTime > 0.05) restoreAtRef.current = v.currentTime;
+      v?.pause();
+      url = URL.createObjectURL(blob);
+      setPreview({ state: "ready", url, blob });
+    })();
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [file]);
   const activeGroupIndex = useMemo(
     () => groups.findIndex((g) => time >= g.start && time <= g.end),
     [groups, time],
@@ -963,16 +1028,6 @@ function Studio() {
     setVideoUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(f);
-    });
-    // A 4K phone clip is heavy for the browser: the preview can stutter and an
-    // iPhone may close the page while exporting. Say so up front.
-    void probeVideo(f).then((probe) => {
-      if (probe && Math.min(probe.width, probe.height) >= 2000) {
-        toast.warning(
-          "คลิปนี้เป็น 4K ไฟล์หนักมาก พรีวิวอาจกระตุก และ iPhone อาจปิดหน้าเว็บตอนส่งออก — แนะนำตั้งกล้องเป็น 1080p 30fps (ตั้งค่า › กล้อง › บันทึกวิดีโอ) หรือส่งออกที่ 1080",
-          { duration: 12_000 },
-        );
-      }
     });
     const preserveRestored = restoredProjectRef.current;
     restoredProjectRef.current = false;
@@ -2152,7 +2207,7 @@ function Studio() {
       onDelete: () => deleteSound(clip.id),
     };
   };
-  useSoundPlayback(videoRef, sounds, muted, videoUrl);
+  useSoundPlayback(videoRef, sounds, muted, previewSrc);
 
   // Play watchdog: iPhones can accept play() yet never move, leaving the
   // button on "playing" with a frozen picture. A big phone clip can also take
@@ -2446,6 +2501,10 @@ function Studio() {
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
+    if (preview.state === "checking" || preview.state === "making") {
+      toast.message("กำลังเตรียมพรีวิวให้เล่นลื่น รอสักครู่ — ระหว่างนี้สร้างซับได้เลย");
+      return;
+    }
     // The muted warm-up counts as paused: the person wants to start playing.
     if (v.paused || isPriming(v)) {
       markUserPlay(v);
@@ -3999,7 +4058,7 @@ function Studio() {
                   <>
                     <video
                       ref={videoRef}
-                      src={videoUrl}
+                      src={previewSrc}
                       preload="auto"
                       // iOS Safari shows a blank box until a video has played once
                       onLoadedData={(e) => primeFirstFrame(e.currentTarget)}
@@ -4049,6 +4108,25 @@ function Studio() {
                       className="pointer-events-none absolute inset-0 h-full w-full"
                       style={{ visibility: "hidden" }}
                     />
+                    {preview.state === "making" ? (
+                      <div className="absolute inset-0 z-[36] flex flex-col items-center justify-center gap-2 bg-black/55 px-4 text-center text-white">
+                        <Loader2 className="h-7 w-7 animate-spin" />
+                        <div className="text-sm font-semibold">
+                          กำลังเตรียมพรีวิวให้เล่นลื่น… {Math.round(preview.ratio * 100)}%
+                        </div>
+                        <div className="text-xs text-white/80">
+                          คลิปความละเอียดสูง ระหว่างนี้กดสร้างซับได้เลย ·
+                          ไฟล์ที่ส่งออกยังคมเท่าต้นฉบับ
+                        </div>
+                        <button
+                          type="button"
+                          onClick={skipPreviewCopy}
+                          className="mt-1 rounded-full border border-white/40 px-3 py-1 text-xs text-white/90"
+                        >
+                          เล่นไฟล์ต้นฉบับไปก่อน
+                        </button>
+                      </div>
+                    ) : null}
                     {buffering && playing ? (
                       <div className="pointer-events-none absolute inset-0 z-[35] grid place-items-center">
                         <Loader2 className="h-9 w-9 animate-spin text-white drop-shadow-lg" />
