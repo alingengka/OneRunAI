@@ -875,11 +875,13 @@ export async function exportWebCodecsVideo(
         image = lastImage;
       }
       image ??= await seekImage(sample);
-      // Phones can also hand over pure black pictures for the first frame or
-      // two. While the opening is still dark (up to half a second) those wait
-      // too, so the file starts on the first real picture.
+      // Phones can also hand over pure black pictures at the start, for up to
+      // about half a second on an iPhone (a customer's export opened on 16
+      // black frames, one past the old half-second limit). While the opening
+      // is still dark (up to two seconds) those wait too, so the file starts
+      // on the first real picture.
       if (opening) {
-        if (waiting.length < Math.round(fps / 2) && isBlackPicture(image)) {
+        if (waiting.length < Math.round(fps * 2) && isBlackPicture(image)) {
           waiting.push({ time, sample, seg });
           continue;
         }
