@@ -22,7 +22,10 @@ export async function copyAudioPackets(
   const { ALL_FORMATS, BlobSource, EncodedPacketSink, Input } = await import("mediabunny");
   const input = new Input({ source: new BlobSource(source), formats: ALL_FORMATS });
   try {
-    const track = await input.getPrimaryAudioTrack();
+    // Not the file's main track when that is one players cannot use (iPhone APAC).
+    const track = await input.getPrimaryAudioTrack({
+      filter: (t) => t.codec === "aac" || t.codec === "opus",
+    });
     const codec = track?.codec;
     if (!track || (codec !== "aac" && codec !== "opus")) return null;
     const decoderConfig = await track.getDecoderConfig();
