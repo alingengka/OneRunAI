@@ -144,6 +144,7 @@ import { motionAt, type MotionKind } from "@/lib/media/motion";
 import { Clocked, createPlaybackClock, nextBoundaryAfter } from "@/lib/playback-clock";
 import { PlaybackDebug } from "@/components/editor/PlaybackDebug";
 import { isPriming, markUserPlay, primeFirstFrame } from "@/lib/media/first-frame";
+import { probeVideo } from "@/lib/media/frame-reader";
 import { makePreviewProxy, needsPreviewProxy } from "@/lib/media/preview-proxy";
 import { createSeeker } from "@/lib/media/seeker";
 import {
@@ -368,6 +369,18 @@ function Studio() {
   >({ state: "none" });
   // Nothing plays while the copy is being made: on an iPhone a loaded 4K
   // <video> holds one of its few hardware decoders, which the copy needs.
+  /**
+   * Preview copies are tried out before everyone gets them: on with
+   * `/app?proxy=1` (remembered on this device), off again with `?proxy=0`.
+   */
+  const [proxyEnabled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const asked = new URLSearchParams(window.location.search).get("proxy");
+    const storage = safeLocalStorage();
+    if (asked === "1") storage.setItem("onerun-preview-proxy", "1");
+    if (asked === "0") storage.removeItem("onerun-preview-proxy");
+    return storage.getItem("onerun-preview-proxy") === "1";
+  });
   /** The person chose to play the original instead of waiting for the copy. */
   const previewSkipRef = useRef(false);
   const skipPreviewCopy = () => {
@@ -686,9 +699,9 @@ function Studio() {
   // Build the preview copy of a heavy clip in the background. Meanwhile the
   // person can already make subtitles; playing waits for it.
   useEffect(() => {
-    setPreview({ state: file ? "checking" : "none" });
+    setPreview({ state: file && proxyEnabled ? "checking" : "none" });
     previewSkipRef.current = false;
-    if (!file) return;
+    if (!file || !proxyEnabled) return;
     let alive = true;
     let url = "";
     void (async () => {
@@ -723,7 +736,7 @@ function Studio() {
       alive = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [file]);
+  }, [file, proxyEnabled]);
   const activeGroupIndex = useMemo(
     () => groups.findIndex((g) => time >= g.start && time <= g.end),
     [groups, time],
@@ -1029,6 +1042,18 @@ function Studio() {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(f);
     });
+    // Without a preview copy a 4K phone clip is heavy for the browser: the
+    // preview can stutter and an iPhone may close the page while exporting.
+    if (!proxyEnabled) {
+      void probeVideo(f).then((probe) => {
+        if (probe && Math.min(probe.width, probe.height) >= 2000) {
+          toast.warning(
+            "คลิปนี้เป็น 4K ไฟล์หนักมาก พรีวิวอาจกระตุก และ iPhone อาจปิดหน้าเว็บตอนส่งออก — แนะนำตั้งกล้องเป็น 1080p 30fps (ตั้งค่า › กล้อง › บันทึกวิดีโอ) หรือส่งออกที่ 1080",
+            { duration: 12_000 },
+          );
+        }
+      });
+    }
     const preserveRestored = restoredProjectRef.current;
     restoredProjectRef.current = false;
     if (!preserveRestored) {
