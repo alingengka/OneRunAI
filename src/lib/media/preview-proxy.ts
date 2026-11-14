@@ -4,7 +4,7 @@
  * preview stutter or stall and could get the page closed on iPhone; exports
  * still read the original file at full quality.
  */
-import { decodableAudio } from "./audio-track";
+import { knownAudio } from "./audio-track";
 
 /** Short side of the preview copy, in pixels. */
 const PREVIEW_SIZE = 720;
@@ -24,7 +24,7 @@ export async function needsPreviewProxy(file: Blob): Promise<boolean> {
       if (!video) return false;
       if (Math.min(video.displayWidth, video.displayHeight) > 1100) return true;
       const main = await input.getPrimaryAudioTrack();
-      const playable = await input.getPrimaryAudioTrack(decodableAudio);
+      const playable = await input.getPrimaryAudioTrack(knownAudio);
       return !!main && !!playable && main !== playable;
     } finally {
       input.dispose();
@@ -52,7 +52,7 @@ export async function makePreviewProxy(
   try {
     const video = await input.getPrimaryVideoTrack();
     if (!video || !(await video.canDecode())) return null;
-    const audio = await input.getPrimaryAudioTrack(decodableAudio);
+    const audio = await input.getPrimaryAudioTrack(knownAudio);
     const portrait = video.displayHeight >= video.displayWidth;
     const output = new Output({
       format: new Mp4OutputFormat({ fastStart: "in-memory" }),

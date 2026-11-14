@@ -1,4 +1,4 @@
-import { decodableAudio } from "./audio-track";
+import { knownAudio } from "./audio-track";
 
 export type Segment = { start: number; end: number };
 
@@ -43,7 +43,7 @@ async function extractAudioOnly(file: Blob): Promise<ArrayBuffer | null> {
     await import("mediabunny");
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   try {
-    const audio = await input.getPrimaryAudioTrack(decodableAudio);
+    const audio = await input.getPrimaryAudioTrack(knownAudio);
     if (!audio) return null;
     const output = new Output({
       format: new Mp4OutputFormat({ fastStart: "in-memory" }),
@@ -73,8 +73,8 @@ async function decodeWithWebCodecs(file: Blob): Promise<AudioBuffer | null> {
   const { ALL_FORMATS, AudioBufferSink, BlobSource, Input } = await import("mediabunny");
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   try {
-    const track = await input.getPrimaryAudioTrack(decodableAudio);
-    if (!track) return null;
+    const track = await input.getPrimaryAudioTrack(knownAudio);
+    if (!track || !(await track.canDecode())) return null;
     const parts: AudioBuffer[] = [];
     for await (const { buffer } of new AudioBufferSink(track).buffers()) parts.push(buffer);
     const first = parts[0];
