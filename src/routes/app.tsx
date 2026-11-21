@@ -381,6 +381,20 @@ function Studio() {
     if (asked === "0") storage.removeItem("onerun-preview-proxy");
     return storage.getItem("onerun-preview-proxy") === "1";
   });
+  /**
+   * iPhone converts a clip picked from Photos before handing it over
+   * ("กำลังรับคลิปจากเครื่อง…"), slow for 4K. Developers report that a picker
+   * allowing several files hands over the original instead. Tried out first:
+   * on with `/app?fastpick=1` (remembered on this device), off with `?fastpick=0`.
+   */
+  const [fastPick] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const asked = new URLSearchParams(window.location.search).get("fastpick");
+    const storage = safeLocalStorage();
+    if (asked === "1") storage.setItem("onerun-fast-pick", "1");
+    if (asked === "0") storage.removeItem("onerun-fast-pick");
+    return storage.getItem("onerun-fast-pick") === "1";
+  });
   /** The person chose to play the original instead of waiting for the copy. */
   const previewSkipRef = useRef(false);
   const skipPreviewCopy = () => {
@@ -995,9 +1009,14 @@ function Studio() {
     }, 120_000);
     return () => window.clearTimeout(timer);
   }, [receivingFile]);
+  // Set on the element, not in JSX: the server renders without it.
+  useEffect(() => {
+    if (fileInputRef.current) fileInputRef.current.multiple = fastPick;
+  }, [fastPick]);
   const takePickedFile = (input: HTMLInputElement) => {
     const f = input.files?.[0];
     if (!f) return;
+    if ((input.files?.length ?? 0) > 1) toast.message("เลือกมาหลายคลิป ระบบใช้คลิปแรก");
     pickerOpenRef.current = false;
     setReceivingFile(false);
     // Clear the input so choosing the same file again still fires onChange.
