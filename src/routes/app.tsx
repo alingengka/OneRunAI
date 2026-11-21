@@ -1780,7 +1780,17 @@ function Studio() {
     window.setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
-  const baseName = () => (file?.name ?? "clip").replace(/\.[^.]+$/, "");
+  const fileStem = () => (file?.name ?? "clip").replace(/\.[^.]+$/, "");
+  /** Downloads are named after the project; renaming it renames them. */
+  const baseName = () =>
+    projectName
+      .replace(/[\\/:*?"<>|]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || fileStem();
+  /** The finished video: the name itself once renamed, "-final" while it is the clip's. */
+  const videoName = (ext: string) =>
+    baseName() === fileStem() ? `${baseName()}-final.${ext}` : `${baseName()}.${ext}`;
 
   const exportTrimmedVideo = () => {
     if (!videoUrl || !outputSegments.length) {
@@ -2353,7 +2363,7 @@ function Studio() {
         }
         if (signal.aborted) return;
         console.info("[export-webcodecs] completed", result);
-        saveBlob(result.blob, `${baseName()}-final.${result.ext}`);
+        saveBlob(result.blob, videoName(result.ext));
         toast.success(
           `ได้วิดีโอพร้อมโพสต์แล้ว ${result.width}x${result.height} · ${result.fps}fps · ${result.frames} เฟรม`,
         );
@@ -2407,7 +2417,7 @@ function Studio() {
           `วิดีโอเล่นช่วงที่เลือกไม่ครบ (คลาดเคลื่อน ${durationDelta.toFixed(2)} วินาที)`,
         );
       }
-      saveBlob(blob, `${baseName()}-final.${ext}`);
+      saveBlob(blob, videoName(ext));
       const realFps = seconds > 0 ? frames / seconds : fps;
       toast.success(`ได้วิดีโอพร้อมโพสต์แล้ว ${width}x${height} · ~${realFps.toFixed(0)}fps`);
       if (fpsAdapted) {
@@ -3610,6 +3620,25 @@ function Studio() {
               <div className="rounded-xl border border-border bg-secondary/40 p-3 text-xs">
                 พร้อมส่งออก: ความยาว {keptDuration(outputSegments).toFixed(1)}s · ซับ{" "}
                 {groups.length} บล็อก
+              </div>
+
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="export-file-name"
+                  className="text-[11px] uppercase tracking-wide text-muted-foreground"
+                >
+                  ชื่อไฟล์
+                </Label>
+                <Input
+                  id="export-file-name"
+                  value={projectName}
+                  onChange={(event) => setProjectName(event.target.value)}
+                  placeholder={fileStem()}
+                  className="h-9"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  ไฟล์ที่ส่งออกจะใช้ชื่อนี้ เช่น {videoName("mp4")}
+                </p>
               </div>
 
               <div className="rounded-xl border border-primary/40 bg-primary/5 p-4">
