@@ -375,7 +375,17 @@ export function mapConcatTimeToTimeline(time: number, segs: Segment[]): number {
 export function closeSpeechGaps<T extends { start: number; end: number }>(
   words: T[],
   segs: Segment[],
-  opts: { maxGap?: number; minSpeech?: number } = {},
+  opts: {
+    maxGap?: number;
+    minSpeech?: number;
+    /**
+     * Where the recogniser heard words (its own timings). The energy-based
+     * speech segments also count room noise and music as speech, which
+     * stretched words seconds into stretches nobody spoke; with this, gaps
+     * close only where words were actually heard.
+     */
+    heard?: { start: number; end: number }[];
+  } = {},
 ): T[] {
   const maxGap = opts.maxGap ?? 0.3;
   const minSpeech = opts.minSpeech ?? 0.12;
@@ -395,7 +405,16 @@ export function closeSpeechGaps<T extends { start: number; end: number }>(
     for (const seg of speech) {
       const start = Math.max(seg.start, gapStart);
       const end = Math.min(seg.end, gapEnd);
-      if (end - start >= minSpeech) runs.push({ start, end });
+      if (end - start < minSpeech) continue;
+      if (!opts.heard) {
+        runs.push({ start, end });
+        continue;
+      }
+      for (const word of opts.heard) {
+        const a = Math.max(start, word.start);
+        const b = Math.min(end, word.end);
+        if (b - a >= minSpeech / 2) runs.push({ start: a, end: b });
+      }
     }
     if (!runs.length) continue;
 

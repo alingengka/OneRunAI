@@ -103,3 +103,31 @@ for (let i = 0; i < filled.length - 1; i++) {
 assert(holes === 0, `คลิปยาวยังมีช่วงไม่มีซับ ${holes} จุด`);
 assert(filled.length === longWords.length, "closeSpeechGaps ทำคำหาย");
 console.log("closeSpeechGaps tests passed");
+
+// --- heard: เสียงรบกวนที่ผ่านเกณฑ์พลังงานต้องไม่ยืดคำเข้าไป (คำผีในช่วงไม่มีคนพูด) ---
+{
+  const words = [
+    { text: "ກັນ", start: 6.8, end: 7.1 },
+    { text: "ສະບາຍດີ", start: 11.0, end: 11.5 },
+  ];
+  // the energy check calls the room noise between 8.8 and 10.8 speech
+  const speech = [
+    { start: 0.2, end: 7.2 },
+    { start: 8.8, end: 10.8 },
+    { start: 11.0, end: 18.0 },
+  ];
+  const noisy = closeSpeechGaps(words, speech, { heard: words });
+  assert(noisy[0]!.end <= 7.2, `คำก่อนช่วงเสียงรบกวนถูกยืดไปถึง ${noisy[0]!.end}`);
+  assert(noisy[1]!.start >= 10.9, `คำหลังช่วงเสียงรบกวนถูกยืดมาถึง ${noisy[1]!.start}`);
+  // a word the recogniser heard inside the gap is still covered
+  const heardInGap = closeSpeechGaps(words, speech, {
+    heard: [...words, { start: 9.0, end: 9.4 }],
+  });
+  // covered by the word before, the word after, or both meeting inside it
+  const coveredFrom = heardInGap[1]!.start <= 9.0 ? heardInGap[1]!.start : heardInGap[0]!.end >= 9.4 ? 9.0 : heardInGap[0]!.end;
+  assert(
+    heardInGap[0]!.end >= 9.4 || heardInGap[1]!.start <= 9.0 || (heardInGap[1]!.start - heardInGap[0]!.end < 0.05 && coveredFrom >= 9.0),
+    "ช่วงที่ได้ยินคำจริงไม่ถูกปิด",
+  );
+  console.log("closeSpeechGaps heard tests passed");
+}
