@@ -19,6 +19,8 @@ export type TranscriptionResult = {
   wordSource?: "scribe" | null;
   /** Engines that failed while others succeeded; shown to the user once. */
   warnings?: string[];
+  /** The speech recogniser heard nobody speak here: no subtitles, not a failure. */
+  noSpeech?: boolean;
 };
 
 function laoPrompt(context: string, glossary: string[], strict: boolean): string {
@@ -93,6 +95,22 @@ function lengthRatio(a: string, b: string): number {
   const x = chars(a).length;
   const y = chars(b).length;
   return Math.min(x, y) / Math.max(1, x, y);
+}
+
+/**
+ * Whether a transcript could have been spoken in `seconds` of audio. Gemini
+ * given a short stretch of noise or breath sometimes answers with the context
+ * it was given: a whole earlier sentence over 1.2 s of room noise, verified.
+ */
+function plausible(text: string, seconds: number, context: string): boolean {
+  const length = chars(text).length;
+  // brisk Lao runs about 12 characters a second; 22 leaves room for padding
+  if (length / Math.max(seconds, 0.5) > 22) return false;
+  if (seconds < 4 && length >= 6) {
+    const earlier = chars(context).join("");
+    if (earlier.includes(chars(text).join(""))) return false;
+  }
+  return true;
 }
 
 /** Scribe and the main Gemini pass agreeing this closely skip the extra Lao passes. */
@@ -262,6 +280,9 @@ export async function transcribeAudioServer(input: {
   }
 
   const binary = Uint8Array.from(atob(input.audioBase64), (character) => character.charCodeAt(0));
+  // 16 kHz mono 16-bit WAV, as the editor sends
+  const seconds = Math.max(0, (binary.length - 44) / 32_000);
+  const usable = (text: string) => !!text && plausible(text, seconds, input.context ?? "");
   const attempts = input.language === "lo" ? [0, 0] : [0];
   const alternatives: string[] = [];
   const transliterated = new Set<string>();
@@ -366,6 +387,17 @@ export async function transcribeAudioServer(input: {
         : Promise.reject(new Error("Missing GEMINI_API_KEY")),
     ]);
 
+    // Scribe answered and heard nobody: Gemini over noise or breath invents
+    // words ("ສະບາຍດີທຸກຄົນ" over 2.6 s of room noise, verified), so this
+    // stretch gets no subtitles instead.
+    if (
+      scribeResult.status === "fulfilled" &&
+      !scribeResult.value.timing.length &&
+      !cleanup(scribeResult.value.text, "lo")
+    ) {
+      return { text: "", alternatives: [], agreement: 0, words: [], wordSource: null, warnings, noSpeech: true };
+    }
+
     if (scribeResult.status === "fulfilled") {
       // Keep Scribe's measured timeline even when another engine wins the text.
       scribeTiming = scribeResult.value.timing;
@@ -381,7 +413,7 @@ export async function transcribeAudioServer(input: {
 
     if (geminiResult.status === "fulfilled") {
       const text = cleanup(geminiResult.value, "lo");
-      if (text && !alternatives.includes(text)) alternatives.push(text);
+      if (usable(text) && !alternatives.includes(text)) alternatives.push(text);
     } else if (hasGemini) {
       lastError = geminiResult.reason instanceof Error ? geminiResult.reason : new Error("Gemini transcription failed");
       warn("Gemini", lastError);
@@ -410,7 +442,7 @@ export async function transcribeAudioServer(input: {
   for (const result of settled ? [] : await runGeminiExtras()) {
     if (result.status === "fulfilled") {
       const text = cleanup(result.value, "lo");
-      if (text && !alternatives.includes(text)) alternatives.push(text);
+      if (usable(text) && !alternatives.includes(text)) alternatives.push(text);
     } else {
       console.warn("[transcribe] extra Gemini pass skipped:", String(result.reason).slice(0, 200));
     }

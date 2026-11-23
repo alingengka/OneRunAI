@@ -1341,6 +1341,8 @@ function Studio() {
               }),
               TRANSCRIBE_TIMEOUT_MS,
             );
+            // nobody speaks here (breath, noise): no subtitles, and no retry
+            if (res.noSpeech) return { skipped: true as const };
             const text = (res.text ?? "").trim();
             if (!text) {
               lastError = new Error("empty");
@@ -1513,7 +1515,12 @@ function Studio() {
       measuredTimingRef.current = measured.sort((a, b) => a.start - b.start);
       if (!allWords.length) throw new Error("ไม่พบคำพูดในคลิป");
       // ปิดช่องว่างที่ยังมีเสียงพูดจริง (เกิดที่รอยต่อ chunk: คำครบแต่เวลาหดเข้าใน)
-      allWords.splice(0, allWords.length, ...closeSpeechGaps(allWords, segs));
+      // Only where Scribe heard words: noise and music pass the energy check.
+      allWords.splice(
+        0,
+        allWords.length,
+        ...closeSpeechGaps(allWords, segs, measured.length ? { heard: measured } : {}),
+      );
       // งาน A: ใช้เวลาคำจริงขยายขอบช่วงพูด ไม่ให้ energy gate ตัดพยางค์ต้น/ท้ายขาด
 
       // Measured word times (Scribe) show every pause, even in a noisy place,

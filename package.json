@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "guard:lao": "bun run scripts/lao-subtitle-guard.ts",
-    "guard:media": "bun run scripts/media-guard.ts"
+    "guard:media": "bun run scripts/media-guard.ts",
+    "eval:transcribe": "bun run scripts/transcribe-eval.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
