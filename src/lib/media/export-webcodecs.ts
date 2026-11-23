@@ -223,11 +223,11 @@ async function pickVideoCodec(width: number, height: number, bitrate: number, fp
   );
 }
 
-async function pickAudioCodec(sampleRate: number, channels: number) {
+async function pickAudioCodec(sampleRate: number, channels: number, only: "aac" | "opus") {
   const options: Array<{ codec: string; mux: "aac" | "opus" }> = [
-    { codec: "mp4a.40.2", mux: "aac" },
-    { codec: "opus", mux: "opus" },
-  ];
+    { codec: "mp4a.40.2", mux: "aac" as const },
+    { codec: "opus", mux: "opus" as const },
+  ].filter((option) => option.mux === only);
   for (const option of options) {
     const config: AudioEncoderConfig = {
       codec: option.codec,
@@ -264,7 +264,9 @@ async function recordMix(
   onProgress?: (done: number) => void,
 ): Promise<CopiedAudio | null> {
   if (typeof MediaRecorder === "undefined") return null;
-  const mime = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/webm;codecs=opus"].find((type) =>
+  // AAC only: Opus plays silent on iPhone, and the clip's own AAC is a
+  // better fallback even without the effects.
+  const mime = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4"].find((type) =>
     MediaRecorder.isTypeSupported(type),
   );
   if (!mime) return null;
@@ -370,7 +372,9 @@ async function recordMix(
       /* keep the planned lead-in */
     }
     dbg(`recorded mix: lead ${lead.toFixed(3)}s`);
-    return await copyAudioPackets(recorded, [{ start: lead, end: lead + total }]);
+    const out = await copyAudioPackets(recorded, [{ start: lead, end: lead + total }]);
+    // Chrome without an AAC encoder records "audio/mp4" as Opus
+    return out?.codec === "aac" ? out : null;
   } catch {
     return null;
   } finally {
@@ -669,12 +673,19 @@ export async function exportWebCodecsVideo(
         ? await renderAudio(sourceBlob, normalized, total, options, effects)
         : null;
     onProgress?.(0.1);
-    const audioPick =
+    // AAC only here: Opus in an MP4 plays silent in iPhone Photos and
+    // QuickTime ("the exported video has no sound"). Browsers that cannot
+    // encode AAC (Firefox, some Chrome builds) take the paths below first.
+    let audioPick =
       audioBuffer && canEncodeAudio
-        ? await pickAudioCodec(audioBuffer.sampleRate, Math.min(2, audioBuffer.numberOfChannels))
+        ? await pickAudioCodec(
+            audioBuffer.sampleRate,
+            Math.min(2, audioBuffer.numberOfChannels),
+            "aac",
+          )
         : null;
-    // No AudioEncoder (older iPhone Safari): record the mix when there are
-    // sound effects, else copy the clip's own audio.
+    // No AAC encoder (older iPhone Safari, Firefox…): record the mix when
+    // there are sound effects, else copy the clip's own audio.
     let copied: CopiedAudio | null = null;
     let soundsSkipped = false;
     let recordedMix = false;
@@ -689,6 +700,15 @@ export async function exportWebCodecsVideo(
         soundsSkipped = effects.length > 0;
         copied = await copyAudioPackets(sourceBlob, normalized);
       }
+    }
+    // Last resort: Opus, which most players outside Apple's still play.
+    if (!audioPick && !copied && audioBuffer && canEncodeAudio) {
+      audioPick = await pickAudioCodec(
+        audioBuffer.sampleRate,
+        Math.min(2, audioBuffer.numberOfChannels),
+        "opus",
+      );
+      if (audioPick) soundsSkipped = false;
     }
 
     const muxer = new Muxer({

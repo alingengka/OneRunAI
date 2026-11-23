@@ -32,7 +32,13 @@ const ffmpeg = (...args: string[]) => execFileSync("ffmpeg", ["-loglevel", "erro
 const bt709 = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"];
 const h264 = ["-c:v", "libx264", "-pix_fmt", "yuv420p", ...bt709];
 
-type Fixture = { name: string; file: string; heavy?: boolean };
+type Fixture = {
+  name: string;
+  file: string;
+  heavy?: boolean;
+  /** add a sound effect from the library before exporting */
+  sound?: boolean;
+};
 
 /** Real Lao speech, so the editor finds speech to keep (a steady tone has none). */
 const SPEECH = "tests/fixtures/lao-sample.wav";
@@ -121,8 +127,38 @@ function makeFixtures(): Fixture[] {
     "-shortest",
     black,
   );
+  // speech, two seconds of silence, speech: the editor cuts the gap out, so
+  // the export's audio is put together from separate pieces
+  const pauses = join(dir, "pauses.mp4");
+  ffmpeg(
+    "-f",
+    "lavfi",
+    "-i",
+    `testsrc=s=1080x1920:r=${FPS}:d=18.65`,
+    "-i",
+    SPEECH,
+    "-f",
+    "lavfi",
+    "-i",
+    "anullsrc=r=16000:cl=mono:d=2",
+    "-i",
+    "tests/fixtures/lao-codeswitch.wav",
+    "-filter_complex",
+    "[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]",
+    "-map",
+    "0:v",
+    "-map",
+    "[a]",
+    ...h264,
+    "-c:a",
+    "aac",
+    "-shortest",
+    pauses,
+  );
   return [
     { name: "HD 1080p", file: hd },
+    { name: "HD + เสียงเอฟเฟกต์", file: hd, sound: true },
+    { name: "มีช่วงเงียบที่ถูกตัด", file: pauses },
     { name: "4K (หมุนด้วย metadata)", file: fourK, heavy: true },
     { name: "Spatial Audio (แทร็กหลักเล่นไม่ได้)", file: spatial },
     { name: "เฟรมดำต้นคลิป", file: black },
@@ -198,9 +234,18 @@ function inspect(file: string) {
       "json",
       file,
     ]).toString(),
-  ) as { streams: { codec_type: string; width?: number; height?: number; nb_frames?: string }[] };
+  ) as {
+    streams: {
+      codec_type: string;
+      codec_name?: string;
+      width?: number;
+      height?: number;
+      nb_frames?: string;
+    }[];
+  };
   const video = probe.streams.find((s) => s.codec_type === "video");
-  const hasAudio = probe.streams.some((s) => s.codec_type === "audio");
+  const audioCodec = probe.streams.find((s) => s.codec_type === "audio")?.codec_name ?? null;
+  const hasAudio = !!audioCodec;
   let volume = -Infinity;
   if (hasAudio) {
     const log = execFileSync("sh", [
@@ -221,6 +266,7 @@ function inspect(file: string) {
     height: video?.height ?? 0,
     frames: Number(video?.nb_frames ?? 0),
     hasAudio,
+    audioCodec,
     volume,
     openingBlack,
   };
@@ -291,6 +337,14 @@ async function run(browser: Browser, fixture: Fixture, mode: Mode, proxy: boolea
       if (preview.audio <= 0) fail("พรีวิวไม่มีเสียง");
     }
 
+    if (fixture.sound) {
+      await page.getByRole("button", { name: "เสียง", exact: true }).first().click();
+      await page
+        .getByRole("button", { name: /^เพิ่มเสียง / })
+        .first()
+        .click();
+      await page.waitForTimeout(800);
+    }
     // the editor cuts silent gaps: the export is as long as what it keeps
     const kept = await page.evaluate(() =>
       (
@@ -303,7 +357,16 @@ async function run(browser: Browser, fixture: Fixture, mode: Mode, proxy: boolea
     );
     await page.getByRole("button", { name: "ส่งออก", exact: true }).last().click();
     const download = page.waitForEvent("download", { timeout: 300_000 });
-    await page.getByRole("button", { name: "เรนเดอร์วิดีโอพร้อมซับ" }).last().click();
+    // the export tab, or on a phone with a clip selected, the header's export menu
+    const render = page.getByRole("button", { name: "เรนเดอร์วิดีโอพร้อมซับ" }).last();
+    if (
+      await render
+        .waitFor({ state: "visible", timeout: 3000 })
+        .then(() => true)
+        .catch(() => false)
+    )
+      await render.click();
+    else await page.getByRole("button", { name: "ส่งออก", exact: true }).last().click();
     const out = join(dir, `${Math.random().toString(36).slice(2)}.mp4`);
     await (await download).saveAs(out);
     const r = inspect(out);
@@ -314,10 +377,13 @@ async function run(browser: Browser, fixture: Fixture, mode: Mode, proxy: boolea
       fail(`เฟรม ${r.frames} (ควรประมาณ ${expectedFrames})`);
     if (!r.hasAudio) fail("ไฟล์ส่งออกไม่มีแทร็กเสียง");
     else if (r.volume < -50) fail(`เสียงในไฟล์ส่งออกเงียบ (${r.volume} dB)`);
+    // Opus in MP4 plays silent in iPhone Photos and QuickTime
+    else if (r.audioCodec !== "aac")
+      fail(`เสียงเป็น ${r.audioCodec} — iPhone เล่นแล้วไม่มีเสียง (ต้องเป็น aac)`);
     if (r.openingBlack > 0) fail(`ต้นคลิปมีเฟรมดำ ${r.openingBlack} เฟรม`);
     const mine = failures.filter((f) => f.startsWith(label)).map((f) => f.slice(label.length + 2));
     console.log(
-      `${mine.length ? "❌" : "✅"} ${label} — ${r.width}x${r.height}, ${r.frames} เฟรม, เสียง ${r.hasAudio ? `${r.volume} dB` : "ไม่มี"}, เฟรมดำต้นคลิป ${r.openingBlack}${mine.length ? ` → ${mine.join("; ")}` : ""}`,
+      `${mine.length ? "❌" : "✅"} ${label} — ${r.width}x${r.height}, ${r.frames} เฟรม, เสียง ${r.hasAudio ? `${r.audioCodec} ${r.volume} dB` : "ไม่มี"}, เฟรมดำต้นคลิป ${r.openingBlack}${mine.length ? ` → ${mine.join("; ")}` : ""}`,
     );
   } catch (error) {
     fail(String(error).split("\n")[0]!);
