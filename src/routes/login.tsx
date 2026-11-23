@@ -52,6 +52,11 @@ function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const target = redirect ?? "/app";
+  // A target with its own query (the Claude connection page) needs a full load.
+  const goToTarget = async () => {
+    if (target.includes("?")) window.location.href = target;
+    else await navigate({ to: target });
+  };
 
   useEffect(() => {
     if (ready && session) window.location.href = target;
@@ -99,7 +104,7 @@ function LoginPage() {
         );
       }
       if (error) throw new Error(authMessage(error.message));
-      await navigate({ to: target });
+      await goToTarget();
     });
   };
 
@@ -116,7 +121,7 @@ function LoginPage() {
         },
       });
       if (error) throw new Error(authMessage(error.message));
-      if (data.session) await navigate({ to: target });
+      if (data.session) await goToTarget();
       else
         setNotice(
           "เราส่งลิงก์ยืนยันไปที่อีเมลของคุณแล้ว กดลิงก์ในอีเมลเพื่อเริ่มทดลองใช้ฟรี 5 วัน",
