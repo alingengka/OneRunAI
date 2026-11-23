@@ -47,7 +47,13 @@ function latinWords(text: string): string[] {
 }
 
 function cleanup(text: string, language?: string): string {
-  const out = text.trim().replace(/^```[^\n]*\n?|```$/g, "").trim();
+  const out = text
+    .trim()
+    .replace(/^```[^\n]*\n?|```$/g, "")
+    .trim()
+    // Lao AM written as NIGGAHITA + AA looks the same as the single sign
+    // U+0EB3 but is a different string: edits, search and the glossary missed it.
+    .replace(/\u0ecd\u0eb2/g, "\u0eb3");
   const normalized = out.toLowerCase().replace(/[.!?。！？\s]+$/g, "").trim();
   if (HALLUCINATIONS.has(normalized)) return "";
   if (language === "lo" && out) {
@@ -187,7 +193,8 @@ export function buildScribeTiming(
     const first = owners[index];
     const last = owners[cursor - 1];
     if (!first || !last) continue;
-    const value = transliterated ? thaiToLaoScript(word) : word;
+    // same Lao AM form as cleanup(), so timing words still match the text
+    const value = (transliterated ? thaiToLaoScript(word) : word).replace(/\u0ecd\u0eb2/g, "\u0eb3");
     if (!value.trim()) continue;
     words.push({ text: value, start: first.start, end: Math.max(last.end, first.start + 0.03) });
   }
