@@ -1777,9 +1777,28 @@ function Studio() {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 5000);
+    // iPhone Safari asks "Download?" first and reads the file only after the
+    // tap; freed after 5 s, a slow tap failed the download.
+    window.setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
   };
 
+  /**
+   * Phones keep downloads in the Files app, where people do not look for a
+   * video; offer the share sheet too, which has "Save Video" (to Photos).
+   */
+  const offerSaveToPhotos = (blob: Blob, name: string) => {
+    if (!window.matchMedia("(pointer: coarse)").matches) return;
+    const video = new File([blob], name, { type: blob.type || "video/mp4" });
+    if (!navigator.canShare?.({ files: [video] })) return;
+    toast.message("บันทึกลงคลังรูปได้เลย", {
+      description: "ไฟล์ที่ดาวน์โหลดอยู่ในแอป Files › Downloads",
+      duration: 60_000,
+      action: {
+        label: "บันทึกลงคลังรูป",
+        onClick: () => void navigator.share({ files: [video] }).catch(() => undefined),
+      },
+    });
+  };
   const fileStem = () => (file?.name ?? "clip").replace(/\.[^.]+$/, "");
   /** Downloads are named after the project; renaming it renames them. */
   const baseName = () =>
@@ -2309,6 +2328,14 @@ function Studio() {
       toast.error("อัปโหลดคลิปและวิเคราะห์เสียงก่อน");
       return;
     }
+    // Facebook, LINE, TikTok… open links in their own browser, which often
+    // cannot save a file at all: the export finishes and nothing is saved.
+    if (/FBAN|FBAV|Instagram|Line\/|TikTok|musical_ly|Messenger/i.test(navigator.userAgent)) {
+      toast.warning(
+        "เปิดจากในแอป (Facebook/LINE/TikTok) อาจบันทึกไฟล์ไม่ได้ — กด ⋯ แล้วเลือก “เปิดใน Safari/Chrome” แล้วส่งออกใหม่",
+        { duration: 20_000 },
+      );
+    }
     const webCodecs = supportsWebCodecsExport();
     if (!webCodecs) {
       toast.warning(
@@ -2364,6 +2391,7 @@ function Studio() {
         if (signal.aborted) return;
         console.info("[export-webcodecs] completed", result);
         saveBlob(result.blob, videoName(result.ext));
+        offerSaveToPhotos(result.blob, videoName(result.ext));
         toast.success(
           `ได้วิดีโอพร้อมโพสต์แล้ว ${result.width}x${result.height} · ${result.fps}fps · ${result.frames} เฟรม`,
         );
@@ -2418,6 +2446,7 @@ function Studio() {
         );
       }
       saveBlob(blob, videoName(ext));
+      offerSaveToPhotos(blob, videoName(ext));
       const realFps = seconds > 0 ? frames / seconds : fps;
       toast.success(`ได้วิดีโอพร้อมโพสต์แล้ว ${width}x${height} · ~${realFps.toFixed(0)}fps`);
       if (fpsAdapted) {
