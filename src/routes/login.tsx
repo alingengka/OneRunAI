@@ -10,9 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/lib/auth";
-import { testLogin } from "@/lib/test-login.functions";
 
-type Search = { redirect?: string; mode?: "signup"; test?: true };
+type Search = { redirect?: string; mode?: "signup" };
 
 /** Supabase auth errors people commonly hit, in Thai. */
 function authMessage(message: string): string {
@@ -36,14 +35,13 @@ export const Route = createFileRoute("/login")({
       ? { redirect: search["redirect"] }
       : {}),
     ...(search["mode"] === "signup" ? { mode: "signup" as const } : {}),
-    ...(search["test"] === 1 || search["test"] === "1" ? { test: true as const } : {}),
   }),
   head: () => ({ meta: [{ title: "เข้าสู่ระบบ — OneRunAI" }] }),
   component: LoginPage,
 });
 
 function LoginPage() {
-  const { redirect, mode, test } = Route.useSearch();
+  const { redirect, mode } = Route.useSearch();
   const navigate = useNavigate();
   const { session, ready } = useSession();
   const [tab, setTab] = useState<"signin" | "signup" | "forgot">(
@@ -54,6 +52,11 @@ function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const target = redirect ?? "/app";
+  // A target with its own query (the Claude connection page) needs a full load.
+  const goToTarget = async () => {
+    if (target.includes("?")) window.location.href = target;
+    else await navigate({ to: target });
+  };
 
   useEffect(() => {
     if (ready && session) window.location.href = target;
@@ -101,7 +104,7 @@ function LoginPage() {
         );
       }
       if (error) throw new Error(authMessage(error.message));
-      await navigate({ to: target });
+      await goToTarget();
     });
   };
 
@@ -118,7 +121,7 @@ function LoginPage() {
         },
       });
       if (error) throw new Error(authMessage(error.message));
-      if (data.session) await navigate({ to: target });
+      if (data.session) await goToTarget();
       else
         setNotice(
           "เราส่งลิงก์ยืนยันไปที่อีเมลของคุณแล้ว กดลิงก์ในอีเมลเพื่อเริ่มทดลองใช้ฟรี 5 วัน",
@@ -135,21 +138,6 @@ function LoginPage() {
       });
       if (error) throw new Error(authMessage(error.message));
       setNotice("ถ้าอีเมลนี้มีบัญชีอยู่ เราได้ส่งลิงก์ตั้งรหัสผ่านใหม่ไปให้แล้ว");
-    });
-  };
-
-  // Test account for Claude's browser, which Cloudflare blocks (/login?test=1).
-  const [testSecret, setTestSecret] = useState("");
-  const signInTest = (event: FormEvent) => {
-    event.preventDefault();
-    void run(async () => {
-      const session = await testLogin({ data: { secret: testSecret } });
-      const { error } = await supabase.auth.setSession({
-        access_token: session.accessToken,
-        refresh_token: session.refreshToken,
-      });
-      if (error) throw new Error(authMessage(error.message));
-      await navigate({ to: target });
     });
   };
 
@@ -196,23 +184,7 @@ function LoginPage() {
           <OneRunLogo />
         </Link>
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          {test ? (
-            <form onSubmit={signInTest} className="space-y-4">
-              <h1 className="text-lg font-bold">บัญชีทดสอบ</h1>
-              <div className="space-y-2">
-                <Label htmlFor="test-secret">รหัสบัญชีทดสอบ</Label>
-                <Input
-                  id="test-secret"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={testSecret}
-                  onChange={(event) => setTestSecret(event.target.value)}
-                />
-              </div>
-              {submit("เข้าสู่ระบบ")}
-            </form>
-          ) : tab === "forgot" ? (
+          {tab === "forgot" ? (
             <form onSubmit={forgot} className="space-y-4">
               <h1 className="text-lg font-bold">ลืมรหัสผ่าน</h1>
               <p className="text-sm text-muted-foreground">
@@ -270,9 +242,7 @@ function LoginPage() {
               </TabsContent>
             </Tabs>
           )}
-          {!test && (
-            <Turnstile ref={turnstileRef} className="mt-4 flex min-h-[65px] justify-center" />
-          )}
+          <Turnstile ref={turnstileRef} className="mt-4 flex min-h-[65px] justify-center" />
           {notice && <p className="mt-4 rounded-lg bg-muted p-3 text-sm">{notice}</p>}
         </div>
       </div>
