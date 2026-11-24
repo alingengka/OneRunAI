@@ -38,6 +38,8 @@ type Fixture = {
   heavy?: boolean;
   /** add a sound effect from the library before exporting */
   sound?: boolean;
+  /** export this many times in a row in the same page */
+  repeat?: number;
 };
 
 /** Real Lao speech, so the editor finds speech to keep (a steady tone has none). */
@@ -162,10 +164,14 @@ function makeFixtures(): Fixture[] {
     { name: "4K (หมุนด้วย metadata)", file: fourK, heavy: true },
     { name: "Spatial Audio (แทร็กหลักเล่นไม่ได้)", file: spatial },
     { name: "เฟรมดำต้นคลิป", file: black },
+    // a customer exporting again and again in one visit
+    { name: "ส่งออกซ้ำ 3 รอบ", file: hd, repeat: 3 },
   ];
 }
 
 /* ------------------------------- เบราว์เซอร์ ------------------------------- */
+/** Canvas memory the iPhone simulation allows (all canvases together). */
+const CANVAS_CAP_BYTES = Number(process.env["GUARD_CANVAS_CAP_MB"] ?? 64) * 1024 * 1024;
 type Mode = "chrome" | "iphone";
 
 async function openEditor(browser: Browser, mode: Mode, proxy: boolean): Promise<Page> {
@@ -174,10 +180,59 @@ async function openEditor(browser: Browser, mode: Mode, proxy: boolean): Promise
     acceptDownloads: true,
   });
   if (mode === "iphone") {
-    await context.addInitScript(() => {
+    await context.addInitScript((capBytes: number) => {
       const w = window as unknown as Record<string, unknown>;
       delete w["AudioDecoder"];
       delete w["AudioEncoder"];
+      // iPhone Safari caps the memory of all canvases on a page together and
+      // frees a canvas only on garbage collection, which can be much later.
+      // Over the cap a canvas has no pixels and a video frame made from it
+      // fails with "Canvas has no frame". Here a canvas counts until it is
+      // shrunk to nothing (as if it were never collected).
+      const sizes = new Map<object, number>();
+      const total = () => [...sizes.values()].reduce((a, b) => a + b, 0);
+      let peak = 0;
+      const watch = (proto: object) => {
+        for (const key of ["width", "height"] as const) {
+          const desc = Object.getOwnPropertyDescriptor(proto, key);
+          if (!desc?.set || !desc.get) continue;
+          Object.defineProperty(proto, key, {
+            ...desc,
+            set(this: HTMLCanvasElement, value: number) {
+              desc.set!.call(this, value);
+              const bytes = this.width * this.height * 4;
+              if (bytes) sizes.set(this, bytes);
+              else sizes.delete(this);
+              peak = Math.max(peak, total());
+              w["__canvasPeak"] = peak;
+            },
+          });
+        }
+      };
+      watch(HTMLCanvasElement.prototype);
+      if (typeof OffscreenCanvas !== "undefined") {
+        watch(OffscreenCanvas.prototype);
+        // A Proxy keeps the real constructor (instanceof, statics) intact.
+        w["OffscreenCanvas"] = new Proxy(OffscreenCanvas, {
+          construct(target, args: [number, number]) {
+            const canvas = Reflect.construct(target, args) as OffscreenCanvas;
+            if (args[0] * args[1]) sizes.set(canvas, args[0] * args[1] * 4);
+            return canvas;
+          },
+        });
+      }
+      w["VideoFrame"] = new Proxy(VideoFrame, {
+        construct(target, args: [unknown, VideoFrameInit?]) {
+          const source = args[0];
+          const isCanvas =
+            source instanceof HTMLCanvasElement ||
+            (typeof OffscreenCanvas !== "undefined" && source instanceof OffscreenCanvas);
+          if (isCanvas && total() > capBytes) {
+            throw new DOMException("Canvas has no frame", "InvalidStateError");
+          }
+          return Reflect.construct(target, args);
+        },
+      });
       const decode = BaseAudioContext.prototype.decodeAudioData;
       BaseAudioContext.prototype.decodeAudioData = function (data, ...rest) {
         // iPhone Safari cannot decode the audio of a whole phone video, only of
@@ -196,7 +251,7 @@ async function openEditor(browser: Browser, mode: Mode, proxy: boolean): Promise
         }
         return decode.call(this, data, ...rest);
       };
-    });
+    }, CANVAS_CAP_BYTES);
   }
   const page = await context.newPage();
   // the editor sits behind sign-in; the guard checks the editor itself
@@ -332,6 +387,15 @@ async function run(browser: Browser, fixture: Fixture, mode: Mode, proxy: boolea
               .webkitAudioDecodedByteCount ?? 0,
         };
       });
+      if (process.env["GUARD_DEBUG"])
+        console.log(
+          "   canvas peak MB",
+          Math.round(
+            ((await page.evaluate(
+              () => (window as unknown as { __canvasPeak?: number }).__canvasPeak,
+            )) ?? 0) / 1048576,
+          ),
+        );
       if (preview.width !== 720) fail(`พรีวิวไม่ได้ใช้ไฟล์ 720p (ด้านสั้น ${preview.width})`);
       if (preview.advanced < 0.5) fail("พรีวิวกดเล่นแล้วไม่เดิน");
       if (preview.audio <= 0) fail("พรีวิวไม่มีเสียง");
@@ -355,36 +419,56 @@ async function run(browser: Browser, fixture: Fixture, mode: Mode, proxy: boolea
         ).__shortcutState?.outputSegments ?? []
       ).reduce((sum, seg) => sum + (seg.end - seg.start), 0),
     );
-    await page.getByRole("button", { name: "ส่งออก", exact: true }).last().click();
-    const download = page.waitForEvent("download", { timeout: 300_000 });
-    // the export tab, or on a phone with a clip selected, the header's export menu
-    const render = page.getByRole("button", { name: "เรนเดอร์วิดีโอพร้อมซับ" }).last();
-    if (
-      await render
-        .waitFor({ state: "visible", timeout: 3000 })
-        .then(() => true)
-        .catch(() => false)
-    )
-      await render.click();
-    else await page.getByRole("button", { name: "ส่งออก", exact: true }).last().click();
-    const out = join(dir, `${Math.random().toString(36).slice(2)}.mp4`);
-    await (await download).saveAs(out);
-    const r = inspect(out);
-    const expectedFrames = Math.round(kept * FPS);
-    if (r.width !== 1080 || r.height !== 1920)
-      fail(`ขนาดภาพ ${r.width}x${r.height} (ควรเป็น 1080x1920)`);
-    if (Math.abs(r.frames - expectedFrames) > 3)
-      fail(`เฟรม ${r.frames} (ควรประมาณ ${expectedFrames})`);
-    if (!r.hasAudio) fail("ไฟล์ส่งออกไม่มีแทร็กเสียง");
-    else if (r.volume < -50) fail(`เสียงในไฟล์ส่งออกเงียบ (${r.volume} dB)`);
-    // Opus in MP4 plays silent in iPhone Photos and QuickTime
-    else if (r.audioCodec !== "aac")
-      fail(`เสียงเป็น ${r.audioCodec} — iPhone เล่นแล้วไม่มีเสียง (ต้องเป็น aac)`);
-    if (r.openingBlack > 0) fail(`ต้นคลิปมีเฟรมดำ ${r.openingBlack} เฟรม`);
-    const mine = failures.filter((f) => f.startsWith(label)).map((f) => f.slice(label.length + 2));
-    console.log(
-      `${mine.length ? "❌" : "✅"} ${label} — ${r.width}x${r.height}, ${r.frames} เฟรม, เสียง ${r.hasAudio ? `${r.audioCodec} ${r.volume} dB` : "ไม่มี"}, เฟรมดำต้นคลิป ${r.openingBlack}${mine.length ? ` → ${mine.join("; ")}` : ""}`,
-    );
+    let firstPeak: number | null = null;
+    for (let round = 1; round <= (fixture.repeat ?? 1); round++) {
+      const exportErrors = await errorToasts(page);
+      if (exportErrors.length) fail(`error ก่อนส่งออกรอบ ${round}: ${exportErrors.join(" | ")}`);
+      await page.getByRole("button", { name: "ส่งออก", exact: true }).last().click();
+      const download = page.waitForEvent("download", { timeout: 300_000 });
+      // the export tab, or on a phone with a clip selected, the header's export menu
+      const render = page.getByRole("button", { name: "เรนเดอร์วิดีโอพร้อมซับ" }).last();
+      if (
+        await render
+          .waitFor({ state: "visible", timeout: 3000 })
+          .then(() => true)
+          .catch(() => false)
+      )
+        await render.click();
+      else await page.getByRole("button", { name: "ส่งออก", exact: true }).last().click();
+      const out = join(dir, `${Math.random().toString(36).slice(2)}.mp4`);
+      await (await download).saveAs(out);
+      const r = inspect(out);
+      const expectedFrames = Math.round(kept * FPS);
+      if (r.width !== 1080 || r.height !== 1920)
+        fail(`ขนาดภาพ ${r.width}x${r.height} (ควรเป็น 1080x1920)`);
+      if (Math.abs(r.frames - expectedFrames) > 3)
+        fail(`เฟรม ${r.frames} (ควรประมาณ ${expectedFrames})`);
+      if (!r.hasAudio) fail("ไฟล์ส่งออกไม่มีแทร็กเสียง");
+      else if (r.volume < -50) fail(`เสียงในไฟล์ส่งออกเงียบ (${r.volume} dB)`);
+      // Opus in MP4 plays silent in iPhone Photos and QuickTime
+      else if (r.audioCodec !== "aac")
+        fail(`เสียงเป็น ${r.audioCodec} — iPhone เล่นแล้วไม่มีเสียง (ต้องเป็น aac)`);
+      if (r.openingBlack > 0) fail(`ต้นคลิปมีเฟรมดำ ${r.openingBlack} เฟรม`);
+      const mine = failures
+        .filter((f) => f.startsWith(label))
+        .map((f) => f.slice(label.length + 2));
+      console.log(
+        `${mine.length ? "❌" : "✅"} ${label} — ${r.width}x${r.height}, ${r.frames} เฟรม, เสียง ${r.hasAudio ? `${r.audioCodec} ${r.volume} dB` : "ไม่มี"}, เฟรมดำต้นคลิป ${r.openingBlack}${mine.length ? ` → ${mine.join("; ")}` : ""}`,
+      );
+      if (fixture.repeat) {
+        // What one export uses may stay until garbage collection on iPhone,
+        // so every export must give its canvases back: no growth per round.
+        const peak = await page.evaluate(
+          () => (window as unknown as { __canvasPeak?: number }).__canvasPeak ?? 0,
+        );
+        firstPeak ??= peak;
+        console.log(`   รอบ ${round}: canvas สูงสุด ${Math.round(peak / 1048576)} MB`);
+        if (peak > firstPeak + 4 * 1048576)
+          fail(
+            `รอบ ${round}: canvas ไม่ถูกคืนหลังส่งออก (${Math.round(firstPeak / 1048576)} → ${Math.round(peak / 1048576)} MB) — iPhone จะขึ้น "Canvas has no frame"`,
+          );
+      }
+    }
   } catch (error) {
     fail(String(error).split("\n")[0]!);
     console.log(`❌ ${label} — ${String(error).split("\n")[0]}`);

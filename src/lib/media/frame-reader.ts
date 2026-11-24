@@ -1,3 +1,4 @@
+import { releaseCanvas } from "./release-canvas";
 /**
  * Reads video frames in order with WebCodecs (via mediabunny) instead of
  * seeking a <video> element once per frame. A seek decodes from the previous
@@ -42,16 +43,20 @@ export async function openFrameReader(
     // they show the first frame instead.
     const first = await track.getFirstTimestamp().catch(() => 0);
     const frames = sink.canvasesAtTimestamps(times.map((time) => Math.max(time, first)));
+    // The sink's canvases are full output size; give their memory back on dispose.
+    const made = new Set<HTMLCanvasElement | OffscreenCanvas>();
     return {
       next: async () => {
         const result = await frames.next();
-        return result.done
-          ? null
-          : ((result.value?.canvas as CanvasImageSource | undefined) ?? null);
+        const canvas = result.done ? undefined : result.value?.canvas;
+        if (canvas) made.add(canvas);
+        return (canvas as CanvasImageSource | undefined) ?? null;
       },
       dispose: () => {
         void frames.return(undefined).catch(() => undefined);
         dispose();
+        made.forEach(releaseCanvas);
+        made.clear();
       },
     };
   } catch {

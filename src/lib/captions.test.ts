@@ -1,4 +1,5 @@
 import {
+  tokenizeWords,
   assignClipIds,
   balancedSplitIndex,
   captionModeOf,
@@ -81,6 +82,17 @@ assert(balancedSplitIndex(["a", "bb", "ccccccccc"]) === 2, "lead-in before a lon
   const g2 = groupCaptions(withNew, { captionMode: "word", wordsPerGroup: 1 });
   assert(g2.length === 2 && g2[0]!.words.length === 3, "unclipped word joins previous line");
   assert(assignClipIds(clipped, { captionMode: "word", wordsPerGroup: 1 }) === clipped, "no-op when all clipped");
+}
+
+// Punctuation never becomes a caption word of its own (", ຢ່າ" on screen).
+{
+  const lao = tokenizeWords("ໂຕເອງ, ຢ່າລືມທີ່ຈະ");
+  assert(lao[0] === "ໂຕເອງ," && !lao.includes(","), `lao comma: ${JSON.stringify(lao)}`);
+  const lead = tokenizeWords(", ຢ່າ");
+  assert(lead.length === 1 && lead[0] === ",ຢ່າ", `leading comma: ${JSON.stringify(lead)}`);
+  const quoted = tokenizeWords('"ສະບາຍດີ"');
+  assert(quoted.length === 1, `quotes stay on the word: ${JSON.stringify(quoted)}`);
+  assert(tokenizeWords("hello, world").join("|") === "hello,|world", "english unchanged");
 }
 
 console.log("caption grouping tests passed");

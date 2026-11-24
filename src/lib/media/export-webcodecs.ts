@@ -9,6 +9,7 @@
  * เสียงประมวลผลล่วงหน้าด้วย OfflineAudioContext (เร็วกว่าเวลาจริงมาก) แล้วเข้ารหัสด้วย
  * AudioEncoder จากนั้นรวม video+audio เป็นไฟล์ .mp4 เดียวด้วย mp4-muxer
  */
+import { releaseCanvas } from "./release-canvas";
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { decodeAudioFromFile, type Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
@@ -142,6 +143,7 @@ async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
 async function encoderWorks(config: VideoEncoderConfig): Promise<string | null> {
   let failure: string | null = null;
   let produced = false;
+  let probeCanvas: HTMLCanvasElement | null = null;
   const encoder = new VideoEncoder({
     output: () => {
       produced = true;
@@ -152,11 +154,11 @@ async function encoderWorks(config: VideoEncoderConfig): Promise<string | null> 
   });
   try {
     encoder.configure(config);
-    const canvas = document.createElement("canvas");
-    canvas.width = config.width;
-    canvas.height = config.height;
-    canvas.getContext("2d")?.fillRect(0, 0, config.width, config.height);
-    const frame = new VideoFrame(canvas, { timestamp: 0 });
+    probeCanvas = document.createElement("canvas");
+    probeCanvas.width = config.width;
+    probeCanvas.height = config.height;
+    probeCanvas.getContext("2d")?.fillRect(0, 0, config.width, config.height);
+    const frame = new VideoFrame(probeCanvas, { timestamp: 0 });
     encoder.encode(frame, { keyFrame: true });
     frame.close();
     await Promise.race([
@@ -171,6 +173,7 @@ async function encoderWorks(config: VideoEncoderConfig): Promise<string | null> 
     } catch {
       /* ignore */
     }
+    releaseCanvas(probeCanvas);
   }
   return produced && !failure ? null : (failure ?? "no output");
 }
@@ -563,6 +566,7 @@ export async function exportWebCodecsVideo(
   let frames: FrameReader | null = null;
   /** Encoded-but-not-yet-output frame copies, for recovering a failed encoder. */
   const pending: { index: number; frame: VideoFrame }[] = [];
+  let outputCanvas: HTMLCanvasElement | null = null;
 
   try {
     const sourceBlob =
@@ -594,6 +598,7 @@ export async function exportWebCodecsVideo(
     const height = even(target.height);
 
     const canvas = document.createElement("canvas");
+    outputCanvas = canvas;
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d", { alpha: false });
@@ -1006,6 +1011,7 @@ export async function exportWebCodecsVideo(
     video.remove();
     frames?.dispose();
     for (const item of pending.splice(0)) item.frame.close();
+    releaseCanvas(outputCanvas);
     try {
       brollTrack?.dispose();
     } catch {

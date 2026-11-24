@@ -798,8 +798,21 @@ export function tokenizeWords(text: string): string[] {
     }
     for (let i = 0; i < chunk.length; i += 4) out.push(chunk.slice(i, i + 4));
   }
-  return out;
+  // The word segmenter returns punctuation on its own (", " in Lao text
+  // became a caption word of its own). Keep it with the word before it.
+  const merged: string[] = [];
+  for (const token of out) {
+    if (PUNCTUATION_ONLY.test(token) && merged.length) merged[merged.length - 1] += token;
+    else merged.push(token);
+  }
+  // punctuation at the very start goes with the first word
+  if (merged.length > 1 && PUNCTUATION_ONLY.test(merged[0]!)) {
+    merged.splice(0, 2, merged[0]! + merged[1]!);
+  }
+  return merged;
 }
+
+const PUNCTUATION_ONLY = /^[\p{P}\p{S}]+$/u;
 
 /** Rough spoken-duration weight of a token (syllable-ish), so subs match speech better. */
 export function speechWeight(token: string): number {
