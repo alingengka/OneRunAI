@@ -16,6 +16,25 @@ const laoResult = mergeAlignedChunks(
 );
 assert(laoResult.map((word) => word.text).join("|") === "ສະບາຍດີ|ທຸກຄົນ|ມື້ນີ້", "Lao overlap was not deduplicated");
 
+// The same words at a seam spelled with a different tone mark are one phrase
+// (a customer clip showed "ວ່າເອີຍ ເອີ້ຍຂ້ອຍ" after the merge).
+const toneSeam = mergeAlignedChunks(
+  [
+    { text: "ນຳ", start: 26.2, end: 26.48, confidence: 0.8 },
+    { text: "ວ່າ", start: 26.48, end: 26.58, confidence: 0.8 },
+    { text: "ເອີຍ", start: 26.6, end: 26.86, confidence: 0.8 },
+  ],
+  [
+    { text: "ວ່າ", start: 26.5, end: 26.6, confidence: 0.8 },
+    { text: "ເອີ້ຍ", start: 26.6, end: 26.84, confidence: 0.8 },
+    { text: "ຂ້ອຍ", start: 27.5, end: 27.7, confidence: 0.8 },
+  ],
+);
+assert(
+  toneSeam.map((word) => word.text).join("|") === "ນຳ|ວ່າ|ເອີຍ|ຂ້ອຍ",
+  `tone-mark seam kept twice: ${toneSeam.map((word) => word.text).join("|")}`,
+);
+
 const ordered = mergeAlignedChunks(
   [{ text: "A", start: 0, end: 0.5 }],
   [{ text: "B", start: 0.45, end: 0.9 }],

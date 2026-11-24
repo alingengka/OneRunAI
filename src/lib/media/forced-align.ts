@@ -177,6 +177,9 @@ export function mergeAlignedChunks(existing: Word[], incoming: Word[]): Word[] {
   const stable = existing.filter((word) => word.end <= overlapStart + 0.04);
   const overlap = existing.filter((word) => word.end > overlapStart + 0.04);
   const normalized = (value: string) => value.normalize("NFC").replace(/[\s.,!?]/g, "").toLowerCase();
+  // Two chunks hearing the same words at the seam often differ only in a
+  // Lao/Thai tone mark (ເອີຍ / ເອີ້ຍ), which left the phrase in twice.
+  const seamKey = (value: string) => normalized(value).replace(/[\u0e48-\u0e4b\u0ec8-\u0ecb]/g, "");
   const similar = (left: string, right: string) => {
     const a = [...normalized(left)];
     const b = [...normalized(right)];
@@ -196,8 +199,14 @@ export function mergeAlignedChunks(existing: Word[], incoming: Word[]): Word[] {
   let skip = 0;
   const max = Math.min(6, overlap.length, incoming.length);
   for (let count = max; count >= 1; count--) {
-    const left = overlap.slice(-count).map((word) => normalized(word.text)).join("");
-    const right = incoming.slice(0, count).map((word) => normalized(word.text)).join("");
+    const left = overlap
+      .slice(-count)
+      .map((word) => seamKey(word.text))
+      .join("");
+    const right = incoming
+      .slice(0, count)
+      .map((word) => seamKey(word.text))
+      .join("");
     if (left && (left === right || similar(left, right))) { skip = count; break; }
   }
   const retainedOverlap = skip
