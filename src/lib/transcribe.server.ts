@@ -115,6 +115,7 @@ function plausible(text: string, seconds: number, context: string): boolean {
 
 /** Scribe and the main Gemini pass agreeing this closely skip the extra Lao passes. */
 export const EXTRAS_SKIP_AGREEMENT = 0.8;
+const GEMINI_TIE_BONUS = Number(process.env["GEMINI_TIE_BONUS"] ?? 0.02);
 
 function scoreCandidate(candidate: string, others: string[], language?: string, bestLatin = 0): number {
   const agreement = others.length ? others.reduce((sum, value) => sum + similarity(candidate, value), 0) / others.length : 0.72;
@@ -286,6 +287,7 @@ export async function transcribeAudioServer(input: {
   const attempts = input.language === "lo" ? [0, 0] : [0];
   const alternatives: string[] = [];
   const transliterated = new Set<string>();
+  let geminiMain: string | null = null;
   let scribeTiming: TimedWord[] = [];
   let lastError: Error | null = null;
   const warnings: string[] = [];
@@ -413,6 +415,7 @@ export async function transcribeAudioServer(input: {
 
     if (geminiResult.status === "fulfilled") {
       const text = cleanup(geminiResult.value, "lo");
+      if (usable(text)) geminiMain = text;
       if (usable(text) && !alternatives.includes(text)) alternatives.push(text);
     } else if (hasGemini) {
       lastError = geminiResult.reason instanceof Error ? geminiResult.reason : new Error("Gemini transcription failed");
@@ -474,6 +477,10 @@ export async function transcribeAudioServer(input: {
       // A candidate much shorter than the longest one has probably dropped
       // part of the speech (often the end), so it loses points for that.
       score: scoreCandidate(text, alternatives.filter((value) => value !== text), input.language, bestLatin)
+        // Two close candidates score about the same; Gemini writes Lao more
+        // accurately than Scribe (it heard ຫາໃໝ່ໄດ້ where Scribe wrote
+        // ຫາມາໄດ້, verified on a customer clip), so it wins a near tie.
+        + (text === geminiMain ? GEMINI_TIE_BONUS : 0)
         - (transliterated.has(text) ? 0.03 : 0)
         - Math.max(0, 0.9 - chars(text).length / Math.max(1, longest)) * 0.8,
     }))
