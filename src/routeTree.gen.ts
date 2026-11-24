@@ -13,16 +13,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as BillingRouteImport } from './routes/billing'
-import { Route as ClaudeRouteImport } from './routes/claude'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as TermsRouteImport } from './routes/terms'
-import { Route as DotwellKnownOauthProtectedResourceRouteImport } from './routes/[.]well-known/oauth-protected-resource'
-import { Route as ApiMcpRouteImport } from './routes/api/mcp'
-import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
 import { Route as ApiPublicBrollMediaRouteImport } from './routes/api/public/broll-media'
-import { Route as DotwellKnownOauthProtectedResourceApiMcpRouteImport } from './routes/[.]well-known/oauth-protected-resource.api.mcp'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -42,11 +37,6 @@ const AppRoute = AppRouteImport.update({
 const BillingRoute = BillingRouteImport.update({
   id: '/billing',
   path: '/billing',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClaudeRoute = ClaudeRouteImport.update({
-  id: '/claude',
-  path: '/claude',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -69,65 +59,33 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DotwellKnownOauthProtectedResourceRoute =
-  DotwellKnownOauthProtectedResourceRouteImport.update({
-    id: '/.well-known/oauth-protected-resource',
-    path: '/.well-known/oauth-protected-resource',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiMcpRoute = ApiMcpRouteImport.update({
-  id: '/api/mcp',
-  path: '/api/mcp',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OauthConsentRoute = OauthConsentRouteImport.update({
-  id: '/oauth/consent',
-  path: '/oauth/consent',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiPublicBrollMediaRoute = ApiPublicBrollMediaRouteImport.update({
   id: '/api/public/broll-media',
   path: '/api/public/broll-media',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DotwellKnownOauthProtectedResourceApiMcpRoute =
-  DotwellKnownOauthProtectedResourceApiMcpRouteImport.update({
-    id: '/api/mcp',
-    path: '/api/mcp',
-    getParentRoute: () => DotwellKnownOauthProtectedResourceRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/app': typeof AppRoute
   '/billing': typeof BillingRoute
-  '/claude': typeof ClaudeRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/terms': typeof TermsRoute
-  '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRouteWithChildren
-  '/api/mcp': typeof ApiMcpRoute
-  '/oauth/consent': typeof OauthConsentRoute
   '/api/public/broll-media': typeof ApiPublicBrollMediaRoute
-  '/.well-known/oauth-protected-resource/api/mcp': typeof DotwellKnownOauthProtectedResourceApiMcpRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/app': typeof AppRoute
   '/billing': typeof BillingRoute
-  '/claude': typeof ClaudeRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/terms': typeof TermsRoute
-  '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRouteWithChildren
-  '/api/mcp': typeof ApiMcpRoute
-  '/oauth/consent': typeof OauthConsentRoute
   '/api/public/broll-media': typeof ApiPublicBrollMediaRoute
-  '/.well-known/oauth-protected-resource/api/mcp': typeof DotwellKnownOauthProtectedResourceApiMcpRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -135,16 +93,11 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/app': typeof AppRoute
   '/billing': typeof BillingRoute
-  '/claude': typeof ClaudeRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/terms': typeof TermsRoute
-  '/.well-known/oauth-protected-resource': typeof DotwellKnownOauthProtectedResourceRouteWithChildren
-  '/api/mcp': typeof ApiMcpRoute
-  '/oauth/consent': typeof OauthConsentRoute
   '/api/public/broll-media': typeof ApiPublicBrollMediaRoute
-  '/.well-known/oauth-protected-resource/api/mcp': typeof DotwellKnownOauthProtectedResourceApiMcpRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -153,48 +106,33 @@ export interface FileRouteTypes {
     | '/admin'
     | '/app'
     | '/billing'
-    | '/claude'
     | '/login'
     | '/privacy'
     | '/reset-password'
     | '/terms'
-    | '/.well-known/oauth-protected-resource'
-    | '/api/mcp'
-    | '/oauth/consent'
     | '/api/public/broll-media'
-    | '/.well-known/oauth-protected-resource/api/mcp'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/admin'
     | '/app'
     | '/billing'
-    | '/claude'
     | '/login'
     | '/privacy'
     | '/reset-password'
     | '/terms'
-    | '/.well-known/oauth-protected-resource'
-    | '/api/mcp'
-    | '/oauth/consent'
     | '/api/public/broll-media'
-    | '/.well-known/oauth-protected-resource/api/mcp'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/app'
     | '/billing'
-    | '/claude'
     | '/login'
     | '/privacy'
     | '/reset-password'
     | '/terms'
-    | '/.well-known/oauth-protected-resource'
-    | '/api/mcp'
-    | '/oauth/consent'
     | '/api/public/broll-media'
-    | '/.well-known/oauth-protected-resource/api/mcp'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -202,14 +140,10 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   AppRoute: typeof AppRoute
   BillingRoute: typeof BillingRoute
-  ClaudeRoute: typeof ClaudeRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   TermsRoute: typeof TermsRoute
-  DotwellKnownOauthProtectedResourceRoute: typeof DotwellKnownOauthProtectedResourceRouteWithChildren
-  ApiMcpRoute: typeof ApiMcpRoute
-  OauthConsentRoute: typeof OauthConsentRoute
   ApiPublicBrollMediaRoute: typeof ApiPublicBrollMediaRoute
 }
 
@@ -243,13 +177,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BillingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/claude': {
-      id: '/claude'
-      path: '/claude'
-      fullPath: '/claude'
-      preLoaderRoute: typeof ClaudeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -278,27 +205,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.well-known/oauth-protected-resource': {
-      id: '/.well-known/oauth-protected-resource'
-      path: '/.well-known/oauth-protected-resource'
-      fullPath: '/.well-known/oauth-protected-resource'
-      preLoaderRoute: typeof DotwellKnownOauthProtectedResourceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/mcp': {
-      id: '/api/mcp'
-      path: '/api/mcp'
-      fullPath: '/api/mcp'
-      preLoaderRoute: typeof ApiMcpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/oauth/consent': {
-      id: '/oauth/consent'
-      path: '/oauth/consent'
-      fullPath: '/oauth/consent'
-      preLoaderRoute: typeof OauthConsentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/broll-media': {
       id: '/api/public/broll-media'
       path: '/api/public/broll-media'
@@ -306,45 +212,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicBrollMediaRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/.well-known/oauth-protected-resource/api/mcp': {
-      id: '/.well-known/oauth-protected-resource/api/mcp'
-      path: '/api/mcp'
-      fullPath: '/.well-known/oauth-protected-resource/api/mcp'
-      preLoaderRoute: typeof DotwellKnownOauthProtectedResourceApiMcpRouteImport
-      parentRoute: typeof DotwellKnownOauthProtectedResourceRoute
-    }
   }
 }
-
-interface DotwellKnownOauthProtectedResourceRouteChildren {
-  DotwellKnownOauthProtectedResourceApiMcpRoute: typeof DotwellKnownOauthProtectedResourceApiMcpRoute
-}
-
-const DotwellKnownOauthProtectedResourceRouteChildren: DotwellKnownOauthProtectedResourceRouteChildren =
-  {
-    DotwellKnownOauthProtectedResourceApiMcpRoute:
-      DotwellKnownOauthProtectedResourceApiMcpRoute,
-  }
-
-const DotwellKnownOauthProtectedResourceRouteWithChildren =
-  DotwellKnownOauthProtectedResourceRoute._addFileChildren(
-    DotwellKnownOauthProtectedResourceRouteChildren,
-  )
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   AppRoute: AppRoute,
   BillingRoute: BillingRoute,
-  ClaudeRoute: ClaudeRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   TermsRoute: TermsRoute,
-  DotwellKnownOauthProtectedResourceRoute:
-    DotwellKnownOauthProtectedResourceRouteWithChildren,
-  ApiMcpRoute: ApiMcpRoute,
-  OauthConsentRoute: OauthConsentRoute,
   ApiPublicBrollMediaRoute: ApiPublicBrollMediaRoute,
 }
 export const routeTree = rootRouteImport

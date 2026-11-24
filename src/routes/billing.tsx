@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { getPricing, quotePrice, submitPayment, type PaidPlanId } from "@/lib/account.functions";
 import { daysLeft, formatKip, formatMinutes, PLAN_LABELS } from "@/lib/account-shared";
 import { useAccount, useSession } from "@/lib/auth";
-import { ConnectedApps } from "@/components/account/ConnectedApps";
 
 export const Route = createFileRoute("/billing")({
   head: () => ({ meta: [{ title: "แพ็กเกจ — OneRunAI" }] }),
@@ -342,8 +341,6 @@ function BillingPage() {
             </ul>
           </section>
         )}
-
-        <ConnectedApps />
       </div>
     </main>
   );
