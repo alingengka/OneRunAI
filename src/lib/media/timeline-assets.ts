@@ -2,6 +2,7 @@
  * Pictures for the timeline lanes: small video thumbnails and an audio
  * loudness curve.
  */
+import { releaseCanvas } from "./release-canvas";
 
 type ThumbOptions = {
   max?: number;
@@ -59,6 +60,7 @@ export async function makeThumbnails(
       // a pass that made nothing would only repeat itself
       if (thumbs.length === before && !hold?.()) break;
     }
+    releaseCanvas(out);
     if (!thumbs.length) return null;
     while (thumbs.length < times.length) thumbs.push(thumbs[thumbs.length - 1]!);
     return { thumbs, step };

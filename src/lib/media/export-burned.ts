@@ -1,3 +1,4 @@
+import { releaseCanvas } from "./release-canvas";
 import type { Segment } from "./audio";
 import type { MotionElement, MotionScene } from "./motion";
 import { createBurnRenderer, ensureCaptionFonts, targetSize, type ExportResolution, type VideoTransitions } from "./burn-render";
@@ -141,6 +142,7 @@ export async function exportBurnedVideo(
   let frameCostMaxAt = 0;
   let frameCostOverBudget = 0;
 
+  let outputCanvas: HTMLCanvasElement | null = null;
   try {
     await waitFor("loadedmetadata");
     if (video.readyState < 2) await waitFor("loadeddata");
@@ -152,6 +154,7 @@ export async function exportBurnedVideo(
     const width = target.width;
     const height = target.height;
     const canvas = document.createElement("canvas");
+    outputCanvas = canvas;
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d");
@@ -527,6 +530,7 @@ export async function exportBurnedVideo(
 
 
   } finally {
+    releaseCanvas(outputCanvas);
     try { brollTrack?.dispose(); } catch { /* ignore */ }
     stickerLayer?.destroy();
     video.pause();

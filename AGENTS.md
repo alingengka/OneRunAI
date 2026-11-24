@@ -48,10 +48,13 @@ bun run guard:media      # = bun run scripts/media-guard.ts
 
 - ต้องมี dev server ที่ `http://localhost:8080` (หรือ `GUARD_APP_URL`) และ ffmpeg/ffprobe
 - สร้างคลิปทดสอบเองตอนรัน: HD, HD + เสียงเอฟเฟกต์, มีช่วงเงียบที่ถูกตัด, 4K หมุนด้วย metadata,
-  Spatial Audio (แทร็กเสียงหลักเล่นไม่ได้), เฟรมดำต้นคลิป แล้วอัปโหลด → ส่งออกผ่าน UI จริง ทั้งใน Chrome และ "Safari บน iPhone" จำลอง
-  (ไม่มี WebCodecs AudioDecoder/AudioEncoder, decodeAudioData อ่านวิดีโอทั้งไฟล์ไม่ได้)
+  Spatial Audio (แทร็กเสียงหลักเล่นไม่ได้), เฟรมดำต้นคลิป, ส่งออกซ้ำ 3 รอบในหน้าเดิม แล้วอัปโหลด → ส่งออกผ่าน UI จริง
+  ทั้งใน Chrome และ "Safari บน iPhone" จำลอง (ไม่มี WebCodecs AudioDecoder/AudioEncoder, decodeAudioData
+  อ่านวิดีโอทั้งไฟล์ไม่ได้, หน่วยความจำ canvas รวมมีเพดานและไม่คืนจนกว่าจะย่อ canvas เป็น 0 —
+  เกินแล้วขึ้น "Canvas has no frame")
 - ตรวจ: อ่านเสียงได้ไม่มี error, ขนาดภาพ/จำนวนเฟรมถูก, มีเสียงไม่เงียบและเป็น AAC (Opus ใน MP4
-  เล่นบน iPhone แล้วเงียบ), ไม่มีเฟรมดำต้นคลิป,
+  เล่นบน iPhone แล้วเงียบ), ไม่มีเฟรมดำต้นคลิป, canvas ไม่สะสมเพิ่มทุกครั้งที่ส่งออก
+  (canvas ที่สร้างใหม่ต้องคืนด้วย `releaseCanvas` หลังใช้),
   และคลิปหนักใช้ไฟล์พรีวิว 720p (`?proxy=1`) ที่เล่นได้และมีเสียง
 - การจำลองไม่เท่า iPhone จริง: งานที่เสี่ยงกับ iPhone ให้ผู้ใช้ทดสอบบนเครื่องจริงด้วย
 ห้ามลดขอบเขตข้อใดข้อหนึ่งเพื่อให้ผ่าน
